@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>老爸数学互动课堂 · 全模块</title>
+<script src="https://cdn.jsdelivr.net/npm/localforage@1.10.0/dist/localforage.min.js"></script>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -5361,6 +5362,93 @@ html { scroll-padding-bottom: 300px; }
 
 <script>
 
+/* ============================================================
+   ⭐ 存储适配层：localForage + 内存缓存
+   - 对外暴露 lsGet / lsSet / lsRemove，签名和 localStorage 一致
+   - 内存缓存让所有同步调用照旧可用
+   - 异步写 localForage（IndexedDB），比 localStorage 抗清
+   ============================================================ */
+const _memCache = new Map();
+
+const _store = localforage.createInstance({
+  name: 'grade3_math',
+  storeName: 'kv'
+});
+
+/* 需要持久化的 key 前缀 */
+function _isPersistKey(k) {
+  return typeof k === 'string' && /^grade\d+_/.test(k);
+}
+
+/* 同步读 */
+function lsGet(key) {
+  return _memCache.has(key) ? _memCache.get(key) : null;
+}
+
+/* 同步写（内存立即生效，磁盘异步落盘） */
+function lsSet(key, value) {
+  if (!_isPersistKey(key)) return;
+  _memCache.set(key, value);
+  _store.setItem(key, value).catch(e => console.warn('[存储] 写入失败', e));
+}
+
+/* 同步删 */
+function lsRemove(key) {
+  if (!_isPersistKey(key)) return;
+  _memCache.delete(key);
+  _store.removeItem(key).catch(() => {});
+}
+
+/* 初始化：把 localForage 已有数据读进内存 */
+async function initStorage() {
+  try {
+    const keys = await _store.keys();
+    await Promise.all(keys.map(async k => {
+      if (!_isPersistKey(k)) return;
+      const v = await _store.getItem(k);
+      if (typeof v === 'string') _memCache.set(k, v);
+    }));
+    console.log(`[存储] localForage 已加载 ${_memCache.size} 项`);
+  } catch (e) {
+    console.warn('[存储] localForage 加载失败，回退 localStorage', e);
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (_isPersistKey(k)) _memCache.set(k, localStorage.getItem(k));
+    }
+  }
+}
+
+/* 一次性迁移：把旧 localStorage 数据搬进 localForage */
+async function migrateFromLocalStorage() {
+  try {
+    if (await _store.getItem('__migrated_v1')) return;
+    let count = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!_isPersistKey(k)) continue;
+      const v = localStorage.getItem(k);
+      if (v != null) {
+        _memCache.set(k, v);
+        await _store.setItem(k, v);
+        count++;
+      }
+    }
+    await _store.setItem('__migrated_v1', '1');
+    if (count > 0) console.log(`[存储] 已从 localStorage 迁移 ${count} 项`);
+  } catch (e) {
+    console.warn('[存储] 迁移失败', e);
+  }
+}
+
+/* 便捷：遍历所有以某前缀开头的 key（替代原来 for 循环 localStorage） */
+function lsKeysByPrefix(prefix) {
+  const out = [];
+  _memCache.forEach((v, k) => {
+    if (k.startsWith(prefix)) out.push(k);
+  });
+  return out;
+}
+
 /* ⭐ 全局常量：提前声明，避免 TDZ */
 const REASON_KEY = 'grade3_wrong_reasons_v1';
 const REASONS = ['计算粗心', '读题不细', '方法不会', '单位漏写'];
@@ -5854,11 +5942,11 @@ function m1ClickOp(i) {
   }
 
   function hasPassedToday() {
-    try { return localStorage.getItem(KEY) === todayStr(); } catch (e) { return false; }
+    try { return lsGet(KEY) === todayStr(); } catch (e) { return false; }
   }
 
   function markPassedToday() {
-    try { localStorage.setItem(KEY, todayStr()); } catch (e) {}
+    try { lsSet(KEY, todayStr()); } catch (e) {}
   }
 
   /* 覆盖 m1ShowPriorityBox：如果今天已通过，则直接跳过 */
@@ -9291,9 +9379,9 @@ function takeawaySave(text, value) {
   if (!key) return;
   try {
     if (value && value.trim()) {
-      localStorage.setItem(key, value.trim());
+      lsSet(key, value.trim());
     } else {
-      localStorage.removeItem(key);   // 空内容就删掉
+      lsRemove(key);   // 空内容就删掉
     }
   } catch (e) {
     console.warn('[一题一得] 保存失败', e);
@@ -9305,7 +9393,7 @@ function takeawayLoad(text) {
   const key = takeawayKey(text);
   if (!key) return '';
   try {
-    return localStorage.getItem(key) || '';
+    return lsGet(key) || '';
   } catch (e) {
     return '';
   }
@@ -9724,29 +9812,6 @@ const LLM_SYSTEM_PROMPT = `你是一位三年级数学老师，负责评判学�
    - gaps：若答案正确给 []，否则至少 1 条
    - reasoning_walkthrough：必须给，3~5 句话
 10. judgement 四个子字段必须全给，step_issues 若无可给 []`;
-
-/* ============ JSON 兜底解析（防模型输出多余文字） ============ */
-function extractJson(text) {
-  if (typeof text !== 'string') return null;
-
-  // 1. 去空白 + 去 markdown 代码块包裹
-  let s = text.trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
-
-  // 2. 先按原样解析
-  try { return JSON.parse(s); } catch (_) {}
-
-  // 3. 兜底：抓第一个 { 到最后一个 } 之间
-  const l = s.indexOf('{');
-  const r = s.lastIndexOf('}');
-  if (l !== -1 && r > l) {
-    try { return JSON.parse(s.slice(l, r + 1)); } catch (_) {}
-  }
-
-  return null;
-}
 
 /* ============ JSON 兜底解析（防模型输出多余文字） ============ */
 function extractJson(text) {
@@ -10243,6 +10308,84 @@ function renderStandardSolution(p) {
   });
 }
 
+/* ============ 通用：4 类 AI 反馈（strengths/gaps/walkthrough/judgement） ============ */
+function buildAiInsightHtml(r, opts = {}) {
+  const esc = (s) => escapeHtml(String(s || ''));
+  const openClass = opts.open ? ' open' : '';   // 默认是否展开
+
+  // ---------- 👍 你做对了什么 ----------
+  const strengthsHtml = (r.strengths && r.strengths.length) ? `
+    <div class="std-fold${openClass}" data-insight="strengths">
+      <div class="std-fold-hd">
+        <span>👍 你做对了什么</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <ul style="margin:0;padding-left:18px;">
+          ${r.strengths.map(s => `<li>${esc(s)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+  ` : '';
+
+  // ---------- 🔍 哪个环节没想到 ----------
+  const gapsHtml = (r.gaps && r.gaps.length) ? `
+    <div class="std-fold${openClass}" data-insight="gaps">
+      <div class="std-fold-hd">
+        <span>🔍 哪个环节还没想到</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <ul style="margin:0;padding-left:18px;">
+          ${r.gaps.map(s => `<li>${esc(s)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+  ` : '';
+
+  // ---------- 🧠 AI 怎么分析这道题 ----------
+  const walkHtml = r.reasoning_walkthrough ? `
+    <div class="std-fold${openClass}" data-insight="walk">
+      <div class="std-fold-hd">
+        <span>🧠 AI 是怎么分析这道题的</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <div class="std-line">${esc(r.reasoning_walkthrough).replace(/\n/g, '<br>')}</div>
+      </div>
+    </div>
+  ` : '';
+
+  // ---------- 📊 大模型批改结果 ----------
+  const j = r.judgement || {};
+  const judgementHtml = `
+    <div class="std-fold${openClass}" data-insight="judgement">
+      <div class="std-fold-hd">
+        <span>📊 大模型批改结果</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <div class="std-line">
+          <b>答案判定：</b>
+          ${j.answer_correct
+            ? '<span style="color:#15803d;font-weight:800;">✓ 正确</span>'
+            : '<span style="color:#b91c1c;font-weight:800;">✗ 有误</span>'}
+        </div>
+        ${j.student_answer_issue && j.student_answer_issue !== '无'
+          ? `<div class="std-line"><b>答案问题：</b>${esc(j.student_answer_issue)}</div>` : ''}
+        ${j.step_count_comment
+          ? `<div class="std-line"><b>步数评价：</b>${esc(j.step_count_comment)}</div>` : ''}
+        ${(j.step_issues && j.step_issues.length)
+          ? `<div class="std-line"><b>步骤问题：</b>
+              <ul style="margin:4px 0 0 18px;">
+                ${j.step_issues.map(it =>
+                  `<li>第 ${it.step} 步 · ${esc(it.field)}：${esc(it.issue)}</li>`
+                ).join('')}
+              </ul>
+             </div>` : ''}
+      </div>
+    </div>
+  `;
+
+  return { strengthsHtml, gapsHtml, walkHtml, judgementHtml };
+}
+
 /* 渲染大模型反馈（每步折叠、最终答案折叠、提示折叠） */
 function renderLLMFeedback(r) {
   const box = document.getElementById('m13StandardSteps');
@@ -10268,11 +10411,12 @@ function renderLLMFeedback(r) {
   }
 
   // 步数评价
-  const stepCountHtml = r.judgement.step_count_comment ? `
+  /*const stepCountHtml = r.judgement.step_count_comment ? `
     <div class="std-keywords" style="background:#e0e7ff;color:#3730a3;margin-bottom:12px;">
       <b>📐 步数评价：</b>${r.judgement.step_count_comment}
     </div>
   ` : '';
+  */
 
   // ✅ 4 类 AI 反馈（共用）
   const insight = buildAiInsightHtml(r, { open: true });
@@ -10696,7 +10840,7 @@ loadBank().then(() => {
 // ⭐ 按年级隔离的 key
 function getGradeKey(prefix) {
   let g = '3';
-  try { g = localStorage.getItem('grade3_current_grade') || '3'; } catch (e) {}
+  try { g = lsGet('grade3_current_grade') || '3'; } catch (e) {}
   return `grade${g}_${prefix}`;
 }
 
@@ -10720,7 +10864,7 @@ function downloadBlob(content, filename, mimeType) {
 
 function wbLoad() {
   try {
-    const raw = localStorage.getItem(WRONG_BOOK_KEY);
+    const raw = lsGet(WRONG_BOOK_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.warn('[错题本] 读取失败', e);
@@ -10730,7 +10874,7 @@ function wbLoad() {
 
 function wbSave(list) {
   try {
-    localStorage.setItem(WRONG_BOOK_KEY, JSON.stringify(list));
+    lsSet(WRONG_BOOK_KEY, JSON.stringify(list));
   } catch (e) {
     console.warn('[错题本] 保存失败', e);
   }
@@ -10958,9 +11102,6 @@ document.addEventListener('click', e => {
   }
 });
 
-/* 初始化 */
-wbRender();
-
 /* ============================================================
    ⭐ 错题本 · 智能推荐
    ============================================================ */
@@ -11092,7 +11233,7 @@ function filterWrongListByTag(tag) {
 /* ============ 做题记录 · 核心 ============ */
 function historyLoad() {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = lsGet(HISTORY_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
     console.warn('[做题记录] 读取失败', e);
@@ -11102,7 +11243,7 @@ function historyLoad() {
 
 function historySave(list) {
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    lsSet(HISTORY_KEY, JSON.stringify(list));
   } catch (e) {
     console.warn('[做题记录] 保存失败', e);
   }
@@ -12141,9 +12282,6 @@ function escapeHtml(str) {
   document.getElementById('historyExport')?.addEventListener('click', historyExport);
 })();
 
-/* 初始化渲染 */
-historyRender();
-
 (function patchHistoryCount() {
   if (typeof historyRender !== 'function') return;
   const orig = historyRender;
@@ -12530,8 +12668,6 @@ function renderDashboard() {
   if (el4) el4.innerHTML = `${streak} <small>天</small>`;
   if (el5) el5.innerHTML = `${wrongCount} <small>道</small>`;
 }
-/* 初始化渲染 */
-renderDashboard();
 
 /* ============================================================
    ⭐ 6. 学习看板：今日 / 本周 / 累计切换
@@ -12601,7 +12737,7 @@ renderDashboard();
   const KEY = 'grade3_daily_cheer_date';
   const today = new Date().toISOString().slice(0, 10);
   try {
-    if (localStorage.getItem(KEY) === today) return;
+    if (lsGet(KEY) === today) return;
   } catch (e) {}
 
   // 检查今日做题数
@@ -12609,7 +12745,7 @@ renderDashboard();
   const todayList = historyLoad().filter(r => r.timestamp >= todayStart.getTime());
   if (todayList.length < 5) return;
 
-  try { localStorage.setItem(KEY, today); } catch (e) {}
+  try { lsSet(KEY, today); } catch (e) {}
 
   const cheer = document.createElement('div');
   cheer.className = 'daily-cheer';
@@ -12722,7 +12858,7 @@ const STUDENT_KEY = 'grade3_student_name';
 
 function getStudentName() {
   try {
-    return localStorage.getItem(STUDENT_KEY) || '';
+    return lsGet(STUDENT_KEY) || '';
   } catch (e) {
     return '';
   }
@@ -12731,9 +12867,9 @@ function getStudentName() {
 function setStudentName(name) {
   try {
     if (name && name.trim()) {
-      localStorage.setItem(STUDENT_KEY, name.trim());
+      lsSet(STUDENT_KEY, name.trim());
     } else {
-      localStorage.removeItem(STUDENT_KEY);
+      lsRemove(STUDENT_KEY);
     }
   } catch (e) {
     console.warn('[学生姓名] 保存失败', e);
@@ -12805,9 +12941,6 @@ setTimeout(() => {
   sessionStorage.setItem('grade3_student_asked', '1');
   showStudentModal();
 }, 1000);
-
-/* 初始化 */
-renderStudentCard();
 
 /* ============================================================
    ⭐⭐ 移动端体验 + 视觉优化补丁（1-23 项 JS 部分）
@@ -13297,7 +13430,7 @@ const SFX = (function () {
   let ctx = null;
   let enabled = false;
   try {
-    enabled = localStorage.getItem('grade3_sound_on') === '1';
+    enabled = lsGet('grade3_sound_on') === '1';
   } catch (e) {}
 
   function init() {
@@ -13326,7 +13459,7 @@ const SFX = (function () {
     isEnabled: () => enabled,
     setEnabled(v) {
       enabled = !!v;
-      try { localStorage.setItem('grade3_sound_on', enabled ? '1' : '0'); } catch (e) {}
+      try { lsSet('grade3_sound_on', enabled ? '1' : '0'); } catch (e) {}
       if (enabled) init();
     },
     correct() { tone(880, 0.12, 'sine', 0.10); setTimeout(() => tone(1320, 0.10, 'sine', 0.08), 70); },
@@ -13380,10 +13513,10 @@ function autoTagsFor(text) {
 }
 
 function loadReasons() {
-  try { return JSON.parse(localStorage.getItem(REASON_KEY) || '{}'); } catch (e) { return {}; }
+  try { return JSON.parse(lsGet(REASON_KEY) || '{}'); } catch (e) { return {}; }
 }
 function saveReasons(map) {
-  try { localStorage.setItem(REASON_KEY, JSON.stringify(map)); } catch (e) {}
+  try { lsSet(REASON_KEY, JSON.stringify(map)); } catch (e) {}
 }
 function getReasons(text) {
   const m = loadReasons();
@@ -13553,13 +13686,10 @@ function renderTakeawayGallery() {
   // 扫 localStorage 里所有 grade3_takeaway_ 开头的 key
   const items = [];
   try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('grade3_takeaway_')) {
-        const v = localStorage.getItem(k);
-        if (v && v.trim()) items.push({ key: k, note: v.trim() });
-      }
-    }
+    lsKeysByPrefix('grade3_takeaway_').forEach(k => {
+      const v = lsGet(k);
+      if (v && v.trim()) items.push({ key: k, note: v.trim() });
+    });
   } catch (e) {}
 
   if (!items.length) {
@@ -13627,15 +13757,10 @@ function renderTakeawayGallery() {
     const cntEl = document.getElementById('takeawayCount');
     if (cntEl) {
       let n = 0;
-      try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith('grade3_takeaway_')) {
-            const v = localStorage.getItem(k);
-            if (v && v.trim()) n++;
-          }
-        }
-      } catch (e) {}
+      lsKeysByPrefix('grade3_takeaway_').forEach(k => {
+        const v = lsGet(k);
+        if (v && v.trim()) n++;
+      });
       cntEl.textContent = n + ' 条';
     }
     // ⭐ 同步刷新成长卡片
@@ -13717,13 +13842,13 @@ const TIMER_CHALLENGE = {
 };
 
 try {
-  const saved = localStorage.getItem('grade3_timer_challenge');
+  const saved = lsGet('grade3_timer_challenge');
   if (saved) TIMER_CHALLENGE.records = JSON.parse(saved);
 } catch (e) {}
 
 function timerChallengeToggle(enabled) {
   TIMER_CHALLENGE.enabled = !!enabled;
-  try { localStorage.setItem('grade3_timer_challenge', JSON.stringify(TIMER_CHALLENGE.records)); } catch (e) {}
+  try { lsSet('grade3_timer_challenge', JSON.stringify(TIMER_CHALLENGE.records)); } catch (e) {}
   document.querySelectorAll('.timer-challenge-display').forEach(el => {
     el.style.display = enabled ? '' : 'none';
   });
@@ -13756,7 +13881,7 @@ function timerChallengeFinish(moduleId) {
   if (!TIMER_CHALLENGE.records[moduleId]) TIMER_CHALLENGE.records[moduleId] = [];
   TIMER_CHALLENGE.records[moduleId].push(seconds);
   if (TIMER_CHALLENGE.records[moduleId].length > 20) TIMER_CHALLENGE.records[moduleId].shift();
-  try { localStorage.setItem('grade3_timer_challenge', JSON.stringify(TIMER_CHALLENGE.records)); } catch (e) {}
+  try { lsSet('grade3_timer_challenge', JSON.stringify(TIMER_CHALLENGE.records)); } catch (e) {}
   if (TIMER_CHALLENGE._onFinish) TIMER_CHALLENGE._onFinish(seconds);
   updateTimerChallengeStat(moduleId);
 }
@@ -13884,19 +14009,14 @@ function backupToSession() {
   const data = {};
   LS_KEYS.forEach(k => {
     try {
-      const v = localStorage.getItem(k);
+      const v = lsGet(k);
       if (v != null) data[k] = v;
     } catch (e) {}
   });
   // 一题一得
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('grade3_takeaway_')) {
-        data[k] = localStorage.getItem(k);
-      }
-    }
-  } catch (e) {}
+  lsKeysByPrefix('grade3_takeaway_').forEach(k => {
+    data[k] = lsGet(k);
+  });
   try { sessionStorage.setItem(SESSION_BACKUP_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
@@ -13905,7 +14025,7 @@ function restoreFromSession() {
   try { data = JSON.parse(sessionStorage.getItem(SESSION_BACKUP_KEY) || '{}'); } catch (e) { return false; }
   const keys = Object.keys(data);
   if (!keys.length) return false;
-  keys.forEach(k => { try { localStorage.setItem(k, data[k]); } catch (e) {} });
+  keys.forEach(k => { try { lsSet(k, data[k]); } catch (e) {} });
   return true;
 }
 
@@ -13916,7 +14036,7 @@ window.addEventListener('beforeunload', backupToSession);
 /* 启动时检测：localStorage 空了但 session 有 */
 (function checkRestore() {
   try {
-    const hasLocal = LS_KEYS.some(k => localStorage.getItem(k));
+    const hasLocal = LS_KEYS.some(k => lsGet(k));
     if (hasLocal) return;
     const sessionRaw = sessionStorage.getItem(SESSION_BACKUP_KEY);
     if (!sessionRaw) return;
@@ -14100,7 +14220,7 @@ function buildWeeklyReport() {
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k && k.startsWith('grade3_takeaway_')) {
-        const v = localStorage.getItem(k);
+        const v = lsGet(k);
         if (v && v.trim()) takeaways.push(v.trim());
       }
     }
@@ -14338,7 +14458,7 @@ console.log('[优化补丁] ✅ A-P 已加载');
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith('grade3_takeaway_')) {
-          const v = localStorage.getItem(k);
+          const v = lsGet(k);
           if (v && v.trim()) takeawayN++;
         }
       }
@@ -14447,13 +14567,10 @@ console.log('[优化补丁] ✅ A-P 已加载');
     // ⭐ 计算数据指纹，只有变化时才重绘
     let fp = 0;
     try {
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i);
-        if (k && k.startsWith('grade3_takeaway_')) {
-          const v = localStorage.getItem(k);
-          if (v && v.trim()) fp += v.length + k.length;
-        }
-      }
+      lsKeysByPrefix('grade3_takeaway_').forEach(k => {
+        const v = lsGet(k);
+        if (v && v.trim()) fp += v.length + k.length;
+      });
     } catch (e) {}
     if (box.dataset._fp === String(fp)) return;   // 数据没变，跳过
     box.dataset._fp = String(fp);
@@ -14466,13 +14583,10 @@ console.log('[优化补丁] ✅ A-P 已加载');
     const renderList = (filter) => {
       const items = [];
       try {
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          if (k && k.startsWith('grade3_takeaway_')) {
-            const v = localStorage.getItem(k);
-            if (v && v.trim()) items.push({ key: k, note: v.trim() });
-          }
-        }
+        lsKeysByPrefix('grade3_takeaway_').forEach(k => {
+          const v = lsGet(k);
+          if (v && v.trim()) items.push({ key: k, note: v.trim() });
+        });
       } catch (e) {}
       const f = (filter || '').trim().toLowerCase();
       const filtered = f ? items.filter(x => x.note.toLowerCase().includes(f)) : items;
@@ -14665,83 +14779,22 @@ function onCorrect(x, y) {
   };
 })();
 
-/* ============ 通用：4 类 AI 反馈（strengths/gaps/walkthrough/judgement） ============ */
-function buildAiInsightHtml(r, opts = {}) {
-  const esc = (s) => escapeHtml(String(s || ''));
-  const openClass = opts.open ? ' open' : '';   // 默认是否展开
+/* ============================================================
+   ⭐ 启动：先初始化存储，再渲染 UI
+   ============================================================ */
+(async function bootstrap() {
+  await initStorage();
+  await migrateFromLocalStorage();
 
-  // ---------- 👍 你做对了什么 ----------
-  const strengthsHtml = (r.strengths && r.strengths.length) ? `
-    <div class="std-fold${openClass}" data-insight="strengths">
-      <div class="std-fold-hd">
-        <span>👍 你做对了什么</span><span class="arrow">▶</span>
-      </div>
-      <div class="std-fold-bd">
-        <ul style="margin:0;padding-left:18px;">
-          ${r.strengths.map(s => `<li>${esc(s)}</li>`).join('')}
-        </ul>
-      </div>
-    </div>
-  ` : '';
+  // 重新渲染所有依赖存储的 UI
+  try { if (typeof wbRender === 'function') wbRender(); } catch (e) {}
+  try { if (typeof historyRender === 'function') historyRender(); } catch (e) {}
+  try { if (typeof renderDashboard === 'function') renderDashboard(); } catch (e) {}
+  try { if (typeof renderStudentCard === 'function') renderStudentCard(); } catch (e) {}
+  try { if (typeof renderErrorProfile === 'function') renderErrorProfile(); } catch (e) {}
 
-  // ---------- 🔍 哪个环节没想到 ----------
-  const gapsHtml = (r.gaps && r.gaps.length) ? `
-    <div class="std-fold${openClass}" data-insight="gaps">
-      <div class="std-fold-hd">
-        <span>🔍 哪个环节还没想到</span><span class="arrow">▶</span>
-      </div>
-      <div class="std-fold-bd">
-        <ul style="margin:0;padding-left:18px;">
-          ${r.gaps.map(s => `<li>${esc(s)}</li>`).join('')}
-        </ul>
-      </div>
-    </div>
-  ` : '';
-
-  // ---------- 🧠 AI 怎么分析这道题 ----------
-  const walkHtml = r.reasoning_walkthrough ? `
-    <div class="std-fold${openClass}" data-insight="walk">
-      <div class="std-fold-hd">
-        <span>🧠 AI 是怎么分析这道题的</span><span class="arrow">▶</span>
-      </div>
-      <div class="std-fold-bd">
-        <div class="std-line">${esc(r.reasoning_walkthrough).replace(/\n/g, '<br>')}</div>
-      </div>
-    </div>
-  ` : '';
-
-  // ---------- 📊 大模型批改结果 ----------
-  const j = r.judgement || {};
-  const judgementHtml = `
-    <div class="std-fold${openClass}" data-insight="judgement">
-      <div class="std-fold-hd">
-        <span>📊 大模型批改结果</span><span class="arrow">▶</span>
-      </div>
-      <div class="std-fold-bd">
-        <div class="std-line">
-          <b>答案判定：</b>
-          ${j.answer_correct
-            ? '<span style="color:#15803d;font-weight:800;">✓ 正确</span>'
-            : '<span style="color:#b91c1c;font-weight:800;">✗ 有误</span>'}
-        </div>
-        ${j.student_answer_issue && j.student_answer_issue !== '无'
-          ? `<div class="std-line"><b>答案问题：</b>${esc(j.student_answer_issue)}</div>` : ''}
-        ${j.step_count_comment
-          ? `<div class="std-line"><b>步数评价：</b>${esc(j.step_count_comment)}</div>` : ''}
-        ${(j.step_issues && j.step_issues.length)
-          ? `<div class="std-line"><b>步骤问题：</b>
-              <ul style="margin:4px 0 0 18px;">
-                ${j.step_issues.map(it =>
-                  `<li>第 ${it.step} 步 · ${esc(it.field)}：${esc(it.issue)}</li>`
-                ).join('')}
-              </ul>
-             </div>` : ''}
-      </div>
-    </div>
-  `;
-
-  return { strengthsHtml, gapsHtml, walkHtml, judgementHtml };
-}
+  console.log('[启动] ✅ 存储已就绪');
+})();
   
 </script>
 </body>
