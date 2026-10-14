@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>三年级数学互动课堂 · 全模块</title>
+<title>老爸数学互动课堂 · 全模块</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
@@ -5368,7 +5368,7 @@ const REASONS = ['计算粗心', '读题不细', '方法不会', '单位漏写']
 /* ============ 大模型 API 配置（本地测试用，勿部署到公网） ============ */
 const LLM_CONFIG = {
   enabled: true,                          // ← 改成 true 启用
-  apiUrl: '/api/llm',
+  apiUrl: 'api/llm',
   apiKey: '',
   model:  'glm-5.3-flash'
 };
@@ -9666,42 +9666,110 @@ function m13IsValidSubstitution(sub, problemNums) {
   return hit >= 2;
 }
 
-/* ============ 大模型调用封装 ============ */
-
 const LLM_SYSTEM_PROMPT = `你是一位三年级数学老师，负责评判学生的解题过程。
 
-请严格按以下 JSON 格式输出，不要添加任何多余文字、注释、markdown 代码块：
+【输出铁律】
+1. 你的回复必须是且只能是一个 JSON 对象，第一个字符是 {，最后一个字符是 }
+2. 禁止任何解释、禁止 markdown 代码块、禁止"好的/让我分析"之类的话
+3. 所有字段用中文填写；数字字段只写数字，不带单位
+4. 严格按下面的字段名和层级输出，不要增删字段、不要改名
+5. 输出中不要出现任何注释，不要抄下面 JSON 里的 // 说明文字
 
+【输出结构】（下面的文字是格式说明，请用当前题目的真实内容替换）
 {
-  "problem_understanding": "对题意的理解，1 句话",
-  "required_steps": 本题最合理的解题步数（数字，1~5）,
+  "problem_understanding": "用 1 句话理解当前题意",
+  "required_steps": 0,                          // 本题最少必要步数，1~5
   "answer": {
-    "value": 数字（只写数字，不带单位）,
-    "unit": "单位",
-    "full": "带单位的完整答案"
+    "value": 0,                                 // 只写数字
+    "unit": "单位文字，如 元 / 个 / 米",
+    "full": "带单位的完整答案，一句话"
   },
   "steps": [
-    { "step": 1, "relation": "关系式", "substitution": "代入", "result": "得数" }
+    {
+      "step": 1,
+      "relation": "本步用到的关系式，用中文描述",
+      "substitution": "把题目数字代入关系式的式子",
+      "result": "代入后的得数（含单位）"
+    }
   ],
   "judgement": {
-    "answer_correct": true / false,
-    "student_answer_issue": "学生答案的问题（正确则填'无'）",
+    "answer_correct": false,                    // true / false
+    "student_answer_issue": "学生最终答案的问题；正确就写 无",
     "step_issues": [
-      { "step": 1, "field": "relation|substitution|result", "issue": "问题描述" }
+      {
+        "step": 1,                              // 出问题的是第几步
+        "field": "relation",                    // 只能是 relation / substitution / result 之一
+        "issue": "这一步的具体问题，一句话"
+      }
     ],
-    "step_count_comment": "对学生步数的评价（如：步数合适 / 多写了一步 / 应该 2 步但你只写了 1 步，缺少 XX）"
+    "step_count_comment": "对学生步数多少的评价（步数合适 / 多写了哪一步 / 缺少哪一步）"
   },
-  "hint": "如果学生没做对，给一句引导提示（不给答案）"
+  "strengths": [ "逐条列出学生步骤里做对的地方，具体到哪一步、哪个式子" ],
+  "gaps": [ "逐条指出学生漏掉的思考环节，用启发语气，不要直接给答案" ],
+  "reasoning_walkthrough": "用 3~5 句话复盘：你是怎么读题、怎么决定分几步、每步在算什么。像老师带学生走一遍思路",
+  "hint": "只给'下一步该想什么'，不要给最终数字"
 }
 
-要求：
+【填写要求】
 1. 学生是三年级，用加减乘除解决实际问题，不使用方程
-2. 解题步数由题目本身决定，可以是 1 步、2 步或 3 步，不要强行凑成 2 步
-3. steps 数组里是**标准解法**，按最少必要步数给出
+2. 解题步数由题目本身决定，可以是 1、2 或 3 步，不要强行凑成 2 步
+3. steps 数组是本题的"标准解法最少步骤"，不是学生写的步骤
 4. 关系式用中文描述
-5. 如果学生写的步数多于必要步数，在 step_count_comment 里指出"多写了哪一步"
-6. 如果学生写的步数少于必要步数，在 step_count_comment 里指出"缺少哪一步"
-7. 输出必须是合法 JSON`;
+5. 若学生写的步数多于必要步数，在 step_count_comment 里指出"多写了哪一步"
+6. 若学生写的步数少于必要步数，在 step_count_comment 里指出"缺少哪一步"
+7. 若学生完全没写步骤，strengths 给 ["暂时没有可肯定的步骤，先写出第一步"]
+8. 输出必须是合法 JSON，第一个字符是 {，最后一个字符是 }
+9. strengths / gaps / reasoning_walkthrough 三个字段必须输出，不能省略
+   - strengths：至少 1 条，若学生完全没写步骤，给 ["暂时没有可肯定的步骤，先写出第一步"]
+   - gaps：若答案正确给 []，否则至少 1 条
+   - reasoning_walkthrough：必须给，3~5 句话
+10. judgement 四个子字段必须全给，step_issues 若无可给 []`;
+
+/* ============ JSON 兜底解析（防模型输出多余文字） ============ */
+function extractJson(text) {
+  if (typeof text !== 'string') return null;
+
+  // 1. 去空白 + 去 markdown 代码块包裹
+  let s = text.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  // 2. 先按原样解析
+  try { return JSON.parse(s); } catch (_) {}
+
+  // 3. 兜底：抓第一个 { 到最后一个 } 之间
+  const l = s.indexOf('{');
+  const r = s.lastIndexOf('}');
+  if (l !== -1 && r > l) {
+    try { return JSON.parse(s.slice(l, r + 1)); } catch (_) {}
+  }
+
+  return null;
+}
+
+/* ============ JSON 兜底解析（防模型输出多余文字） ============ */
+function extractJson(text) {
+  if (typeof text !== 'string') return null;
+
+  // 1. 去掉首尾空白 + markdown 代码块包裹
+  let s = text.trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/```\s*$/i, '')
+    .trim();
+
+  // 2. 先按原样解析
+  try { return JSON.parse(s); } catch (_) {}
+
+  // 3. 兜底：抓第一个 { 到最后一个 } 之间的内容
+  const l = s.indexOf('{');
+  const r = s.lastIndexOf('}');
+  if (l !== -1 && r > l) {
+    try { return JSON.parse(s.slice(l, r + 1)); } catch (_) {}
+  }
+
+  return null;
+}
 
 /* ============ AI 加载状态 ============ */
 let _aiTimer = null;
@@ -9750,7 +9818,7 @@ function setCheckBtnLoading(loading) {
   }
 }
 
-async function callLLM({ problem, studentAnswer, steps }) {
+async function callLLM({ problem, studentAnswer, steps, extraSystem }) {
   if (!LLM_CONFIG.enabled) throw new Error('大模型未启用');
 
   // ---------- 1. steps 拼装（空值保护） ----------
@@ -9783,16 +9851,24 @@ ${stepsText}
   }
 
   // ---------- 3. body：有无 key 都带 response_format ----------
+  const messages = [
+    { role: 'system', content: LLM_SYSTEM_PROMPT },
+    { role: 'user', content: userPrompt }
+  ];
+
+  // ✅ 格式错重试时，追加一条强纠正
+  if (extraSystem) {
+    messages.push({ role: 'system', content: extraSystem });
+  }
+
   const body = {
     model: LLM_CONFIG.model,
-    messages: [
-      { role: 'system', content: LLM_SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt }
-    ],
+    messages,
     response_format: { type: 'json_object' },
     temperature: 0.1,
-    max_tokens: 8000,
-    thinking: { type: 'enabled'}  // ⭐ 关闭思考disabled 开启enabled reasoning_effort: "low"、high 或 max
+    max_tokens: 4000,                 // ← 顺带按改法 A 降下来
+    //thinking: { type: 'disabled' } // ← 顺带按改法 A 关掉（若模型不支持则删掉这行）
+    reasoning_effort: 'low'
   };
 
   // ---------- 4. 超时 300s ----------
@@ -9863,40 +9939,60 @@ ${stepsText}
     throw new Error(apiErr ? `API 业务错误：${apiErr}` : '模型未返回有效内容，请重试');
   }
 
-  // ---------- 8. 清洗 markdown 包裹 ----------
-  const clean = content
-    .trim()
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/```\s*$/i, '')
-    .trim();
-
-  try {
-    return JSON.parse(clean);
-  } catch (e) {
+  // ---------- 8. 兜底解析 ----------
+  const parsed = extractJson(content);
+  if (!parsed) {
     console.error('JSON 解析失败，原始内容：', content);
-    throw new Error('模型返回格式异常，请再试一次', { cause: e });
+    throw new Error('模型返回格式异常，请再试一次');
   }
+  return parsed;
 }
 
 async function callLLMWithRetry(opts, retries = 2) {
   let lastErr;
+
   for (let i = 0; i <= retries; i++) {
     try {
       return await callLLM(opts);
     } catch (e) {
       lastErr = e;
-      // 只对网络/超时/5xx 重试
-      const retriable = /超时|网络请求失败|API 5\d\d|API 429/.test(e.message);
+      const msg = e.message || '';
+
+      // ① 格式错：带"强纠正提示"再试一次
+      if (/模型返回格式异常|模型未返回有效内容/.test(msg)) {
+        if (i >= retries) throw e;
+
+        console.warn(`[retry] 格式错，第 ${i + 1} 次纠错重试`);
+        try {
+          return await callLLM({
+            ...opts,
+            extraSystem:
+              '上次你的输出不是合法 JSON。这次必须直接输出 JSON 对象：' +
+              '第一个字符是 {，最后一个字符是 }，' +
+              '不要任何解释、不要 markdown 代码块、不要 // 注释。'
+          });
+        } catch (e2) {
+          lastErr = e2;
+          throw e2;   // 纠错也失败 → 直接抛，不再进循环（避免死循环）
+        }
+      }
+
+      // ② 网络 / 超时 / 5xx / 429：按原逻辑重试
+      const retriable = /超时|网络请求失败|API 5\d\d|API 429/.test(msg);
       if (!retriable || i === retries) throw e;
+
+      console.warn(`[retry] ${msg}，第 ${i + 1} 次重试`);
       await new Promise(r => setTimeout(r, 1000 * (i + 1)));
     }
   }
+
   throw lastErr;
 }
 
 /* ============ 统一 AI 反馈结构（避免各处 undefined 访问） ============ */
 function normalizeAiFeedback(raw, fallbackFull) {
   const base = raw && typeof raw === 'object' ? raw : {};
+  const j = base.judgement || {};
   return {
     problem_understanding: base.problem_understanding || '',
     required_steps: base.required_steps || (Array.isArray(base.steps) ? base.steps.length : 0),
@@ -9907,15 +10003,20 @@ function normalizeAiFeedback(raw, fallbackFull) {
     },
     steps: Array.isArray(base.steps) ? base.steps : [],
     judgement: {
-      answer_correct:     base.judgement ? (base.judgement.answer_correct ?? false) : false,
-      student_answer_issue: (base.judgement && base.judgement.student_answer_issue) || '无',
-      step_issues: Array.isArray(base.judgement && base.judgement.step_issues)
-        ? base.judgement.step_issues : [],
-      step_count_comment: (base.judgement && base.judgement.step_count_comment) || ''
+      answer_correct:     j.answer_correct ?? false,
+      student_answer_issue: j.student_answer_issue || '无',
+      step_issues: Array.isArray(j.step_issues) ? j.step_issues : [],
+      step_count_comment: j.step_count_comment || ''
     },
+    // ⭐ 4 类反馈兜底
+    strengths: Array.isArray(base.strengths) ? base.strengths
+              : ['（本次未返回"做对了什么"，可再点一次讲解）'],
+    gaps: Array.isArray(base.gaps) ? base.gaps
+         : (j.answer_correct ? [] : ['（本次未返回"漏掉什么"，可再点一次讲解）']),
+    reasoning_walkthrough: base.reasoning_walkthrough || '',
     hint: base.hint || '',
     keywords: base.keywords || null,
-    _source: base._source || 'unknown'   // 'llm' | 'bank'
+    _source: base._source || 'unknown'
   };
 }
 
@@ -10024,7 +10125,8 @@ async function callLLMStandardSolution(problemText) {
     ],
     response_format: { type: 'json_object' },
     temperature: 0.1,
-    max_tokens: 1200
+    max_tokens: 4000,
+    reasoning_effort: 'low'
   };
 
   // ✅ 超时统一
@@ -10083,12 +10185,12 @@ async function callLLMStandardSolution(problemText) {
     .replace(/```\s*$/i, '')
     .trim();
 
-  try {
-    return JSON.parse(clean);
-  } catch (e) {
+  const parsed = extractJson(clean);
+  if (!parsed) {
     console.error('JSON 解析失败，原始内容：', content);
-    throw new Error('模型返回格式异常，请再试一次', { cause: e });
+    throw new Error('模型返回格式异常，请再试一次');
   }
+  return parsed;
 }
 
 /* 渲染标准解法 */
@@ -10172,6 +10274,13 @@ function renderLLMFeedback(r) {
     </div>
   ` : '';
 
+  // ✅ 4 类 AI 反馈（共用）
+  const insight = buildAiInsightHtml(r, { open: true });
+  const strengthsHtml   = insight.strengthsHtml;
+  const gapsHtml        = insight.gapsHtml;
+  const walkHtml        = insight.walkHtml;
+  const judgementHtml   = insight.judgementHtml;
+
   // 步骤折叠面板
   const stepsHtml = (r.steps || []).map(s => `
     <div class="std-fold" data-step="${s.step}">
@@ -10214,9 +10323,13 @@ function renderLLMFeedback(r) {
   ` : '';
 
   box.innerHTML = `
-    <h4>${ok ? '🎉 大模型批改结果：答对了！' : '📖 大模型批改结果：再看一下'}</h4>
+    <h4>${ok ? '🎉 大模型批改结果：答对了！' : '📖 大模型批改结果：答错了/没答完'}</h4>
+    ${judgementHtml}     <!-- ⭐ 新增 -->
     ${stepCountHtml}
     ${understandingHtml}
+    ${strengthsHtml}
+    ${gapsHtml}
+    ${walkHtml}
     ${stepsHtml}
     <div class="std-fold" data-step="final">
       <div class="std-fold-hd">
@@ -11820,12 +11933,18 @@ function historyRender() {
             ${s.result ? `<div><b>得数：</b>${escapeHtml(s.result)}</div>` : ''}
           </div>
         `).join('');
+
+        // ⭐ 4 类 AI 反馈
+        const insight = buildAiInsightHtml(fb, { open: false });
+
         const commentHtml = (fb.judgement && fb.judgement.step_count_comment)
           ? `<div class="history-explain-comment"><b>📐 步数评价：</b>${escapeHtml(fb.judgement.step_count_comment)}</div>`
           : '';
         const hintHtml = fb.hint
           ? `<div class="history-explain-hint"><b>💡 提示：</b>${escapeHtml(fb.hint)}</div>`
           : '';
+
+        // ⭐ 把 4 类反馈包进"答案讲解"折叠里
         explainHtml = `
           <div class="history-explain-fold">
             <div class="history-explain-hd">
@@ -11834,6 +11953,11 @@ function historyRender() {
             </div>
             <div class="history-explain-bd">
               ${commentHtml}
+              <!-- ⭐ 4 类 AI 反馈 -->
+              ${insight.strengthsHtml}
+              ${insight.gapsHtml}
+              ${insight.judgementHtml}
+              ${insight.walkHtml}
               ${stdStepsHtml || '<div style="color:#94a3b8;font-size:13px;">暂无标准步骤</div>'}
               <div class="history-explain-answer">✅ ${escapeHtml(fb.answer?.full || r.correctAnswer || '—')}</div>
               ${hintHtml}
@@ -11947,6 +12071,14 @@ function escapeHtml(str) {
       e.stopPropagation();
       const id = removeBtn.dataset.removeId;
       if (id) historyRemove(id);
+      return;
+    }
+
+    // ⭐ 通用 std-fold 折叠（用于做题记录里的 4 类反馈）
+    const stdFoldHd = e.target.closest('.std-fold-hd');
+    if (stdFoldHd && listEl.contains(stdFoldHd)) {
+      e.stopPropagation();
+      stdFoldHd.parentElement.classList.toggle('open');
       return;
     }
 
@@ -12068,43 +12200,34 @@ function showExplainLoading() {
 /* 渲染讲解结果到弹窗 */
 function renderExplainResult(result) {
   const body = document.getElementById('explainModalBody');
-  const ok = result.judgement.answer_correct;
 
-  /* -------- 1. 提示（最顶部，默认展开）-------- */
-  const hintHtml = result.hint ? `
-    <div class="std-fold open" style="margin-bottom:12px;">
-      <div class="std-fold-hd">
-        <span>💡 提示</span>
-        <span class="arrow">▶</span>
-      </div>
-      <div class="std-fold-bd">
-        <div class="std-keywords" style="background:#fef3c7;color:#92400e;margin-top:0;">
-          ${escapeHtml(result.hint)}
-        </div>
+  /* -------- 题目 -------- */
+  const problemHtml = `
+    <div style="margin-bottom:16px;">
+      <div style="font-size:13px;color:#64748b;margin-bottom:8px;">题目：</div>
+      <div style="font-size:15px;line-height:1.7;color:#334155;background:#f8fafc;padding:12px 16px;border-radius:10px;">
+        ${escapeHtml(result._problemText || '')}
       </div>
     </div>
-  ` : '';
+  `;
 
-  /* -------- 2. 题意理解（默认展开）-------- */
+  /* -------- 题意理解 -------- */
   const understandingHtml = result.problem_understanding ? `
     <div class="std-fold open" style="margin-bottom:12px;">
-      <div class="std-fold-hd">
-        <span>📝 题意理解</span>
-        <span class="arrow">▶</span>
-      </div>
+      <div class="std-fold-hd"><span>📝 题意理解</span><span class="arrow">▶</span></div>
       <div class="std-fold-bd">
         <div class="std-line">${escapeHtml(result.problem_understanding)}</div>
       </div>
     </div>
   ` : '';
 
-  /* -------- 3. 标准步骤（默认折叠）-------- */
+  /* -------- ⭐ 4 类 AI 反馈（共用）-------- */
+  const insight = buildAiInsightHtml(result, { open: true });
+
+  /* -------- 标准步骤 -------- */
   const stepsHtml = (result.steps || []).map(s => `
     <div class="std-fold">
-      <div class="std-fold-hd">
-        <span>第 ${s.step} 步</span>
-        <span class="arrow">▶</span>
-      </div>
+      <div class="std-fold-hd"><span>第 ${s.step} 步</span><span class="arrow">▶</span></div>
       <div class="std-fold-bd">
         <div class="std-line"><b>关系式：</b>${escapeHtml(s.relation)}</div>
         <div class="std-line"><b>代入：</b>${escapeHtml(s.substitution)}</div>
@@ -12113,38 +12236,43 @@ function renderExplainResult(result) {
     </div>
   `).join('');
 
-  /* -------- 4. 最终答案（默认折叠）-------- */
+  /* -------- 最终答案 -------- */
   const answerHtml = `
     <div class="std-fold" style="margin-top:12px;">
-      <div class="std-fold-hd">
-        <span>✅ 最终答案</span>
-        <span class="arrow">▶</span>
-      </div>
+      <div class="std-fold-hd"><span>✅ 最终答案</span><span class="arrow">▶</span></div>
       <div class="std-fold-bd">
         <div class="std-answer">${escapeHtml(result.answer?.full || '—')}</div>
       </div>
     </div>
   `;
 
-  /* -------- 组装 -------- */
-  body.innerHTML = `
-    <div style="margin-bottom:16px;">
-      <div style="font-size:13px;color:#64748b;margin-bottom:8px;">题目：</div>
-      <div style="font-size:15px;line-height:1.7;color:#334155;background:#f8fafc;padding:12px 16px;border-radius:10px;">
-        ${escapeHtml(result._problemText || '')}
+  /* -------- 提示 -------- */
+  const hintHtml = result.hint ? `
+    <div class="std-fold open" style="margin-bottom:12px;">
+      <div class="std-fold-hd"><span>💡 提示</span><span class="arrow">▶</span></div>
+      <div class="std-fold-bd">
+        <div class="std-keywords" style="background:#fef3c7;color:#92400e;margin-top:0;">
+          ${escapeHtml(result.hint)}
+        </div>
       </div>
     </div>
-    ${hintHtml}
+  ` : '';
+
+  /* -------- 组装 -------- */
+  body.innerHTML = `
+    ${problemHtml}
     ${understandingHtml}
+    ${insight.strengthsHtml}
+    ${insight.gapsHtml}
+    ${insight.judgementHtml}
+    ${insight.walkHtml}
     ${stepsHtml}
     ${answerHtml}
+    ${hintHtml}
   `;
 
-  // 绑定折叠
   body.querySelectorAll('.std-fold-hd').forEach(hd => {
-    hd.addEventListener('click', () => {
-      hd.parentElement.classList.toggle('open');
-    });
+    hd.addEventListener('click', () => hd.parentElement.classList.toggle('open'));
   });
 }
 
@@ -14536,6 +14664,84 @@ function onCorrect(x, y) {
     }
   };
 })();
+
+/* ============ 通用：4 类 AI 反馈（strengths/gaps/walkthrough/judgement） ============ */
+function buildAiInsightHtml(r, opts = {}) {
+  const esc = (s) => escapeHtml(String(s || ''));
+  const openClass = opts.open ? ' open' : '';   // 默认是否展开
+
+  // ---------- 👍 你做对了什么 ----------
+  const strengthsHtml = (r.strengths && r.strengths.length) ? `
+    <div class="std-fold${openClass}" data-insight="strengths">
+      <div class="std-fold-hd">
+        <span>👍 你做对了什么</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <ul style="margin:0;padding-left:18px;">
+          ${r.strengths.map(s => `<li>${esc(s)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+  ` : '';
+
+  // ---------- 🔍 哪个环节没想到 ----------
+  const gapsHtml = (r.gaps && r.gaps.length) ? `
+    <div class="std-fold${openClass}" data-insight="gaps">
+      <div class="std-fold-hd">
+        <span>🔍 哪个环节还没想到</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <ul style="margin:0;padding-left:18px;">
+          ${r.gaps.map(s => `<li>${esc(s)}</li>`).join('')}
+        </ul>
+      </div>
+    </div>
+  ` : '';
+
+  // ---------- 🧠 AI 怎么分析这道题 ----------
+  const walkHtml = r.reasoning_walkthrough ? `
+    <div class="std-fold${openClass}" data-insight="walk">
+      <div class="std-fold-hd">
+        <span>🧠 AI 是怎么分析这道题的</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <div class="std-line">${esc(r.reasoning_walkthrough).replace(/\n/g, '<br>')}</div>
+      </div>
+    </div>
+  ` : '';
+
+  // ---------- 📊 大模型批改结果 ----------
+  const j = r.judgement || {};
+  const judgementHtml = `
+    <div class="std-fold${openClass}" data-insight="judgement">
+      <div class="std-fold-hd">
+        <span>📊 大模型批改结果</span><span class="arrow">▶</span>
+      </div>
+      <div class="std-fold-bd">
+        <div class="std-line">
+          <b>答案判定：</b>
+          ${j.answer_correct
+            ? '<span style="color:#15803d;font-weight:800;">✓ 正确</span>'
+            : '<span style="color:#b91c1c;font-weight:800;">✗ 有误</span>'}
+        </div>
+        ${j.student_answer_issue && j.student_answer_issue !== '无'
+          ? `<div class="std-line"><b>答案问题：</b>${esc(j.student_answer_issue)}</div>` : ''}
+        ${j.step_count_comment
+          ? `<div class="std-line"><b>步数评价：</b>${esc(j.step_count_comment)}</div>` : ''}
+        ${(j.step_issues && j.step_issues.length)
+          ? `<div class="std-line"><b>步骤问题：</b>
+              <ul style="margin:4px 0 0 18px;">
+                ${j.step_issues.map(it =>
+                  `<li>第 ${it.step} 步 · ${esc(it.field)}：${esc(it.issue)}</li>`
+                ).join('')}
+              </ul>
+             </div>` : ''}
+      </div>
+    </div>
+  `;
+
+  return { strengthsHtml, gapsHtml, walkHtml, judgementHtml };
+}
   
 </script>
 </body>
