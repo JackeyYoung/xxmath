@@ -7817,7 +7817,10 @@ const LS_KEYS = [
   'grade3_sound_on'
 ];
 
+let _restoringFromSession = false;
 function backupToSession() {
+  // ⭐ 恢复期间不备份，避免用"还没加载完的 _memCache"覆盖 sessionStorage
+  if (_restoringFromSession) return;
   const data = {};
   LS_KEYS.forEach(k => {
     try {
@@ -7832,12 +7835,14 @@ function backupToSession() {
   try { sessionStorage.setItem(SESSION_BACKUP_KEY, JSON.stringify(data)); } catch (e) {}
 }
 
-function restoreFromSession() {
+async function restoreFromSession() {
   let data;
   try { data = JSON.parse(sessionStorage.getItem(SESSION_BACKUP_KEY) || '{}'); } catch (e) { return false; }
   const keys = Object.keys(data);
   if (!keys.length) return false;
   keys.forEach(k => { try { lsSet(k, data[k]); } catch (e) {} });
+  // ⭐ 关键：等所有写落盘
+  try { await flushStorage(); } catch (e) {}
   return true;
 }
 
@@ -7846,10 +7851,12 @@ setInterval(backupToSession, 30000);
 window.addEventListener('beforeunload', backupToSession);
 
 /* 启动时检测：localStorage 空了但 session 有 */
-(function checkRestore() {
+function checkRestore() {
   try {
-    const hasLocal = LS_KEYS.some(k => lsGet(k));
-    if (hasLocal) return;
+    // ⭐ 用 lsKeysByPrefix 判断，更严谨
+    const hasAny = lsKeysByPrefix('grade3_').length > 0;
+    if (hasAny) return;
+
     const sessionRaw = sessionStorage.getItem(SESSION_BACKUP_KEY);
     if (!sessionRaw) return;
     const data = JSON.parse(sessionRaw);
@@ -7865,8 +7872,14 @@ window.addEventListener('beforeunload', backupToSession);
       </div>
     `;
     document.body.appendChild(bar);
-    document.getElementById('backupYes').addEventListener('click', () => {
-      restoreFromSession();
+    document.getElementById('backupYes').addEventListener('click', async () => {
+      _restoringFromSession = true;
+      try {
+        await restoreFromSession();
+        await flushStorage();
+      } finally {
+        _restoringFromSession = false;
+      }
       location.reload();
     });
     document.getElementById('backupNo').addEventListener('click', () => {
@@ -7874,7 +7887,7 @@ window.addEventListener('beforeunload', backupToSession);
       bar.remove();
     });
   } catch (e) {}
-})();
+}
 
 /* ============================================================
    N. 预加载骨架
@@ -8597,6 +8610,9 @@ function onCorrect(x, y) {
 (async function bootstrap() {
   await initStorage();
   await migrateFromLocalStorage();
+
+  // ⭐ 存储初始化完，再检查是否需要恢复
+  checkRestore();
 
   // 年级切换后重渲染
   on(EVT.GRADE_CHANGED, () => {
