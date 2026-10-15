@@ -99,6 +99,12 @@ function showGradeModal() {
       }
       if (!confirm(`确定切换到${getGradeName(g)}吗？\n\n切换后学习记录会按年级分开保存。`)) return;
       setCurrentGrade(g);
+      // 切年级后：重新从存储加载 + 重渲染
+      try { if (typeof wbRender === 'function') wbRender(); } catch (e) {}
+      try { if (typeof historyRender === 'function') historyRender(); } catch (e) {}
+      try { if (typeof renderDashboard === 'function') renderDashboard(); } catch (e) {}
+      try { if (typeof renderStudentCard === 'function') renderStudentCard(); } catch (e) {}
+      try { if (typeof window._refreshGrowthCards === 'function') window._refreshGrowthCards(); } catch (e) {}
       location.reload();
     });
   });
