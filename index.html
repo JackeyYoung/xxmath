@@ -10415,14 +10415,6 @@ function renderLLMFeedback(r) {
     });
   }
 
-  // 步数评价
-  /*const stepCountHtml = r.judgement.step_count_comment ? `
-    <div class="std-keywords" style="background:#e0e7ff;color:#3730a3;margin-bottom:12px;">
-      <b>📐 步数评价：</b>${r.judgement.step_count_comment}
-    </div>
-  ` : '';
-  */
-
   // ✅ 4 类 AI 反馈（共用）
   const insight = buildAiInsightHtml(r, { open: true });
   const strengthsHtml   = insight.strengthsHtml;
@@ -10474,7 +10466,6 @@ function renderLLMFeedback(r) {
   box.innerHTML = `
     <h4>${ok ? '🎉 大模型批改结果：答对了！' : '📖 大模型批改结果：答错了/没答完'}</h4>
     ${judgementHtml}     <!-- ⭐ 新增 -->
-    //${stepCountHtml}
     ${understandingHtml}
     ${strengthsHtml}
     ${gapsHtml}
