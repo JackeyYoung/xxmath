@@ -36,3 +36,12 @@ export function isPersistKey(k) {
 }
 
 export const TAKEAWAY_KEY_PREFIX = 'grade3_takeaway_';
+
+/* ⭐ 只本地保存、不同步到云端的 key */
+export const LOCAL_ONLY_KEYS = new Set([
+  'grade3_priority_passed_date',    // 每日"先算哪步"只问一次
+  'grade3_daily_cheer_date',        // 每日鼓励只弹一次
+  'grade3_sound_on',                // 音效开关
+  'grade3_timer_challenge',         // 计时挑战记录
+  'grade3_current_grade',           // 当前年级选择
+]);

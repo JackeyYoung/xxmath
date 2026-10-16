@@ -5,8 +5,20 @@
    - 失败可见化
    - 迁移自 localStorage
 */
+// core/storage.js 顶部加 import
+import {
+  schedulePush, scheduleDelete,
+} from './sync/sync-manager.js';
 
-import { isPersistKey, MIGRATED_FLAG } from './keys.js';
+import { isPersistKey, MIGRATED_FLAG, LOCAL_ONLY_KEYS } from './keys.js';
+
+/* 记录每个 key 的本地更新时间（用于冲突合并） */
+const _localUpdatedAt = new Map();
+
+export function getLocalUpdatedAt(key) {
+  return _localUpdatedAt.get(key) || 0;
+}
+
 
 /* ---------- 内存缓存 ---------- */
 const _memCache = new Map();
@@ -76,17 +88,22 @@ export function lsGet(key) {
 }
 
 /* ---------- 同步写（内存立即 + 磁盘排队） ---------- */
-export function lsSet(key, value) {
+// 修改 lsSet
+export function lsSet(key, value, opts = {}) {
   if (!isPersistKey(key)) return;
   _memCache.set(key, value);
+  _localUpdatedAt.set(key, Date.now());
 
   const store = getStore();
   if (!store) {
-    // ⭐ 回退：直接写 localStorage
-    try { localStorage.setItem(key, value); } catch (e) {
-      _emitStorageError(key, e);
-    }
+    try { localStorage.setItem(key, value); } catch (e) { _emitStorageError(key, e); }
+    // ⭐ 加同步
+    if (!opts.skipSync) schedulePush(key, value);
     return;
+
+  // ⭐ 同步判断
+  const shouldSync = !opts.skipSync && !LOCAL_ONLY_KEYS.has(key);
+  if (shouldSync) schedulePush(key, value);
   }
 
   const prev = _writeQueues.get(key) || Promise.resolve();
@@ -98,19 +115,21 @@ export function lsSet(key, value) {
       if (_writeQueues.get(key) === next) _writeQueues.delete(key);
     });
   _writeQueues.set(key, next);
+
+  // ⭐ 加同步
+  if (!opts.skipSync) schedulePush(key, value);
 }
 
 /* ---------- 同步删 ---------- */
-export function lsRemove(key) {
+export function lsRemove(key, opts = {}) {
   if (!isPersistKey(key)) return;
   _memCache.delete(key);
+  _localUpdatedAt.delete(key);
 
   const store = getStore();
   if (!store) {
-    // ⭐ 回退：直接写 localStorage
-    try { localStorage.removeItem(key); } catch (e) {
-      _emitStorageError(key, e);
-    }
+    try { localStorage.removeItem(key); } catch (e) { _emitStorageError(key, e); }
+    if (!opts.skipSync) scheduleDelete(key);
     return;
   }
 
@@ -123,6 +142,17 @@ export function lsRemove(key) {
       if (_writeQueues.get(key) === next) _writeQueues.delete(key);
     });
   _writeQueues.set(key, next);
+
+  if (!opts.skipSync) scheduleDelete(key);
+
+  // ⭐ 同步判断
+  const shouldSync = !opts.skipSync && !LOCAL_ONLY_KEYS.has(key);
+  if (shouldSync) schedulePush(key, value);
+}
+
+// 新增：应用云端数据到本地（跳过同步回推）
+export function applyCloudValue(key, value) {
+  lsSet(key, value, { skipSync: true });
 }
 
 /* ---------- 前缀遍历 ---------- */

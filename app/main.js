@@ -46,6 +46,17 @@ import * as M1Score from '../grades/grade3/scoring/m1.js';
 import * as M9Score from '../grades/grade3/scoring/m9.js';
 import * as M13Score from '../grades/grade3/scoring/m13.js';
 
+import {
+  initSync, pullFromCloud, forceSync, onSyncStateChange,
+  getSyncState, SyncState,
+} from '../core/sync/sync-manager.js';
+import { mergeCloudIntoLocal } from '../core/sync/merge.js';
+import { getLocalUpdatedAt, applyCloudValue} from '../core/storage.js';
+
+import { isCloudBaseConfigured } from '../core/sync/cloudbase-client.js';
+
+import { initSyncUI } from './sync-ui.js';
+
 // ========== 2. 全局初始化 ==========
 installGlobalErrorHandlers();
 
@@ -504,7 +515,7 @@ function m1ClickOp(i) {
   }
 
   function markPassedToday() {
-    try { lsSet(KEY, todayStr()); } catch (e) {}
+    try { lsSet(KEY, todayStr(), { skipSync: true }); } catch (e) {}
   }
 
   /* 覆盖 m1ShowPriorityBox：如果今天已通过，则直接跳过 */
@@ -8608,12 +8619,37 @@ function onCorrect(x, y) {
    ⭐ 启动：先初始化存储，再渲染 UI
    ============================================================ */
 (async function bootstrap() {
+  // 1. 存储初始化
   await initStorage();
   await migrateFromLocalStorage();
 
-  // ⭐ 存储初始化完，再检查是否需要恢复
-  checkRestore();
+  // 2. 云端同步初始化
+  const syncOK = await initSync();
 
+  if (syncOK) {
+    // 3. 拉取云端数据
+    const cloudMap = await pullFromCloud();
+    if (cloudMap) {
+      const toPush = [];
+      mergeCloudIntoLocal(
+        cloudMap,
+        (key) => {
+          const value = lsGet(key);
+          if (value == null) return undefined;
+          return { value, localUpdatedAt: getLocalUpdatedAt(key) };
+        },
+        (key, value) => applyCloudValue(key, value),
+        (key, value) => toPush.push([key, value])
+      );
+      // 本地更新的推回云端
+      if (toPush.length) {
+        const { pushBatch } = await import('../core/sync/cloudbase-adapter.js');
+        pushBatch(toPush).catch(e => console.warn('[Sync] 回推失败', e));
+      }
+    }
+  }
+
+  // 4. 渲染 UI（原有代码）
   // 年级切换后重渲染
   on(EVT.GRADE_CHANGED, () => {
     try { wbRender(); } catch (e) {}
@@ -8622,7 +8658,6 @@ function onCorrect(x, y) {
     try { renderStudentCard(); } catch (e) {}
     try { window._refreshGrowthCards?.(); } catch (e) {}
   });
-
   // 数据变化后重渲染（history/wrongbook/takeaway 任一）
   on(EVT.DATA_CHANGED, (payload) => {
     if (payload.source === 'history') {
@@ -8635,13 +8670,16 @@ function onCorrect(x, y) {
     try { renderDashboard(); } catch (e) {}
   });
 
-  try { wbRender(); } catch (e) {}
-  try { historyRender(); } catch (e) {}
-  try { renderDashboard(); } catch (e) {}
-  try { renderStudentCard(); } catch (e) {}
-  try { renderErrorProfile(); } catch (e) {}
+  wbRender();
+  historyRender();
+  renderDashboard();
+  renderStudentCard();
+  renderErrorProfile();
 
-  console.log('[启动] ✅ core/ 已就绪');
+  initSyncUI();   // ⭐ 这行必须有
+
+  console.log('[启动] ✅ core/ 已就绪, sync =', getSyncState());
+  //main.js 的 bootstrap 最后加
 })();
 
 /* ---------- 存储健康红点 ---------- */

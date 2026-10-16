@@ -1,0 +1,5 @@
+node_modules/
+coverage/
+.DS_Store
+core/__tests__/
+grades/grade3/__tests__/

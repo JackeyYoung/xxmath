@@ -1,7 +1,7 @@
 /* grades/grade3/scoring/m9.js
    竖式运算：答案映射（纯函数，无 DOM）
 */
-
+//在 m9.js 顶部加一段"key 索引方向"的注释，把不一致记下来，Week 6+ 再统一。
 export function getAddSubMaxLen(a, b, op) {
   const aStr = String(a), bStr = String(b);
   let maxLen = Math.max(aStr.length, bStr.length, 1);
