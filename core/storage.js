@@ -19,7 +19,6 @@ export function getLocalUpdatedAt(key) {
   return _localUpdatedAt.get(key) || 0;
 }
 
-
 /* ---------- 内存缓存 ---------- */
 const _memCache = new Map();
 
@@ -151,7 +150,12 @@ export function lsRemove(key, opts = {}) {
 }
 
 // 新增：应用云端数据到本地（跳过同步回推）
-export function applyCloudValue(key, value) {
+/* 新增：应用云端数据到本地（跳过同步回推） */
+export function applyCloudValue(key, value, cloudUpdatedAt) {
+  // 如果有云端时间，同步到本地时间戳里
+  if (cloudUpdatedAt) {
+    _localUpdatedAt.set(key, new Date(cloudUpdatedAt).getTime());
+  }
   lsSet(key, value, { skipSync: true });
 }
 

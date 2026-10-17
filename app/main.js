@@ -8619,15 +8619,11 @@ function onCorrect(x, y) {
    ⭐ 启动：先初始化存储，再渲染 UI
    ============================================================ */
 (async function bootstrap() {
-  // 1. 存储初始化
   await initStorage();
   await migrateFromLocalStorage();
 
-  // 2. 云端同步初始化
   const syncOK = await initSync();
-
   if (syncOK) {
-    // 3. 拉取云端数据
     const cloudMap = await pullFromCloud();
     if (cloudMap) {
       const toPush = [];
@@ -8638,14 +8634,27 @@ function onCorrect(x, y) {
           if (value == null) return undefined;
           return { value, localUpdatedAt: getLocalUpdatedAt(key) };
         },
-        (key, value) => applyCloudValue(key, value),
-        (key, value) => toPush.push([key, value])
+        (key, value) => {
+          // 从 cloudMap 中取出该 key 的更新时间
+          const cloudItem = cloudMap.get(key);
+          applyCloudValue(key, value, cloudItem?.updated_at);
+        },
+        (key, value) => {
+          // 只有当本地确实比云端新时，才推回云端
+          toPush.push([key, value]);
+        }
       );
-      // 本地更新的推回云端
+
+      // 如果确实有本地更新，才回推
       if (toPush.length) {
         const { pushBatch } = await import('../core/sync/cloudbase-adapter.js');
         pushBatch(toPush).catch(e => console.warn('[Sync] 回推失败', e));
       }
+
+      // ⭐ 核心修复：拉取并覆盖完成后，必须重绘 UI 才能看到新数据
+      try { wbRender(); } catch (e) {}
+      try { historyRender(); } catch (e) {}
+      try { renderDashboard(); } catch (e) {}
     }
   }
 

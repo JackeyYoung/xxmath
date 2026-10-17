@@ -19,24 +19,79 @@ async function getDb() {
 }
 
 /* ============ 拉取当前用户所有 KV ============ */
+/* ============ 拉取当前用户所有 KV ============ */
 export async function pullAll() {
   const db = await getDb();
   const user = getCurrentUser();
   if (!user) throw new Error('未登录');
 
-  const res = await db.collection(COLLECTION)
-    .where({ _openid: user.uid })
-    .limit(1000)             // CloudBase 单次最多 1000 条
-    .get();
+  console.log(`[Adapter] 开始拉取数据，当前用户 UID: ${user.uid}`);
 
-  const map = new Map();
-  (res.data || []).forEach(doc => {
-    map.set(doc.key, {
-      value: doc.value,
-      updated_at: doc.updated_at,
+  try {
+    // 1. 尝试不加 _openid 查询（新版网关自带权限校验）
+    const res = await db.collection(COLLECTION)
+      .limit(1000)
+      .get();
+
+    console.log(`[Adapter] 云端返回原始数据:`, res);
+
+    const map = new Map();
+    const list = res.data || res.result?.data || [];
+
+    if (list.length === 0) {
+      console.warn('[Adapter] 云端返回数据为空 (res.data 是空数组)');
+    }
+
+    list.forEach(doc => {
+      // ⭐ 兼容处理：数据可能被包在 doc.data 里，也可能直接在 doc 上
+      const actualData = doc.data || doc;
+
+      if (actualData.key) {
+        map.set(actualData.key, {
+          value: actualData.value,
+          updated_at: actualData.updated_at,
+        });
+      } else {
+        console.warn('[Adapter] 发现一条缺失 key 的脏数据:', doc);
+      }
     });
-  });
-  return map;
+
+    console.log(`[Adapter] 成功解析出 ${map.size} 条记录，key 列表:`, Array.from(map.keys()));
+    return map;
+
+  } catch (e) {
+    console.error('[Adapter] 拉取失败，尝试带 _openid 查询', e);
+
+    // 2. 兜底：如果上面报错，尝试带 _openid 查询（老版逻辑）
+    try {
+      const res = await db.collection(COLLECTION)
+        .where({ _openid: user.uid })
+        .limit(1000)
+        .get();
+
+      console.log(`[Adapter] 兜底查询云端返回:`, res);
+
+      const map = new Map();
+      const list = res.data || res.result?.data || [];
+      list.forEach(doc => {
+      // ⭐ 兼容处理：数据可能被包在 doc.data 里，也可能直接在 doc 上
+          const actualData = doc.data || doc;
+
+          if (actualData.key) {
+            map.set(actualData.key, {
+              value: actualData.value,
+              updated_at: actualData.updated_at,
+            });
+          } else {
+            console.warn('[Adapter] 发现一条缺失 key 的脏数据:', doc);
+          }
+        });
+      return map;
+    } catch (err2) {
+      console.error('[Adapter] 拉取彻底失败:', err2);
+      throw err2;
+    }
+  }
 }
 
 /* ============ 写一个 key ============ */
@@ -92,29 +147,33 @@ export async function pushBatch(entries) {
   const now = new Date().toISOString();
   const keys = entries.map(([k]) => k);
 
-  // ① 一次性查出所有已存在的 key
+  // 查已存在的
   const existing = await db.collection(COLLECTION)
     .where({
       _openid: user.uid,
-      key: db.command.in(keys),
+      key: db.command.in(keys), // 如果旧数据在 data.key 里，这里可能查不到，但没关系，直接 add 新的
     })
     .limit(keys.length)
     .get();
 
   const existMap = new Map();
-  (existing.data || []).forEach(doc => existMap.set(doc.key, doc._id));
+  (existing.data || []).forEach(doc => {
+    const actualData = doc.data || doc;
+    if (actualData.key) existMap.set(actualData.key, doc._id);
+  });
 
-  // ② 逐个 upsert（并发执行）
+  // 逐条写入
   const tasks = entries.map(([key, value]) => {
     const _id = existMap.get(key);
+
+    // ⭐ 注意：新版 SDK 直接传入对象，不要套 { data: ... }
+    const payload = { key, value, updated_at: now };
+
     if (_id) {
-      return db.collection(COLLECTION).doc(_id).update({
-        data: { value, updated_at: now },
-      });
+      return db.collection(COLLECTION).doc(_id).update(payload);
+    } else {
+      return db.collection(COLLECTION).add(payload); // 去掉外面的 data 包裹
     }
-    return db.collection(COLLECTION).add({
-      data: { key, value, updated_at: now },
-    });
   });
 
   await Promise.all(tasks);

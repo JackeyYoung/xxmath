@@ -225,8 +225,36 @@ export async function forceSync() {
     _setState(SyncState.SYNCING);
     _lastErrorKind = null;
     _pushRetryCount = 0;
+
+    // 1. 先尝试推送本地积压
     await _flushPush();
+
+    // 2. ⭐ 核心：真正去云端拉取一次
     const map = await pullAll();
+
+    // 3. 拉下来的数据，也要走一遍 merge 覆盖本地
+    if (map) {
+      const { mergeCloudIntoLocal } = await import('./merge.js');
+      const { applyCloudValue, lsGet, getLocalUpdatedAt } = await import('../storage.js');
+
+      const toPush = [];
+      mergeCloudIntoLocal(
+        map,
+        (key) => {
+          const value = lsGet(key);
+          if (value == null) return undefined;
+          return { value, localUpdatedAt: getLocalUpdatedAt(key) };
+        },
+        (key, value) => {
+          const cloudItem = map.get(key);
+          applyCloudValue(key, value, cloudItem?.updated_at);
+        },
+        (key, value) => toPush.push([key, value])
+      );
+
+      // 因为这里是在手动同步，不用急着处理 toPush，界面刷新即可
+    }
+
     _lastSyncAt = Date.now();
     _setState(SyncState.IDLE);
     return map;

@@ -10,6 +10,8 @@
  * @param {Function} setLocal - (key, value) => void
  * @param {Function} toPush - (key, value) => void  收集需要回推的 key
  */
+/* core/sync/merge.js */
+
 export function mergeCloudIntoLocal(cloudMap, getLocal, setLocal, toPush) {
   let pulledCount = 0;
   let pushedCount = 0;
@@ -19,21 +21,22 @@ export function mergeCloudIntoLocal(cloudMap, getLocal, setLocal, toPush) {
     const cloudTime = new Date(cloudItem.updated_at).getTime();
     const localTime = local?.localUpdatedAt || 0;
 
+    // ⭐ 调试日志：看看同步时间戳到底是怎样的
+    console.log(`[Merge] key=${key}, cloudTime=${cloudTime}, localTime=${localTime}`);
+
     if (!local) {
-      // 本地没有 → 用云端的
       setLocal(key, cloudItem.value);
       pulledCount++;
-    } else if (localTime < cloudTime) {
-      // 云端更新 → 用云端的
+    } else if (localTime <= cloudTime) {
+      // ⭐ 改为 <=，如果时间一样也拉取云端的
       setLocal(key, cloudItem.value);
       pulledCount++;
     } else if (localTime > cloudTime) {
-      // 本地更新 → 推送本地
       toPush(key, local.value);
       pushedCount++;
     }
-    // localTime === cloudTime → 一样，跳过
   });
 
+  console.log(`[Merge] 完成：拉取 ${pulledCount} 项，推送 ${pushedCount} 项`);
   return { pulledCount, pushedCount };
 }
