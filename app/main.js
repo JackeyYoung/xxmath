@@ -57,6 +57,10 @@ import { isCloudBaseConfigured } from '../core/sync/cloudbase-client.js';
 
 import { initSyncUI } from './sync-ui.js';
 
+import { initShell } from './shell.js';
+// app/main.js 末尾追加
+import { showThumbBar, hideThumbBar } from './shell.js';
+
 // ========== 2. 全局初始化 ==========
 installGlobalErrorHandlers();
 
@@ -644,6 +648,25 @@ function m1CommitStep() {
 
   if (M1.done) {
     m1SetFeedback('🎉 全部算完！结果是 ' + fmtNum(M1.tokens[0].val) + '。', 'ok');
+    // ⭐ 新增：写做题记录
+      const finalVal = M1.tokens[0].val;
+      historyAdd({
+        problemText: M1.original,
+        problemSource: 'm1',
+        moduleId: 'm1',                          // ⭐ 关键
+        studentSteps: M1.steps.map((s, i) => ({
+          rel: `第 ${i + 1} 步`,
+          sub: s.markedHtml,
+          res: s.resultStr,
+        })),
+        studentAnswer: fmtNum(finalVal),
+        isCorrect: true,                         // M1 是逐步验证，走到 done 必正确
+        correctAnswer: fmtNum(finalVal),
+        aiFeedback: null,
+      });
+      // ⭐ 可选：触发拇指区反馈
+      // showThumbBar({ text: `🎉 全部算完！${fmtNum(finalVal)}`, ok: true });
+
   } else {
     // ⭐ 检查下一步是否还有"先算哪步"的问题
     const toks = M1.tokens;
@@ -2910,6 +2933,22 @@ m8Render();
             M9.waitingFor = null;
             m9Render();
             setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
+            // ⭐ 新增：写做题记录
+            const final = calcFinalResult();
+            historyAdd({
+            problemText: `${M9.a} ${M9.op} ${M9.b}`,
+            problemSource: 'm9',
+            moduleId: 'm9',                          // ⭐ 关键
+            studentSteps: Object.keys(M9.filled).map(k => ({
+              rel: k,                                // 'carry-1' / 'result-0' 等
+              sub: '',
+              res: M9.filled[k],
+            })),
+            studentAnswer: String(final),
+            isCorrect: true,
+            correctAnswer: String(final),
+            aiFeedback: null,
+            });
             return;
           }
           m9Render();
@@ -4540,6 +4579,7 @@ $('#pCheck').addEventListener('click', async () => {
       historyAdd({
         problemText,
         problemSource: cachedRecord.problemSource || '题库',
+        moduleId: cachedRecord.moduleId || 'm13',   // ⭐ 继承缓存记录的模块归属
         studentSteps: m13CollectSteps(),
         studentAnswer: user,
         isCorrect: allMatch,
@@ -4616,6 +4656,7 @@ $('#pCheck').addEventListener('click', async () => {
       historyAdd({
         problemText,
         problemSource: '题库',
+        moduleId: 'm13',                          // ⭐ 题库题固定归 m13
         studentSteps,
         studentAnswer: user,
         isCorrect: true,
@@ -4638,6 +4679,7 @@ $('#pCheck').addEventListener('click', async () => {
       historyAdd({
         problemText,
         problemSource: '题库',
+        moduleId: 'm13',                          // ⭐ 题库题固定归 m13
         studentSteps,
         studentAnswer: user,
         isCorrect: false,
@@ -4725,6 +4767,7 @@ $('#pCheck').addEventListener('click', async () => {
     historyAdd({
       problemText,
       problemSource: '自定义',
+      moduleId: 'm13',                          // ⭐ 题库题固定归 m13
       studentSteps,
       studentAnswer: user,
       isCorrect: ok,
@@ -8687,6 +8730,8 @@ function onCorrect(x, y) {
 
   initSyncUI();   // ⭐ 这行必须有
 
+  initShell();
+
   console.log('[启动] ✅ core/ 已就绪, sync =', getSyncState());
   //main.js 的 bootstrap 最后加
 })();
@@ -8764,3 +8809,32 @@ window.__debug = {
   flushStorage,
   //ERROR_LOG,
 };
+
+function hookFeedbackToThumbBar() {
+  const targets = [
+    { el: document.getElementById('m1fb'), retry: 'm1reset' },
+    { el: document.getElementById('m9fb'), retry: 'm9reset' },
+  ];
+  targets.forEach(({ el, retry }) => {
+    if (!el) return;
+    let last = '';
+    new MutationObserver(() => {
+      const txt = el.textContent.trim();
+      if (txt === last || !txt) return;
+      last = txt;
+      const ok = /✓|🎉|正确|对/.test(txt) && !/❌|错/.test(txt);
+      const err = /❌|错/.test(txt);
+      if (!ok && !err) return;
+      showThumbBar({
+        text: txt,
+        ok,
+        onNext: () => {
+          // 继续：触发模块的下一步按钮
+          const next = document.querySelector('#lessonStage .module.active [id$="step"], #lessonStage .module.active [id$="next"]');
+          if (next) next.click();
+        },
+      });
+    }).observe(el, { childList: true, subtree: true, characterData: true });
+  });
+}
+hookFeedbackToThumbBar();

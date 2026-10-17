@@ -11,6 +11,11 @@ export const SOUND_ON_KEY = 'grade3_sound_on';
 export const SESSION_BACKUP_KEY = 'grade3_session_backup_v1';
 export const MIGRATED_FLAG = '__migrated_v1';
 
+// core/keys.js 追加
+export const STUDENT_KEY_FN = () => getGradeKey('student_name');
+export const REASON_KEY_FN  = () => getGradeKey('wrong_reasons_v1');
+// 调用处：lsGet(STUDENT_KEY_FN()) 代替 lsGet(STUDENT_KEY)
+
 /* 年级相关：必须每次调用时求值 */
 export function getGradeKey(prefix) {
   // 注意：依赖 core/storage 的 lsGet，但为避免循环依赖，
