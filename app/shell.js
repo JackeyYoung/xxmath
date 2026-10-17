@@ -190,26 +190,87 @@ const LESSON_META = {
   m13: { title: '解题思维', icon: '💡', steps: 4 },
 };
 
+/* ⭐ 搬进 stage 后，重新跑一次模块自己的渲染入口 */
+function retriggerModuleRender(lessonId) {
+  try {
+    switch (lessonId) {
+      case 'm1':
+        // M1 的 m1Render 是闭包，优先用挂到 window 的引用
+        if (typeof window.__m1Rerender === 'function') {
+          window.__m1Rerender();
+        } else {
+          // 兜底：点一下"重来一次"按钮，触发 m1LoadExpression
+          document.getElementById('m1reset')?.click();
+        }
+        break;
+      case 'm2':
+        if (typeof window.m2Draw === 'function') { window.m2Draw(); window.m2Calc(); }
+        break;
+      case 'm3':
+        if (typeof window.m3Reset === 'function') window.m3Reset();
+        break;
+      case 'm5':
+        if (typeof window.m5Render === 'function') window.m5Render();
+        break;
+      case 'm6':
+        if (typeof window.m6Update === 'function') window.m6Update();
+        break;
+      case 'm7':
+        if (typeof window.m7Draw === 'function') { window.m7Draw(); window.m7UpdateDigital(); }
+        break;
+      case 'm9':
+        if (typeof window.m9Render === 'function') window.m9Render();
+        break;
+      case 'm10':
+        if (typeof window.m10Render === 'function') window.m10Render();
+        break;
+      case 'm11':
+        if (typeof window.m11Render === 'function') window.m11Render();
+        break;
+      case 'm12':
+        if (typeof window.m12Update === 'function') window.m12Update();
+        break;
+      case 'm13':
+        if (typeof window.m13RenderSteps === 'function') window.m13RenderSteps();
+        break;
+      // m4/m8/m14 不需要额外渲染
+    }
+  } catch (e) {
+    console.warn('[shell] 重新渲染模块失败:', lessonId, e);
+  }
+}
+
 function mountLesson(lessonId) {
   if (!lessonId) lessonId = 'm1';
   const meta = LESSON_META[lessonId] || LESSON_META.m1;
 
-  // 把现有 #m1~#m14 的 section 搬进 lesson-stage
-  const stage = document.getElementById('lessonStage');
-  stage.innerHTML = '';
+  const pool = document.getElementById('modulePool');
+  if (!pool) { console.error('[shell] #modulePool 不存在'); return; }
 
-  const section = document.getElementById(lessonId);
-  if (section) {
-    // 从原位置移走（保留 DOM 和事件）
-    const placeholder = document.createElement('div');
-    placeholder.id = `__placeholder_${lessonId}`;
-    section.parentNode.insertBefore(placeholder, section);
-    stage.appendChild(section);
-    section.style.display = 'block';
-    section.classList.add('active');
+  // ⭐ 所有 module 取消 active
+  pool.querySelectorAll('.module').forEach(m => {
+    m.classList.remove('active');
+  });
+
+  // ⭐ 目标 module 加 active（容错：遍历找 id）
+  let section = document.getElementById(lessonId);
+  if (!section) {
+    const target = String(lessonId).trim();
+    section = [...pool.querySelectorAll('.module')].find(m =>
+      (m.id || '').trim() === target
+    );
   }
+  if (!section) {
+    console.error('[shell] 找不到模块:', lessonId);
+    console.warn('[shell] 现有:', [...pool.querySelectorAll('.module')].map(m => m.id));
+    return;
+  }
+  section.classList.add('active');
 
-  // 路径进度（简化：4 个点，当前第 2 个）
+  // 重新触发模块渲染（Canvas 模块需要）
+  retriggerModuleRender(lessonId);
+
+  // header 渲染
   const pathHtml = Array.from({ length: meta.steps }).map((_, i) => {
     const cls = i === 0 ? 'done' : i === 1 ? 'current' : '';
     return `<span class="path-dot ${cls}"></span>`;
@@ -224,11 +285,9 @@ function mountLesson(lessonId) {
 
   document.getElementById('lessonBack').addEventListener('click', () => navigate('home'));
   document.getElementById('lessonMore').addEventListener('click', () => {
-    // 打开原有错题本 / 导出等
     document.getElementById('wrongBookBtn')?.click();
   });
 
-  // 移动端拇指区反馈条（占位，具体反馈由模块内部 .feedback 驱动）
   ensureThumbBar();
 }
 
@@ -308,6 +367,7 @@ function renderGrowth() {
    7. 初始化
    ============================================================ */
 export function initShell() {
+  //在 initShell 里把 .tabs 隐藏
   document.querySelector('.tabs')?.style.setProperty('display', 'none');
   // ⭐ 事件委托：绑在 #page-home 上，永不丢失
   const homeEl = document.getElementById('page-home');
@@ -327,7 +387,10 @@ export function initShell() {
   on(EVT.GRADE_CHANGED, () => { renderHome(); });
 
   // ⭐ 暴露给 Console 调试
-  window.__shell = { navigate, renderHome, mountLesson, renderGrowth };
+  window.__shell = {
+      navigate, renderHome, mountLesson, renderGrowth,
+      showThumbBar, hideThumbBar,   // ⭐ 加上这两个
+   };
 
   requestAnimationFrame(() => {
     const hash = location.hash.replace('#', '');

@@ -57,9 +57,9 @@ import { isCloudBaseConfigured } from '../core/sync/cloudbase-client.js';
 
 import { initSyncUI } from './sync-ui.js';
 
-import { initShell } from './shell.js';
 // app/main.js 末尾追加
-import { showThumbBar, hideThumbBar } from './shell.js';
+
+import { initShell, showThumbBar, hideThumbBar, navigate } from './shell.js';
 
 // ========== 2. 全局初始化 ==========
 installGlobalErrorHandlers();
@@ -2782,6 +2782,21 @@ m8Render();
       if (M9.step > m9GetMaxSteps()) {
         M9.step--;
         setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
+
+        // ⭐ 新增
+        historyAdd({
+            problemText: `${M9.a} ${M9.op} ${M9.b}`,
+            problemSource: 'm9',
+            moduleId: 'm9',
+            studentSteps: Object.keys(M9.filled).map(k => ({
+              rel: k, sub: '', res: M9.filled[k],
+            })),
+            studentAnswer: String(calcFinalResult()),
+            isCorrect: true,
+            correctAnswer: String(calcFinalResult()),
+            aiFeedback: null,
+        });
+
         return;
       }
       m9PromptCurrentStep();
@@ -8731,9 +8746,9 @@ function onCorrect(x, y) {
   initSyncUI();   // ⭐ 这行必须有
 
   initShell();
+  hookFeedbackToThumbBar();   // ⭐ 新增这一行
 
   console.log('[启动] ✅ core/ 已就绪, sync =', getSyncState());
-  //main.js 的 bootstrap 最后加
 })();
 
 /* ---------- 存储健康红点 ---------- */
@@ -8810,31 +8825,98 @@ window.__debug = {
   //ERROR_LOG,
 };
 
+/* ============================================================
+   P0：把模块的 .feedback 同步到拇指区反馈条
+   ============================================================ */
+
 function hookFeedbackToThumbBar() {
-  const targets = [
-    { el: document.getElementById('m1fb'), retry: 'm1reset' },
-    { el: document.getElementById('m9fb'), retry: 'm9reset' },
+  const TARGETS = [
+    { fb: 'm1fb',      next: null,        retry: 'm1reset' },
+    { fb: 'm4fb',      next: 'm4newq',    retry: null },
+    { fb: 'm9fb',      next: 'm9step',    retry: 'm9reset' },
+    { fb: 'm10info',   next: null,        retry: null },
+    { fb: 'm1PriorityFeedback', next: null, retry: null },
   ];
-  targets.forEach(({ el, retry }) => {
+
+  TARGETS.forEach(({ fb, next, retry }) => {
+    const el = document.getElementById(fb);
     if (!el) return;
     let last = '';
+    let hideTimer = null;
+
     new MutationObserver(() => {
       const txt = el.textContent.trim();
       if (txt === last || !txt) return;
       last = txt;
-      const ok = /✓|🎉|正确|对/.test(txt) && !/❌|错/.test(txt);
-      const err = /❌|错/.test(txt);
-      if (!ok && !err) return;
+
+      const isErr = /❌|再想想|错|不对|失败/.test(txt);
+      const isOk  = !isErr && /✓|🎉|正确|对|算完|完成/.test(txt);
+      if (!isOk && !isErr) return;
+
       showThumbBar({
-        text: txt,
-        ok,
+        text: txt.replace(/^[✓❌🎉]\s*/, ''),
+        ok: isOk,
         onNext: () => {
-          // 继续：触发模块的下一步按钮
-          const next = document.querySelector('#lessonStage .module.active [id$="step"], #lessonStage .module.active [id$="next"]');
-          if (next) next.click();
+          if (next) {
+            const btn = document.getElementById(next);
+            if (btn) btn.click();
+          }
+          hideThumbBar();
         },
       });
+
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(hideThumbBar, 8000);
     }).observe(el, { childList: true, subtree: true, characterData: true });
   });
 }
-hookFeedbackToThumbBar();
+
+/* ⭐ Koji 浮球：点击打开 AI 讲解弹窗 */
+(function hookKoji() {
+  const btn = document.getElementById('kojiBtn');
+  if (!btn) return;
+  if (btn.dataset._hooked) return;
+  btn.dataset._hooked = '1';
+
+  btn.addEventListener('click', () => {
+    // 读当前 lesson 页里 active 的 module
+    const module = document.querySelector('#modulePool .module.active');
+    if (!module) {
+      showToast('先进一个知识岛，再来找 Koji 💡', 'info');
+      return;
+    }
+
+    // 把当前模块的题目上下文拼成一段文字
+    let problemText = '';
+    const id = module.id;
+    if (id === 'm1') {
+      problemText = document.getElementById('m1expr')?.textContent?.trim() || '';
+    } else if (id === 'm9') {
+      const a = document.getElementById('m9a')?.value || '';
+      const op = document.getElementById('m9op')?.value || '';
+      const b = document.getElementById('m9b')?.value || '';
+      problemText = `${a} ${op} ${b}`;
+    } else if (id === 'm13') {
+      problemText = document.getElementById('problem-text')?.innerText?.trim() || '';
+    } else {
+      problemText = module.querySelector('h2')?.textContent || '';
+    }
+
+    if (!problemText) {
+      showToast('这一题还没开始，先做一步再问 Koji 吧', 'info');
+      return;
+    }
+
+    // 复用你现有的 AI 讲解弹窗
+    if (typeof explainWrongItem === 'function') {
+      explainWrongItem({
+        text: problemText,
+        studentAnswer: '',
+        studentSteps: [],
+        aiFeedback: null,
+      });
+    } else {
+      showToast('AI 讲解暂不可用，请稍后重试', 'info');
+    }
+  });
+})();
