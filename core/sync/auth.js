@@ -1,5 +1,5 @@
 /* core/sync/auth.js
-   CloudBase 登录管理：匿名 + 邮箱
+   CloudBase 登录管理：匿名 + 邮箱验证码
 */
 
 import { getCloudBaseApp } from './cloudbase-client.js';
@@ -17,7 +17,7 @@ export function isLoggedIn() {
 function getAuth() {
   const app = getCloudBaseApp();
   if (!app) return null;
-  // persistence: 'local' —— 登录态持久化到 localStorage，30 天有效
+  // persistence: 'local' —— 登录态持久化到 localStorage
   return app.auth({ persistence: 'local' });
 }
 
@@ -39,34 +39,47 @@ export async function ensureAnonymousLogin() {
   return _currentUser;
 }
 
-/* 邮箱登录 */
-export async function signInWithEmail(email, password) {
+/* 第一步：发送邮箱验证码 */
+export async function sendEmailCode(email) {
   const auth = getAuth();
   if (!auth) throw new Error('CloudBase 未配置');
 
-  const loginState = await auth.signInWithEmailAndPassword(email, password);
+  // 返回 { verification_id, is_user, expires_in }
+  const verification = await auth.getVerification({ email });
+  return verification;
+}
+
+/* 第二步 + 第三步：校验验证码 → 登录/注册 */
+export async function verifyAndSignIn(email, code, verificationId, isUser) {
+  const auth = getAuth();
+  if (!auth) throw new Error('CloudBase 未配置');
+
+  // 1. 校验验证码
+  const verificationTokenRes = await auth.verify({
+    verification_id: verificationId,
+    verification_code: code,
+  });
+
+  let loginState;
+  if (isUser) {
+    // 已存在 → 登录
+    loginState = await auth.signIn({
+      username: email,
+      verification_token: verificationTokenRes.verification_token,
+    });
+  } else {
+    // 不存在 → 注册
+    loginState = await auth.signUp({
+      email: email,
+      verification_code: code,
+      verification_token: verificationTokenRes.verification_token,
+      // 可选设置密码，如果不填只支持验证码登录
+      // password: 'demo1234'
+    });
+  }
+
   _currentUser = loginState.user;
   return _currentUser;
-}
-
-/* 邮箱注册 */
-export async function signUpWithEmail(email, password) {
-  const auth = getAuth();
-  if (!auth) throw new Error('CloudBase 未配置');
-
-  const loginState = await auth.signUpWithEmailAndPassword(email, password);
-  _currentUser = loginState.user;
-  return loginState;
-}
-
-/* 匿名账号绑定邮箱（账户关联） */
-export async function linkEmailToAnonymous(email, password) {
-  const auth = getAuth();
-  if (!auth) throw new Error('CloudBase 未配置');
-
-  const loginState = await auth.linkWithEmailAndPassword(email, password);
-  _currentUser = loginState.user;
-  return loginState;
 }
 
 /* 退出登录 */

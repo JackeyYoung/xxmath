@@ -1,5 +1,5 @@
 /* app/sync-setup-ui.js
-   CloudBase 配置 + 登录 UI
+   CloudBase 配置 + 邮箱验证码登录 UI
 */
 
 import {
@@ -9,11 +9,16 @@ import {
 import {
   getCurrentUser,
   ensureAnonymousLogin,
-  signInWithEmail,
-  signUpWithEmail,
   signOut,
   isLoggedIn,
+  sendEmailCode,
+  verifyAndSignIn,
 } from '../core/sync/auth.js';
+
+let loginStep = 'input-email';   // 'input-email' | 'input-code'
+let verificationId = null;
+let loginEmail = '';
+let isUser = false;
 
 export function openSyncSetupModal() {
   if (document.querySelector('#syncSetupMask')) return;
@@ -38,6 +43,8 @@ export function openSyncSetupModal() {
     if (e.target === mask) mask.remove();
   });
 
+  // 每次打开重置状态
+  loginStep = 'input-email';
   _renderContent();
 }
 
@@ -49,12 +56,19 @@ function _renderContent() {
   const logged = isLoggedIn();
   const user = getCurrentUser();
 
+  // ⭐ 核心逻辑调整：如果是明确在“输验证码”流程，强行渲染验证码界面
+  if (configured && loginStep === 'input-code') {
+    modal.innerHTML = _htmlCodeStep(loginEmail);
+    _bindCodeStep(loginEmail);
+    return;
+  }
+
   if (!configured) {
     modal.innerHTML = _htmlSetupForm();
     _bindSetupForm();
   } else if (!logged) {
-    modal.innerHTML = _htmlLoginForm();
-    _bindLoginForm();
+    modal.innerHTML = _htmlEmailStep();
+    _bindEmailStep();
   } else {
     modal.innerHTML = _htmlAccountPanel(user);
     _bindAccountPanel();
@@ -107,119 +121,144 @@ function _bindSetupForm() {
   };
 }
 
-/* ============ 视图 2：登录 ============ */
-function _htmlLoginForm() {
+/* ============ 视图 2：输入邮箱 ============ */
+function _htmlEmailStep() {
   return `
-    <h3 style="font-size:17px;font-weight:800;margin-bottom:8px;">👤 登录账号</h3>
+    <h3 style="font-size:17px;font-weight:800;margin-bottom:8px;">👤 登录 / 注册</h3>
     <p style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px;">
-      登录后可在多台设备看到同样的做题记录。<br>
-      <b>首次使用？</b>直接点"匿名登录"，无需注册。
+      输入邮箱，我们会发送 6 位验证码。<br>
+      <b>首次使用</b>会自动注册，无需额外步骤。
     </p>
 
-    <div id="loginTabs" style="display:flex;gap:6px;margin-bottom:16px;">
-      <button data-tab="email" style="flex:1;padding:8px;border-radius:8px;border:2px solid #3b82f6;
-              background:#3b82f6;color:#fff;font-size:13px;font-weight:700;cursor:pointer;
-              font-family:inherit;">邮箱</button>
-      <button data-tab="signup" style="flex:1;padding:8px;border-radius:8px;border:2px solid #e2e8f0;
-              background:#fff;color:#64748b;font-size:13px;font-weight:700;cursor:pointer;
-              font-family:inherit;">注册</button>
-    </div>
-
-    <div id="emailFields">
-      <input id="loginEmail" type="email" placeholder="邮箱"
-        style="width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:10px;
-               font-size:14px;margin-bottom:10px;outline:none;font-family:inherit;">
-      <input id="loginPassword" type="password" placeholder="密码（至少 6 位）"
-        style="width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:10px;
-               font-size:14px;margin-bottom:16px;outline:none;font-family:inherit;">
-    </div>
+    <label style="display:block;font-size:13px;font-weight:700;color:#475569;margin-bottom:6px;">
+      邮箱
+    </label>
+    <input id="loginEmail" type="email" placeholder="you@example.com"
+      style="width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:10px;
+             font-size:14px;margin-bottom:16px;outline:none;font-family:inherit;">
 
     <div id="loginErr" style="color:#ef4444;font-size:13px;min-height:18px;margin-bottom:8px;"></div>
 
-    <button id="loginSubmit" style="width:100%;padding:11px;border-radius:10px;border:none;
+    <button id="loginSendCode" style="width:100%;padding:11px;border-radius:10px;border:none;
             background:#3b82f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-            font-family:inherit;box-shadow:0 3px 0 #2563eb;margin-bottom:10px;">
-      登录
-    </button>
-
-    <button id="loginAnon" style="width:100%;padding:11px;border-radius:10px;
-            border:2px solid #e2e8f0;background:#fff;color:#475569;font-size:14px;
-            font-weight:700;cursor:pointer;font-family:inherit;">
-      匿名登录（不需要账号）
+            font-family:inherit;box-shadow:0 3px 0 #2563eb;">
+      发送验证码
     </button>
   `;
 }
 
-function _bindLoginForm() {
-  let mode = 'email';
-  const mask = document.getElementById('syncSetupMask');
-
-  document.querySelectorAll('#loginTabs button').forEach(btn => {
-    btn.onclick = () => {
-      mode = btn.dataset.tab;
-      document.querySelectorAll('#loginTabs button').forEach(b => {
-        const active = b.dataset.tab === mode;
-        b.style.background = active ? '#3b82f6' : '#fff';
-        b.style.color = active ? '#fff' : '#64748b';
-        b.style.borderColor = active ? '#3b82f6' : '#e2e8f0';
-      });
-      document.getElementById('loginSubmit').textContent =
-        mode === 'email' ? '登录' : '注册';
-    };
-  });
-
-  document.getElementById('loginAnon').onclick = async () => {
-    const err = document.getElementById('loginErr');
-    err.textContent = '';
-    try {
-      await ensureAnonymousLogin();
-      const { resumeSync } = await import('../core/sync/sync-manager.js');
-      resumeSync();
-      mask.remove();
-      location.reload();
-    } catch (e) {
-      err.textContent = '匿名登录失败：' + e.message;
-    }
-  };
-
-  document.getElementById('loginSubmit').onclick = async () => {
+function _bindEmailStep() {
+  document.getElementById('loginSendCode').onclick = async () => {
     const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
     const err = document.getElementById('loginErr');
 
     if (!email || !email.includes('@')) {
       err.textContent = '请输入有效邮箱';
       return;
     }
-    if (!password || password.length < 6) {
-      err.textContent = '密码至少 6 位';
-      return;
-    }
 
-    err.textContent = '';
-    const btn = document.getElementById('loginSubmit');
+    const btn = document.getElementById('loginSendCode');
     btn.disabled = true;
-    btn.textContent = mode === 'email' ? '登录中…' : '注册中…';
+    btn.textContent = '发送中…';
+    err.textContent = '';
 
     try {
-      if (mode === 'email') {
-        await signInWithEmail(email, password);
-      } else {
-        await signUpWithEmail(email, password);
-      }
-      const { resumeSync } = await import('../core/sync/sync-manager.js');
-      resumeSync();
-      mask.remove();
-      location.reload();
+      const result = await sendEmailCode(email);
+      
+      // ⭐ 确保跳转前数据已保存
+      loginEmail = email;
+      verificationId = result.verification_id;
+      isUser = result.is_user;
+      
+      // ⭐ 切换状态并重绘
+      loginStep = 'input-code';
+      _renderContent();
+      
     } catch (e) {
-      err.textContent = e.message || '操作失败';
+      console.error('[发送验证码失败]', e);
+      err.textContent = '发送失败：' + (e.message || '请重试');
       btn.disabled = false;
-      btn.textContent = mode === 'email' ? '登录' : '注册';
+      btn.textContent = '发送验证码';
     }
   };
 }
 
-/* ============ 视图 3：账号面板 ============ */
+/* ============ 视图 3：输入验证码 ============ */
+function _htmlCodeStep(email) {
+  return `
+    <h3 style="font-size:17px;font-weight:800;margin-bottom:8px;">📧 输入验证码</h3>
+    <p style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px;">
+      验证码已发送到 <b>${email}</b>，10 分钟内有效。
+    </p>
+
+    <label style="display:block;font-size:13px;font-weight:700;color:#475569;margin-bottom:6px;">
+      6 位验证码
+    </label>
+    <input id="loginCode" type="text" inputmode="numeric" maxlength="6"
+      placeholder="000000"
+      style="width:100%;padding:12px;border:2px solid #e2e8f0;border-radius:10px;
+             font-size:22px;font-weight:800;text-align:center;letter-spacing:6px;
+             font-family:ui-monospace,monospace;margin-bottom:16px;outline:none;">
+
+    <div id="loginErr" style="color:#ef4444;font-size:13px;min-height:18px;margin-bottom:8px;"></div>
+
+    <button id="loginVerify" style="width:100%;padding:11px;border-radius:10px;border:none;
+            background:#3b82f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+            font-family:inherit;box-shadow:0 3px 0 #2563eb;margin-bottom:10px;">
+      确认登录
+    </button>
+
+    <button id="loginBack" style="width:100%;padding:11px;border-radius:10px;
+            border:2px solid #e2e8f0;background:#fff;color:#64748b;font-size:14px;
+            font-weight:700;cursor:pointer;font-family:inherit;">
+      ← 返回修改邮箱
+    </button>
+  `;
+}
+
+function _bindCodeStep(email) {
+  // 自动聚焦验证码输入框
+  setTimeout(() => document.getElementById('loginCode')?.focus(), 100);
+
+  document.getElementById('loginBack').onclick = () => {
+    loginStep = 'input-email';
+    _renderContent();
+  };
+
+  document.getElementById('loginVerify').onclick = async () => {
+    const code = document.getElementById('loginCode').value.trim();
+    const err = document.getElementById('loginErr');
+
+    if (!/^\d{6}$/.test(code)) {
+      err.textContent = '请输入 6 位数字验证码';
+      return;
+    }
+
+    const btn = document.getElementById('loginVerify');
+    btn.disabled = true;
+    btn.textContent = '验证中…';
+    err.textContent = '';
+
+    try {
+      await verifyAndSignIn(email, code, verificationId, isUser);
+      
+      // 同步成功后，清理弹窗并刷新
+      const { resumeSync } = await import('../core/sync/sync-manager.js');
+      resumeSync();
+      
+      document.getElementById('syncSetupMask')?.remove();
+      location.reload();
+      
+    } catch (e) {
+      console.error('[验证码校验失败]', e);
+      err.textContent = '验证失败：' + (e.message || '请检查验证码是否正确');
+      btn.disabled = false;
+      btn.textContent = '确认登录';
+    }
+  };
+}
+
+/* ============ 视图 4：账号面板 ============ */
 function _htmlAccountPanel(user) {
   const uid = user?.uid || '—';
   const email = user?.email || '（匿名用户）';
@@ -243,12 +282,12 @@ function _htmlAccountPanel(user) {
                   padding:12px 14px;margin-bottom:14px;font-size:13px;color:#92400e;
                   line-height:1.7;">
         ⚠️ <b>匿名账号跨设备不共享</b>。<br>
-        如果要手机和 iPad 看同样的记录，请绑定邮箱。
+        如果要手机和 iPad 看同样的记录，请使用邮箱登录。
       </div>
-      <button id="accBind" style="width:100%;padding:11px;border-radius:10px;border:none;
+      <button id="accToLogin" style="width:100%;padding:11px;border-radius:10px;border:none;
               background:#f59e0b;color:#fff;font-size:14px;font-weight:700;cursor:pointer;
               font-family:inherit;box-shadow:0 3px 0 #b45309;margin-bottom:10px;">
-        绑定邮箱（升级为正式账号）
+        使用邮箱登录 / 注册
       </button>
     ` : ''}
 
@@ -261,63 +300,59 @@ function _htmlAccountPanel(user) {
     <button id="accLogout" style="width:100%;padding:11px;border-radius:10px;
             border:2px solid #e2e8f0;background:#fff;color:#ef4444;font-size:14px;
             font-weight:700;cursor:pointer;font-family:inherit;">
-      退出登录
+      ${isAnonymous ? '清除本地登录态' : '退出登录'}
     </button>
   `;
 }
 
 function _bindAccountPanel() {
-  const accBind = document.getElementById('accBind');
-  if (accBind) {
-    accBind.onclick = async () => {
-      const email = prompt('输入邮箱（用于跨设备登录）：');
-      if (!email) return;
-      const password = prompt('设置密码（至少 6 位）：');
-      if (!password || password.length < 6) {
-        alert('密码至少 6 位');
-        return;
-      }
-      try {
-        const { linkEmailToAnonymous } = await import('../core/sync/auth.js');
-        await linkEmailToAnonymous(email, password);
-        alert('绑定成功！现在可以在其他设备用此邮箱登录了。');
-        document.getElementById('syncSetupMask')?.remove();
-        location.reload();
-      } catch (e) {
-        alert('绑定失败：' + e.message);
+  const accToLogin = document.getElementById('accToLogin');
+  if (accToLogin) {
+    accToLogin.onclick = () => {
+      loginStep = 'input-email';
+      const modal = document.getElementById('syncSetupModal');
+      if (modal) {
+        modal.innerHTML = _htmlEmailStep();
+        _bindEmailStep();
       }
     };
   }
 
-  document.getElementById('accSync').onclick = async () => {
-    const btn = document.getElementById('accSync');
-    btn.textContent = '同步中…';
-    btn.disabled = true;
-    try {
-      const { forceSync } = await import('../core/sync/sync-manager.js');
-      await forceSync();
-      btn.textContent = '✅ 已同步';
-      setTimeout(() => {
-        btn.textContent = '立即同步';
-        btn.disabled = false;
-      }, 1200);
-    } catch (e) {
-      btn.textContent = '同步失败';
-      setTimeout(() => {
-        btn.textContent = '立即同步';
-        btn.disabled = false;
-      }, 1500);
-    }
-  };
+  const accSync = document.getElementById('accSync');
+  if (accSync) {
+    accSync.onclick = async () => {
+      const btn = document.getElementById('accSync');
+      btn.textContent = '同步中…';
+      btn.disabled = true;
+      try {
+        const { forceSync } = await import('../core/sync/sync-manager.js');
+        await forceSync();
+        btn.textContent = '✅ 已同步';
+        setTimeout(() => {
+          btn.textContent = '立即同步';
+          btn.disabled = false;
+        }, 1200);
+      } catch (e) {
+        btn.textContent = '同步失败';
+        setTimeout(() => {
+          btn.textContent = '立即同步';
+          btn.disabled = false;
+        }, 1500);
+      }
+    };
+  }
 
-  document.getElementById('accLogout').onclick = async () => {
-    if (!confirm('退出后本设备的云端同步会停止，本地数据保留。\n\n确定退出？')) return;
-    try {
-      await signOut();
-      document.getElementById('syncSetupMask')?.remove();
-      location.reload();
-    } catch (e) {
-      alert('退出失败：' + e.message);
-    }
-  };
+  const accLogout = document.getElementById('accLogout');
+  if (accLogout) {
+    accLogout.onclick = async () => {
+      if (!confirm('退出后本设备的云端同步会停止，本地数据保留。\n\n确定退出？')) return;
+      try {
+        await signOut();
+        document.getElementById('syncSetupMask')?.remove();
+        location.reload();
+      } catch (e) {
+        alert('退出失败：' + e.message);
+      }
+    };
+  }
 }
