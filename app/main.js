@@ -3482,6 +3482,8 @@ const M13_PROBLEMS = [
 /* ============ 加载题库：兼容双击 / 部署 ============ */
 let M13_BANK = [];
 
+window.__findCachedFeedback = findCachedFeedback;
+
 function loadBank() {
   // ⭐ 加载期间禁用「载入」按钮，避免拿到空题库
   const loadBtn = document.getElementById('pLoad');
@@ -6333,13 +6335,34 @@ async function explainWrongItem(record) {
     result._source = 'llm';
     result._problemText = record.text;
 
-    // 缓存回写
+    // 缓存回写：错题本 + 历史记录都写
     try {
-      const list = wbLoad();
-      const idx = list.findIndex(r => r.text === record.text);
-      if (idx >= 0) {
-        list[idx].aiFeedback = result;
-        wbSave(list);
+      // ① 错题本
+      const wbList = wbLoad();
+      const wbIdx = wbList.findIndex(r => r.text === record.text);
+      if (wbIdx >= 0) {
+        wbList[wbIdx].aiFeedback = result;
+        wbSave(wbList);
+      }
+
+      // ⭐ ② 历史记录：把最近一条同题记录的 aiFeedback 补上
+      const hist = historyLoad();
+      const hIdx = hist.findIndex(r => (r.problemText || '').trim() === record.text.trim());
+      if (hIdx >= 0) {
+        hist[hIdx].aiFeedback = result;
+        historySave(hist);
+      } else {
+        // 历史里也没有 → 新建一条"仅讲解"的记录
+        historyAdd({
+          problemText: record.text,
+          problemSource: 'koji',
+          moduleId: (document.querySelector('#modulePool .module.active') || {}).id || 'koji',
+          studentSteps: [],
+          studentAnswer: '',
+          isCorrect: false,
+          correctAnswer: result.answer?.full || '',
+          aiFeedback: result,
+        });
       }
     } catch (e) { console.warn('[缓存回写失败]', e); }
 
@@ -8871,24 +8894,69 @@ function hookFeedbackToThumbBar() {
   });
 }
 
+/* ============================================================
+   ⭐ 统一查缓存：历史 → 错题本 → 题库
+   返回 { aiFeedback, source } 或 null
+   ============================================================ */
+function findCachedFeedback(problemText) {
+  if (!problemText) return null;
+  const key = String(problemText).trim();
+
+  // ① 查历史记录（最近的优先）
+  try {
+    const history = historyLoad();
+    const hit = history.find(r =>
+      (r.problemText || '').trim() === key && r.aiFeedback && r.aiFeedback.answer
+    );
+    if (hit) return { aiFeedback: hit.aiFeedback, source: 'history' };
+  } catch (e) {}
+
+  // ② 查错题本
+  try {
+    const wb = wbLoad();
+    const hit = wb.find(r =>
+      (r.text || '').trim() === key && r.aiFeedback && r.aiFeedback.answer
+    );
+    if (hit) return { aiFeedback: hit.aiFeedback, source: 'wrongbook' };
+  } catch (e) {}
+
+  // ③ 查题库（M13_BANK 里带 steps 的题）
+  try {
+    if (Array.isArray(M13_BANK)) {
+      const hit = M13_BANK.find(p =>
+        (p.text || '').trim() === key && p.steps && p.steps.length
+      );
+      if (hit) {
+        // 题库没有 aiFeedback 结构，用 normalizeAiFeedback 包一层
+        const fb = normalizeAiFeedback({
+          answer: {
+            full: hit.answer?.full || (typeof hit.answer === 'string' ? hit.answer : ''),
+            value: hit.answer?.value,
+          },
+          steps: hit.steps,
+          judgement: { answer_correct: true },
+          _source: 'bank',
+        }, hit.answer?.full);
+        return { aiFeedback: fb, source: 'bank' };
+      }
+    }
+  } catch (e) {}
+
+  return null;
+}
+
 /* ⭐ Koji 浮球：点击打开 AI 讲解弹窗 */
 (function hookKoji() {
   const btn = document.getElementById('kojiBtn');
-  if (!btn) return;
-  if (btn.dataset._hooked) return;
+  if (!btn || btn.dataset._hooked) return;
   btn.dataset._hooked = '1';
 
   btn.addEventListener('click', () => {
-    // 读当前 lesson 页里 active 的 module
     const module = document.querySelector('#modulePool .module.active');
-    if (!module) {
-      showToast('先进一个知识岛，再来找 Koji 💡', 'info');
-      return;
-    }
+    if (!module) { showToast('先进一个知识岛，再来找 Koji 💡', 'info'); return; }
 
-    // 把当前模块的题目上下文拼成一段文字
-    let problemText = '';
     const id = module.id;
+    let problemText = '';
     if (id === 'm1') {
       problemText = document.getElementById('m1expr')?.textContent?.trim() || '';
     } else if (id === 'm9') {
@@ -8907,16 +8975,102 @@ function hookFeedbackToThumbBar() {
       return;
     }
 
-    // 复用你现有的 AI 讲解弹窗
-    if (typeof explainWrongItem === 'function') {
-      explainWrongItem({
-        text: problemText,
-        studentAnswer: '',
-        studentSteps: [],
-        aiFeedback: null,
-      });
+    // ⭐ 先查缓存
+    const cached = findCachedFeedback(problemText);
+
+    if (cached) {
+      // 命中：直接展示缓存讲解，不调 AI
+      showExplainModal();
+      const fb = JSON.parse(JSON.stringify(cached.aiFeedback));
+      fb._problemText = problemText;
+      renderExplainResult(fb);
+
+      // ⭐ 底部追加"还要更详细？"按钮
+      appendKojiMoreButton(problemText);
     } else {
-      showToast('AI 讲解暂不可用，请稍后重试', 'info');
+      // 未命中：弹窗里给两个选项，让用户选
+      showKojiChoiceModal(problemText);
     }
   });
 })();
+
+function appendKojiMoreButton(problemText) {
+  const body = document.getElementById('explainModalBody');
+  if (!body) return;
+  // 避免重复追加
+  if (body.querySelector('.koji-more-wrap')) return;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'koji-more-wrap';
+  wrap.style.cssText = 'margin-top:16px;padding:14px 16px;background:#f5f3ff;border-radius:12px;border-left:4px solid #8b5cf6;';
+  wrap.innerHTML = `
+    <div style="font-size:13px;color:#6d28d9;font-weight:700;margin-bottom:10px;">
+      💡 这是之前保存的讲解。还想让 AI 换个角度再讲一遍吗？
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-secondary" id="kojiMoreBtn"
+              style="flex:1;background:#fff;border:2px solid #8b5cf6;color:#6d28d9;font-weight:700;">
+        🤖 让 AI 再讲一遍
+      </button>
+      <button class="btn-secondary" id="kojiCloseBtn"
+              style="flex:1;background:#fff;border:2px solid #cbd5e1;color:#64748b;">
+        够了，谢谢
+      </button>
+    </div>
+  `;
+  body.appendChild(wrap);
+
+  document.getElementById('kojiCloseBtn').addEventListener('click', hideExplainModal);
+  document.getElementById('kojiMoreBtn').addEventListener('click', async () => {
+    wrap.remove();
+    // 走原 explainWrongItem，但传 aiFeedback: null 强制调 AI
+    await explainWrongItem({
+      text: problemText,
+      studentAnswer: '',
+      studentSteps: [],
+      aiFeedback: null,
+    });
+  });
+}
+
+function showKojiChoiceModal(problemText) {
+  if (document.querySelector('.koji-choice-mask')) return;
+
+  const mask = document.createElement('div');
+  mask.className = 'koji-choice-mask';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10005;padding:20px;';
+  mask.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px 22px 20px;width:360px;max-width:90vw;text-align:center;box-shadow:0 20px 60px rgba(15,23,42,.3);">
+      <div style="font-size:40px;margin-bottom:12px;">🤖</div>
+      <div style="font-size:16px;font-weight:800;color:#1e293b;margin-bottom:8px;">Koji 还不认识这道题</div>
+      <div style="font-size:13px;color:#64748b;line-height:1.7;margin-bottom:18px;">
+        这道题之前没有保存过讲解。<br>要我调用 AI 现场分析一遍吗？<br>
+        <span style="color:#b45309;font-weight:700;">（会消耗一点时间和 token）</span>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-secondary" id="kojiChoiceCancel"
+                style="flex:1;padding:10px;border-radius:10px;font-weight:700;background:#f1f5f9;color:#475569;border:none;cursor:pointer;">
+          先不用
+        </button>
+        <button class="btn" id="kojiChoiceGo"
+                style="flex:1;padding:10px;border-radius:10px;font-weight:700;background:#8b5cf6;color:#fff;border:none;cursor:pointer;box-shadow:0 3px 0 #6d28d9;">
+          让 AI 分析
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  document.getElementById('kojiChoiceCancel').addEventListener('click', () => mask.remove());
+  mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
+
+  document.getElementById('kojiChoiceGo').addEventListener('click', async () => {
+    mask.remove();
+    await explainWrongItem({
+      text: problemText,
+      studentAnswer: '',
+      studentSteps: [],
+      aiFeedback: null,
+    });
+  });
+}
