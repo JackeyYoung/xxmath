@@ -185,6 +185,32 @@ const M1 = {
   pendingMarkedHtml: '',  // 括号标记版 HTML（用于记录步骤）
 };
 
+/* ⭐ 做完一题的鼓励语 */
+function getEncouragement(moduleId, streak = 1) {
+  const byModule = {
+    m1: ['算对了！先乘除后加减，你掌握了 👏', '这一步很关键，继续！', '又对一步，思路很清晰'],
+    m9: ['进位没丢，漂亮！', '这一位算得准，继续保持', '竖式就是这样一步步来的'],
+    m13: ['思路对上了，真棒！', '这道题你抓住关键了', '解题四步法你用得越来越顺了'],
+  };
+  const generic = ['做对了！', '很好，继续！', '思路对上了', '这一步稳了'];
+  const pool = byModule[moduleId] || generic;
+
+  if (streak >= 5) return `连对 ${streak} 题，状态很好 🔥`;
+  if (streak >= 3) return `连对 ${streak} 题，保持住！`;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// M13 的鼓励语也反映“连对”
+function getM13Streak() {
+  const history = historyLoad().filter(r => r.moduleId === 'm13');
+  let streak = 0;
+  for (const r of history) {
+    if (r.isCorrect) streak++;
+    else break;
+  }
+  return streak;
+}
+
 function fmtNum(n) {
   if (Number.isInteger(n)) return String(n);
   return String(Math.round(n * 100) / 100);
@@ -613,7 +639,7 @@ function m1SubmitAnswer() {
   if (Math.abs(userVal - correct) < 0.001) {
     input.classList.remove('wrong');
     input.classList.add('correct');
-    fb.textContent = '✓ 正确！';
+    fb.textContent = getEncouragement('m1', COMBO.count);
     fb.className = 'calc-input-feedback ok';
 
     /* ⭐ 移动端：主动 blur 收起软键盘，避免重绘后键盘错位 */
@@ -643,66 +669,90 @@ function m1CommitStep() {
   const val = M1.pendingResult;
   const toks = M1.tokens;
 
-  const markedHtml = M1.pendingMarkedHtml;
-  let newTokens = [...toks.slice(0, i - 1), { type: 'num', val }, ...toks.slice(i + 2)];
+  // ⭐ 合并动画：当前运算符两侧的数字块向中间滑动
+  const exprEl = document.getElementById('m1expr');
+  const opEls = exprEl.querySelectorAll('.token');
+  const leftEl = opEls[i - 1];
+  const opEl = opEls[i];
+  const rightEl = opEls[i + 1];
+  if (leftEl && opEl && rightEl) {
+    const leftRect = leftEl.getBoundingClientRect();
+    const rightRect = rightEl.getBoundingClientRect();
+    const midX = (leftRect.right + rightRect.left) / 2;
 
-  // ⭐ 去掉"孤立的括号"：如果 ( 或 ) 旁边已经没有运算符了，就删掉
-  newTokens = m1CleanParens(newTokens);
-
-  const resultStr = m1TokensToString(newTokens);
-
-  M1.steps.push({ markedHtml, resultStr });
-  M1.tokens = newTokens;
-  if (M1.tokens.length === 1) M1.done = true;
-
-  // 清除等待状态
-  M1.waitingOpIdx = -1;
-  M1.pendingResult = null;
-  M1.pendingLeft = null;
-  M1.pendingRight = null;
-  M1.pendingOp = null;
-  M1.pendingMarkedHtml = '';
-
-  m1Render();
-  /* ⭐ 移动端：重绘后若没有等待输入，主动 blur，避免键盘悬空 */
-  if (M1.waitingOpIdx < 0 && document.activeElement && document.activeElement.tagName === 'INPUT') {
-    document.activeElement.blur();
+    leftEl.style.transition = 'transform .28s cubic-bezier(.34,1.3,.64,1), opacity .28s';
+    rightEl.style.transition = 'transform .28s cubic-bezier(.34,1.3,.64,1), opacity .28s';
+    opEl.style.transition = 'opacity .2s, transform .2s';
+    leftEl.style.transform = `translateX(${midX - leftRect.right}px) scale(1.1)`;
+    rightEl.style.transform = `translateX(${midX - rightRect.left}px) scale(1.1)`;
+    opEl.style.opacity = '0';
+    opEl.style.transform = 'scale(0)';
   }
 
-  if (M1.done) {
-    m1SetFeedback('🎉 全部算完！结果是 ' + fmtNum(M1.tokens[0].val) + '。', 'ok');
-    // ⭐ 新增：写做题记录
-      const finalVal = M1.tokens[0].val;
-      historyAdd({
-        problemText: M1.original,
-        problemSource: 'm1',
-        moduleId: 'm1',                          // ⭐ 关键
-        studentSteps: M1.steps.map((s, i) => ({
-          rel: `第 ${i + 1} 步`,
-          sub: s.markedHtml,
-          res: s.resultStr,
-        })),
-        studentAnswer: fmtNum(finalVal),
-        isCorrect: true,                         // M1 是逐步验证，走到 done 必正确
-        correctAnswer: fmtNum(finalVal),
-        aiFeedback: null,
-      });
-      // ⭐ 可选：触发拇指区反馈
-      // showThumbBar({ text: `🎉 全部算完！${fmtNum(finalVal)}`, ok: true });
+  // 延迟 280ms 再重绘，让动画播完
+  setTimeout(() => {
+    // ...原来的 m1CommitStep 逻辑（newTokens、steps.push、m1Render 等）
+    const markedHtml = M1.pendingMarkedHtml;
+    let newTokens = [...toks.slice(0, i - 1), { type: 'num', val }, ...toks.slice(i + 2)];
 
-  } else {
-    // ⭐ 检查下一步是否还有"先算哪步"的问题
-    const toks = M1.tokens;
-    const hasMulDiv = toks.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
-    const hasAddSub = toks.some(t => t.type === 'op' && (t.val === '+' || t.val === '-'));
-    if (hasMulDiv && hasAddSub) {
-      M1_PRIORITY.passed = false;
-      m1ShowPriorityBox();
-    } else {
-      M1_PRIORITY.passed = true;
-      m1SetFeedback('✅ 正确！继续点击下一步的运算符。', 'ok');
+    // ⭐ 去掉"孤立的括号"：如果 ( 或 ) 旁边已经没有运算符了，就删掉
+    newTokens = m1CleanParens(newTokens);
+
+    const resultStr = m1TokensToString(newTokens);
+
+    M1.steps.push({ markedHtml, resultStr });
+    M1.tokens = newTokens;
+    if (M1.tokens.length === 1) M1.done = true;
+
+    // 清除等待状态
+    M1.waitingOpIdx = -1;
+    M1.pendingResult = null;
+    M1.pendingLeft = null;
+    M1.pendingRight = null;
+    M1.pendingOp = null;
+    M1.pendingMarkedHtml = '';
+
+    m1Render();
+    /* ⭐ 移动端：重绘后若没有等待输入，主动 blur，避免键盘悬空 */
+    if (M1.waitingOpIdx < 0 && document.activeElement && document.activeElement.tagName === 'INPUT') {
+      document.activeElement.blur();
     }
-  }
+
+    if (M1.done) {
+      m1SetFeedback('🎉 全部算完！结果是 ' + fmtNum(M1.tokens[0].val) + '。', 'ok');
+      // ⭐ 新增：写做题记录
+        const finalVal = M1.tokens[0].val;
+        historyAdd({
+          problemText: M1.original,
+          problemSource: 'm1',
+          moduleId: 'm1',                          // ⭐ 关键
+          studentSteps: M1.steps.map((s, i) => ({
+            rel: `第 ${i + 1} 步`,
+            sub: s.markedHtml,
+            res: s.resultStr,
+          })),
+          studentAnswer: fmtNum(finalVal),
+          isCorrect: true,                         // M1 是逐步验证，走到 done 必正确
+          correctAnswer: fmtNum(finalVal),
+          aiFeedback: null,
+        });
+        // ⭐ 可选：触发拇指区反馈
+        // showThumbBar({ text: `🎉 全部算完！${fmtNum(finalVal)}`, ok: true });
+
+    } else {
+      // ⭐ 检查下一步是否还有"先算哪步"的问题
+      const toks = M1.tokens;
+      const hasMulDiv = toks.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
+      const hasAddSub = toks.some(t => t.type === 'op' && (t.val === '+' || t.val === '-'));
+      if (hasMulDiv && hasAddSub) {
+        M1_PRIORITY.passed = false;
+        m1ShowPriorityBox();
+      } else {
+        M1_PRIORITY.passed = true;
+        m1SetFeedback('✅ 正确！继续点击下一步的运算符。', 'ok');
+      }
+    }
+  }, 280);
 }
 
 /* 取消输入 */
@@ -2991,7 +3041,13 @@ m8Render();
     if (String(raw) === String(expected)) {
       input.classList.remove('wrong');
       input.classList.add('correct');
-      setFeedback('✓ 正确！', 'ok');
+      // ⭐ 弹一下
+      input.style.transition = 'transform .15s cubic-bezier(.34,1.5,.64,1)';
+      input.style.transform = 'scale(1.15)';
+      setTimeout(() => {
+        input.style.transform = 'scale(1)';
+      }, 150);
+      setFeedback(getEncouragement('m9', COMBO.count), 'ok');
 
       M9.filled[key] = raw;
       M9.waitingFor = null;
@@ -4643,11 +4699,26 @@ $('#pCheck').addEventListener('click', async () => {
       // 展示结果
       if (allMatch) {
         badge.className = 'result-badge ok';
-        badge.textContent = `🎉 完全正确！（历史缓存）参考答案：${fb.answer?.full || cachedRecord.correctAnswer || '—'}`;
+        badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' （历史缓存）参考答案：' + stdFull
+        // ⭐ 跳一下
+        badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
+        setTimeout(() => { badge.style.animation = ''; }, 500);
         handleRedoSuccess(problemText);
       } else {
         badge.className = 'result-badge no';
         badge.textContent = `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`;
+
+        // ⭐ 触发拇指条
+        if (typeof window.__shell?.showThumbBar === 'function') {
+          window.__shell.showThumbBar({
+            text: '答案还不对，想看看标准解法吗？',
+            ok: false,
+            onNext: () => {
+              // 滚动到标准解法按钮
+              document.getElementById('m13UnlockBtn')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            },
+          });
+        }
       }
 
       // 显示缓存讲解
@@ -4730,7 +4801,10 @@ $('#pCheck').addEventListener('click', async () => {
 
       if (allMatch) {
       badge.className = 'result-badge ok';
-      badge.textContent = `🎉 完全正确！参考答案：${stdFull}`;
+      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + stdFull;
+      // ⭐ 跳一下
+      badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
+      setTimeout(() => { badge.style.animation = ''; }, 500);
       // ⭐ 做对了：如果正在重做错题，累计掌握进度
       handleRedoSuccess(problemText);
 
@@ -4780,6 +4854,7 @@ $('#pCheck').addEventListener('click', async () => {
       wbAdd({
         id: p ? p.id : 'bank',
         type: p ? p.type : '题库',
+        moduleId: 'm13',   // ⭐ 加这个
         text: problemText,
         studentAnswer: user,
         correctAnswer: stdFull,
@@ -4839,10 +4914,17 @@ $('#pCheck').addEventListener('click', async () => {
     result._source = 'llm';
 
     const ok = result.judgement.answer_correct;
+    // 先设基础样式
     badge.className = 'result-badge ' + (ok ? 'ok' : 'no');
-    badge.textContent = ok
-      ? `🎉 答案正确！${result.answer.full}`
-      : `❌ ${result.judgement.student_answer_issue || '再检查一下'}`;
+ 
+    if (ok) {
+      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + stdFull;
+      // ⭐ 跳一下
+      badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
+      setTimeout(() => { badge.style.animation = ''; }, 500);
+    }else{
+      badge.textContent = `❌ ${result.judgement.student_answer_issue || '再检查一下'}`;
+    }
 
     renderLLMFeedback(result);
 
@@ -5886,6 +5968,108 @@ h1 {
     margin: 12mm;
   }
 }
+
+.home-tasks {
+  background: #fff;
+  border: 2px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+.home-tasks-hd {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 15px; font-weight: 800; color: #1e293b;
+  margin-bottom: 12px;
+}
+.home-tasks-count {
+  font-size: 13px; font-weight: 700; color: #2563eb;
+  background: #eff6ff; padding: 3px 10px; border-radius: 8px;
+}
+.home-tasks-list { display: flex; flex-direction: column; gap: 8px; }
+.home-task {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.home-task:hover { border-color: #c7d5e6; background: #fff; }
+.home-task.done { background: #f0fdf4; border-color: #86efac; }
+.home-task-icon { font-size: 24px; flex-shrink: 0; }
+.home-task-body { flex: 1; min-width: 0; }
+.home-task-title { font-size: 14px; font-weight: 800; color: #1e293b; }
+.home-task.done .home-task-title { color: #15803d; }
+.home-task-desc { font-size: 12px; color: #64748b; margin: 2px 0 6px; }
+.home-task-progress { height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+.home-task-progress span { display: block; height: 100%; background: #2563eb; border-radius: 2px; transition: width .4s; }
+.home-task.done .home-task-progress span { background: #10b981; }
+.home-task-arrow { font-size: 18px; color: #94a3b8; flex-shrink: 0; font-weight: 700; }
+.home-task.done .home-task-arrow { color: #10b981; }
+
+.weekly-summary-wrap {
+  max-width: 1200px;
+  margin: 16px auto 0;
+  padding: 0 16px;
+}
+.weekly-summary {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border: 2px solid #c4b5fd;
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+.weekly-summary-hd {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 15px; font-weight: 800; color: #5b21b6;
+  margin-bottom: 14px;
+}
+.weekly-summary-range { font-size: 11.5px; color: #7c3aed; font-weight: 600; }
+.weekly-summary-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  margin-bottom: 14px;
+}
+.weekly-stat {
+  background: #fff; border-radius: 10px; padding: 10px;
+  text-align: center;
+}
+.weekly-stat-value {
+  font-size: 22px; font-weight: 800; font-family: ui-monospace, monospace;
+  color: #7c3aed;
+}
+.weekly-stat-label { font-size: 11.5px; color: #64748b; font-weight: 600; margin-top: 2px; }
+.weekly-summary-section { margin-bottom: 12px; }
+.weekly-summary-section-title {
+  font-size: 12.5px; font-weight: 800; color: #6d28d9;
+  margin-bottom: 6px;
+}
+.weekly-summary-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.weekly-summary-tag {
+  background: #fff; border: 1.5px solid #ddd6fe;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; color: #5b21b6;
+}
+.weekly-summary-tip {
+  background: #fff; border-radius: 10px; padding: 10px 14px;
+  font-size: 13px; color: #5b21b6; line-height: 1.7;
+}
+.weekly-summary-tip b { color: #7c3aed; }
+.weekly-summary-actions {
+  display: flex; gap: 8px; margin-top: 14px;
+}
+.weekly-summary-actions button {
+  flex: 1; padding: 10px; border-radius: 10px; font-size: 13.5px;
+  font-weight: 700; font-family: inherit; cursor: pointer; border: none;
+}
+#weeklyExportBtn { background: #fff; color: #6d28d9; border: 2px solid #ddd6fe; }
+#weeklyGoWrongBtn { background: #7c3aed; color: #fff; box-shadow: 0 3px 0 #6d28d9; }
+
+@media (max-width: 600px) {
+  .weekly-summary-stats { grid-template-columns: repeat(2, 1fr); }
+}
+
 </style>
 </head>
 <body>
@@ -6459,41 +6643,47 @@ document.getElementById('explainModalMask').addEventListener('click', e => {
 
 /* ============ 错题本 · 重做 ============ */
 function wbRedo(text) {
-  // 记录"重做中的错题"
   const list = wbLoad();
   const rec = list.find(r => r.text === text);
-  if (rec) {
-    // 标记当前重做的题
-    window.__redoText = text;
-    window.__redoRecord = rec;
-  }
+  if (!rec) return;
 
-  // 切到 ⑬ 模块
-  const tab = document.querySelector('.tab[data-target="m13"]');
-  if (tab) tab.click();
+  const mid = rec.moduleId || 'm13';
 
-  m13LoadProblem(text, null, 'custom', null);
-  m13ClearStepMarks();
-  m13InitSteps();
-
-  document.getElementById('pResult').innerHTML = '';
-  document.getElementById('m13StandardSteps').style.display = 'none';
-  document.getElementById('m13StepsLocked').style.display = 'none';
-
+  // 关抽屉
   document.getElementById('wrongBookDrawer').classList.remove('open');
   document.getElementById('wrongBookMask').classList.remove('open');
-  /* ⭐ 关键修复：解锁 body 滚动 */
   lockBodyScroll(false);
 
-  // ⭐ 显示"重做中"提示
-  showRedoBanner(text);
+  // 跳 lesson 页 + 对应模块
+  if (window.__shell?.navigate) {
+    window.__shell.navigate('lesson', { lessonId: mid });
+  }
 
+  // 等一帧，让模块渲染完，再注入题目
   setTimeout(() => {
-    document.getElementById('problem-text')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start'
-    });
-  }, 150);
+    if (mid === 'm1') {
+      // M1：把题目文本塞进自定义输入框，触发载入
+      const custom = document.getElementById('m1Custom');
+      if (custom) {
+        custom.value = text;
+        document.getElementById('m1UseCustom')?.click();
+      }
+    } else if (mid === 'm9') {
+      // M9：题目文本是 "a op b"，解析后填入
+      const m = text.match(/^(\d+)\s*([+\-−×÷])\s*(\d+)$/);
+      if (m) {
+        document.getElementById('m9a').value = m[1];
+        document.getElementById('m9op').value = m[2];
+        document.getElementById('m9b').value = m[3];
+        document.getElementById('m9reset')?.click();
+      }
+    } else {
+      // m13 及兜底
+      m13LoadProblem(text, null, 'custom', null);
+      m13InitSteps();
+    }
+    showRedoBanner(text);
+  }, 200);
 }
 
 /* ⭐ 顶部显示"正在重做错题"横幅 */
@@ -8291,6 +8481,23 @@ h1{font-size:22px;color:#7c3aed;text-align:center;margin-bottom:8px;}
 .weekly-report-section h5{font-size:13px;color:#6d28d9;margin-bottom:6px;}
 .btn-secondary{display:none;}
 .footer{text-align:center;color:#94a3b8;font-size:12px;margin-top:20px;padding-top:14px;border-top:1px dashed #e2e8f0;}
+
+.vc-input.correct {
+  transition: transform .15s cubic-bezier(.34,1.5,.64,1);
+}
+
+// M13 答对：进度条 + 徽章“跳一下”
+@keyframes badgeBump {
+  0% { transform: scale(.8); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+//回 Home，做完的岛进度条“滑”到新位置
+.island-progress span {
+  transition: width .6s cubic-bezier(.34,1.3,.64,1);
+}
+
 </style>
 </head><body>
 <div class="wrap">
@@ -8955,18 +9162,34 @@ function hookFeedbackToThumbBar() {
             (id === 'm9' && /算出来啦|🎉/.test(document.getElementById('m9fb')?.textContent || ''));
 
           if (isWholeDone) {
-            const btnMap = {
-              m1: 'm1Random',
-              m9: 'm9random',
-              m13: 'm5NewChallenge',
-            };
+            const btnMap = { m1: 'm1Random', m9: 'm9random' };
             const btn = document.getElementById(btnMap[id]);
             if (btn) btn.click();
+
+            // ⭐ 换题后自动聚焦
+            setTimeout(() => {
+              if (id === 'm1') {
+                // M1 换题后没有直接输入框，等用户点运算符
+              } else if (id === 'm9') {
+                // M9 换题后，等用户点"下一步"
+              }
+            }, 200);
           } else {
+            // 没完成整题 → 走下一步
             const nextBtn = document.getElementById(
               id === 'm1' ? 'm1InputSubmit' : id === 'm9' ? 'm9step' : null
             );
-            if (nextBtn) nextBtn.click();
+            if (nextBtn) {
+              nextBtn.click();
+              // ⭐ 下一步后自动聚焦输入框
+              setTimeout(() => {
+                const input = document.getElementById(id === 'm1' ? 'm1Input' : id === 'm9' ? 'm9InlineInput' : null);
+                if (input) {
+                  input.focus();
+                  try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+                }
+              }, 100);
+            }
           }
           hideThumbBar();
         },
@@ -9156,5 +9379,158 @@ function showKojiChoiceModal(problemText) {
       studentSteps: [],
       aiFeedback: null,
     });
+  });
+}
+
+/* ⭐ Koji 主动提示：用户卡住时，浮球冒泡 */
+(function hookKojiProactive() {
+  const btn = document.getElementById('kojiBtn');
+  if (!btn) return;
+
+  let stuckTimer = null;
+  let errorCount = 0;
+
+  function showKojiBubble(text) {
+    if (document.querySelector('.koji-bubble')) return;
+    const bubble = document.createElement('div');
+    bubble.className = 'koji-bubble';
+    bubble.style.cssText = `
+      position: fixed;
+      bottom: max(88px, calc(env(safe-area-inset-bottom) + 88px));
+      right: max(144px, calc(env(safe-area-inset-right) + 144px));
+      background: #fff;
+      border: 2px solid #8b5cf6;
+      border-radius: 14px;
+      padding: 10px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #5b21b6;
+      box-shadow: 0 8px 24px rgba(139, 92, 246, .25);
+      z-index: 999;
+      max-width: 220px;
+      animation: fadeUp .3s ease;
+      cursor: pointer;
+    `;
+    bubble.textContent = text;
+    bubble.addEventListener('click', () => {
+      bubble.remove();
+      btn.click();
+    });
+    document.body.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 8000);
+  }
+
+  // 监听 M1 的错误反馈
+  const m1InputFb = document.getElementById('m1InputFeedback');
+  if (m1InputFb) {
+    new MutationObserver(() => {
+      if (/❌/.test(m1InputFb.textContent)) {
+        errorCount++;
+        if (errorCount === 3) {
+          showKojiBubble('卡住了？点我看看这步怎么算 🤖');
+        }
+      } else if (/✓/.test(m1InputFb.textContent)) {
+        errorCount = 0;
+      }
+    }).observe(m1InputFb, { childList: true, subtree: true, characterData: true });
+  }
+
+  // 监听 M9 的错误反馈
+  const m9Fb = document.getElementById('m9fb');
+  if (m9Fb) {
+    let last = '';
+    new MutationObserver(() => {
+      const txt = m9Fb.textContent;
+      if (txt === last) return;
+      last = txt;
+      if (/❌/.test(txt)) {
+        errorCount++;
+        if (errorCount === 3) {
+          showKojiBubble('卡住了？点我看看这一步 🤖');
+        }
+      } else if (/✓|🎉/.test(txt)) {
+        errorCount = 0;
+      }
+    }).observe(m9Fb, { childList: true, subtree: true, characterData: true });
+  }
+
+  // 60 秒无操作 → 也提示
+  function resetStuckTimer() {
+    clearTimeout(stuckTimer);
+    stuckTimer = setTimeout(() => {
+      const module = document.querySelector('#modulePool .module.active');
+      if (!module) return;
+      const id = module.id;
+      if (id === 'm1' || id === 'm9' || id === 'm13') {
+        showKojiBubble('有不会的地方吗？点我问问 🤖');
+      }
+    }, 60000);
+  }
+  ['click', 'keydown', 'touchstart'].forEach(evt => {
+    document.addEventListener(evt, resetStuckTimer, { passive: true });
+  });
+  resetStuckTimer();
+})();
+
+(function hookDailyComplete() {
+  let shown = false;
+  on(EVT.DATA_CHANGED, (payload) => {
+    if (payload.source !== 'history') return;
+    if (shown) return;
+
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayRecords = historyLoad().filter(r => r.timestamp >= todayStart.getTime());
+    if (todayRecords.length < 5) return;
+
+    // ⭐ 本次会话只弹一次
+    if (sessionStorage.getItem('grade3_daily_complete_shown') === '1') return;
+    sessionStorage.setItem('grade3_daily_complete_shown', '1');
+    shown = true;
+
+    const correct = todayRecords.filter(r => r.isCorrect).length;
+    const rate = Math.round(correct / todayRecords.length * 100);
+
+    showDailyComplete({ total: todayRecords.length, correct, rate });
+  });
+})();
+
+//判断今日目标是否达成
+function showDailyComplete({ total, correct, rate }) {
+  if (document.querySelector('.daily-complete-mask')) return;
+
+  const mask = document.createElement('div');
+  mask.className = 'daily-complete-mask';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10010;padding:20px;';
+  mask.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:32px 28px 24px;width:380px;max-width:92vw;text-align:center;box-shadow:0 20px 60px rgba(15,23,42,.3);">
+      <div style="font-size:56px;margin-bottom:8px;">🎉</div>
+      <div style="font-size:20px;font-weight:800;color:#15803d;margin-bottom:8px;">今日目标完成！</div>
+      <div style="font-size:14px;color:#64748b;line-height:1.8;margin-bottom:20px;">
+        今天做了 <b style="color:#2563eb;">${total}</b> 道题，<br>
+        正确 <b style="color:#15803d;">${correct}</b> 道，正确率 <b style="color:#2563eb;">${rate}%</b>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-secondary" id="dailyCompleteRest"
+                style="flex:1;padding:12px;border-radius:12px;font-weight:700;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-family:inherit;">
+          休息一下
+        </button>
+        <button class="btn" id="dailyCompleteMore"
+                style="flex:1;padding:12px;border-radius:12px;font-weight:700;background:#2563eb;color:#fff;border:none;cursor:pointer;box-shadow:0 3px 0 #1d4ed8;font-family:inherit;">
+          再来几题
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  document.getElementById('dailyCompleteRest').addEventListener('click', () => {
+    mask.remove();
+    if (window.__shell?.navigate) window.__shell.navigate('home');
+  });
+  document.getElementById('dailyCompleteMore').addEventListener('click', () => {
+    mask.remove();
+  });
+  mask.addEventListener('click', e => {
+    if (e.target === mask) mask.remove();
   });
 }

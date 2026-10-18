@@ -4554,10 +4554,16 @@ html { scroll-padding-bottom: 300px; }
   .grade-modal-list { grid-template-columns: repeat(2, 1fr); }
 }
 
-//shell.css（新增样式，追加到现有 <style> 末尾）
+.module { display: none; }
+.module.active { display: block; animation: fadeUp .3s ease; }
+
+/*shell.css（新增样式，追加到现有 <style> 末尾）*/
 /* ============ App Shell ============ */
-.page { display: none; }
-.page.active { display: block; animation: pageIn .28s cubic-bezier(.34,1.3,.64,1); }
+.page { display: none !important; }
+.page.active {
+  display: block !important;
+  animation: pageIn .28s cubic-bezier(.34,1.3,.64,1);
+}
 @keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ---- Home ---- */
@@ -4642,6 +4648,18 @@ html { scroll-padding-bottom: 300px; }
   backdrop-filter: blur(8px);
   border-bottom: 1px solid #e5e7eb;
 }
+
+.lesson-progress {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 10px 16px;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 600;
+  border-bottom: 1px solid #e5e7eb;
+}
+.lesson-progress b { color: #2563eb; font-size: 15px; }
+
 .lesson-back, .lesson-more {
   width: 36px; height: 36px; border: none; border-radius: 10px;
   background: #f1f5f9; color: #475569; font-size: 18px;
@@ -4691,13 +4709,11 @@ html { scroll-padding-bottom: 300px; }
   .thumb-bar { flex-direction: column; align-items: stretch; }
   .thumb-bar-actions { justify-content: stretch; }
   .thumb-btn { flex: 1; }
+  .weekly-summary-stats { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* ============ Shell 页面路由（强制生效） ============ */
-.page { display: none !important; }
-.page.active { display: block !important; }
 
-//课程提示
+/* 课程提示 */
 .lesson-hint {
   margin-bottom: 16px;
   border: 1.5px dashed #cbd5e1;
@@ -4743,6 +4759,103 @@ html { scroll-padding-bottom: 300px; }
 
 /* home 页显示时，lesson 页隐藏（已有 .page 规则） */
 
+.home-tasks {
+  background: #fff;
+  border: 2px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+}
+.home-tasks-hd {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 15px; font-weight: 800; color: #1e293b;
+  margin-bottom: 12px;
+}
+.home-tasks-count {
+  font-size: 13px; font-weight: 700; color: #2563eb;
+  background: #eff6ff; padding: 3px 10px; border-radius: 8px;
+}
+.home-tasks-list { display: flex; flex-direction: column; gap: 8px; }
+.home-task {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.home-task:hover { border-color: #c7d5e6; background: #fff; }
+.home-task.done { background: #f0fdf4; border-color: #86efac; }
+.home-task-icon { font-size: 24px; flex-shrink: 0; }
+.home-task-body { flex: 1; min-width: 0; }
+.home-task-title { font-size: 14px; font-weight: 800; color: #1e293b; }
+.home-task.done .home-task-title { color: #15803d; }
+.home-task-desc { font-size: 12px; color: #64748b; margin: 2px 0 6px; }
+.home-task-progress { height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden; }
+.home-task-progress span { display: block; height: 100%; background: #2563eb; border-radius: 2px; transition: width .4s; }
+.home-task.done .home-task-progress span { background: #10b981; }
+.home-task-arrow { font-size: 18px; color: #94a3b8; flex-shrink: 0; font-weight: 700; }
+.home-task.done .home-task-arrow { color: #10b981; }
+
+.weekly-summary-wrap {
+  max-width: 1200px;
+  margin: 16px auto 0;
+  padding: 0 16px;
+}
+.weekly-summary {
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border: 2px solid #c4b5fd;
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+.weekly-summary-hd {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 15px; font-weight: 800; color: #5b21b6;
+  margin-bottom: 14px;
+}
+.weekly-summary-range { font-size: 11.5px; color: #7c3aed; font-weight: 600; }
+.weekly-summary-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  margin-bottom: 14px;
+}
+.weekly-stat {
+  background: #fff; border-radius: 10px; padding: 10px;
+  text-align: center;
+}
+.weekly-stat-value {
+  font-size: 22px; font-weight: 800; font-family: ui-monospace, monospace;
+  color: #7c3aed;
+}
+.weekly-stat-label { font-size: 11.5px; color: #64748b; font-weight: 600; margin-top: 2px; }
+.weekly-summary-section { margin-bottom: 12px; }
+.weekly-summary-section-title {
+  font-size: 12.5px; font-weight: 800; color: #6d28d9;
+  margin-bottom: 6px;
+}
+.weekly-summary-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.weekly-summary-tag {
+  background: #fff; border: 1.5px solid #ddd6fe;
+  padding: 4px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; color: #5b21b6;
+}
+.weekly-summary-tip {
+  background: #fff; border-radius: 10px; padding: 10px 14px;
+  font-size: 13px; color: #5b21b6; line-height: 1.7;
+}
+.weekly-summary-tip b { color: #7c3aed; }
+.weekly-summary-actions {
+  display: flex; gap: 8px; margin-top: 14px;
+}
+.weekly-summary-actions button {
+  flex: 1; padding: 10px; border-radius: 10px; font-size: 13.5px;
+  font-weight: 700; font-family: inherit; cursor: pointer; border: none;
+}
+#weeklyExportBtn { background: #fff; color: #6d28d9; border: 2px solid #ddd6fe; }
+#weeklyGoWrongBtn { background: #7c3aed; color: #fff; box-shadow: 0 3px 0 #6d28d9; }
+
 </style>
 </head>
 <body>
@@ -4773,6 +4886,7 @@ html { scroll-padding-bottom: 300px; }
   
 <div id="page-lesson" class="page">
   <div id="lessonHeader" class="lesson-header"></div>
+  <div id="lessonProgress" class="lesson-progress"></div>   <!-- ⭐ 新增 -->
   <!-- ⭐ modulePool 就是 lesson 内容区，不再需要 lessonStage -->
   <div id="modulePool" class="lesson-stage">
     <main>

@@ -199,6 +199,13 @@ export function renderHome() {
     `;
   }).join('');
 
+  // renderHome 里，islandsHtml 生成后
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.island-progress span').forEach(span => {
+      span.style.transition = 'width .6s cubic-bezier(.34,1.3,.64,1)';
+    });
+  });
+
   // 推荐（错题画像驱动）
   const wrong = wbLoad();
   const recommendHtml = wrong.length ? `
@@ -211,9 +218,34 @@ export function renderHome() {
     </div>
   ` : '';
 
+  // ⭐ 今日任务
+  const tasks = getTodayTasks();
+  const tasksHtml = `
+    <div class="home-tasks">
+      <div class="home-tasks-hd">
+        <span>📋 今日任务</span>
+        <span class="home-tasks-count">${tasks.filter(t => t.done).length} / ${tasks.length}</span>
+      </div>
+      <div class="home-tasks-list">
+        ${tasks.map(t => `
+          <button class="home-task ${t.done ? 'done' : ''}" data-task-id="${t.id}">
+            <div class="home-task-icon">${t.done ? '✅' : t.icon}</div>
+            <div class="home-task-body">
+              <div class="home-task-title">${t.title}</div>
+              <div class="home-task-desc">${t.desc}</div>
+              <div class="home-task-progress"><span style="width:${t.progress}%"></span></div>
+            </div>
+            <div class="home-task-arrow">${t.done ? '✓' : '→'}</div>
+          </button>
+        `).join('')}
+      </div>
+    </div>
+  `;
+
   document.getElementById('page-home').innerHTML = `
     <div class="home-wrap">
       ${heroHtml}
+      ${tasksHtml}
       <div class="home-section-title">📚 知识岛</div>
       <div class="island-grid">${islandsHtml}</div>
       ${recommendHtml}
@@ -223,12 +255,78 @@ export function renderHome() {
     </div>
   `;
 
+  // ⭐ 任务点击
+  document.querySelectorAll('.home-task[data-task-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.taskId;
+      const t = tasks.find(x => x.id === id);
+      t?.action?.();
+    });
+  });
+
   // ⭐ 保留"去复习"按钮的特殊绑定（它不走 data-goto）
   const wbBtn = document.getElementById('homeGoWrong');
   if (wbBtn) wbBtn.addEventListener('click', () => {
     // 复用你现有的错题本抽屉
     document.getElementById('wrongBookBtn')?.click();
   });
+}
+
+// ⭐ 计算今日任务
+function getTodayTasks() {
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const todayRecords = historyLoad().filter(r => r.timestamp >= todayStart.getTime());
+  const todayCount = todayRecords.length;
+  const todayCorrect = todayRecords.filter(r => r.isCorrect).length;
+
+  const tasks = [];
+
+  // 任务 1：做完 5 道题
+  tasks.push({
+    id: 'daily-5',
+    icon: '🎯',
+    title: '今天做 5 道题',
+    desc: `已完成 ${todayCount} / 5`,
+    done: todayCount >= 5,
+    progress: Math.min(100, Math.round(todayCount / 5 * 100)),
+    action: () => navigate('lesson', { lessonId: 'm1' }),
+  });
+
+  // 任务 2：复习错题本
+  const wrong = wbLoad();
+  if (wrong.length > 0) {
+    const todayWrongReviewed = todayRecords.filter(r => wbLoad().some(w => w.text === r.problemText)).length;
+    tasks.push({
+      id: 'review-wrong',
+      icon: '📕',
+      title: '复习 2 道错题',
+      desc: `错题本还有 ${wrong.length} 道`,
+      done: todayWrongReviewed >= 2,
+      progress: Math.min(100, Math.round(todayWrongReviewed / 2 * 100)),
+      action: () => document.getElementById('wrongBookBtn')?.click(),
+    });
+  }
+
+  // 任务 3：连对 3 题（从今天记录算）
+  const todayStreak = (() => {
+    let s = 0;
+    for (const r of todayRecords) {
+      if (r.isCorrect) s++;
+      else break;
+    }
+    return s;
+  })();
+  tasks.push({
+    id: 'streak-3',
+    icon: '🔥',
+    title: '连对 3 题',
+    desc: todayStreak >= 3 ? '已达成' : `当前连对 ${todayStreak} 题`,
+    done: todayStreak >= 3,
+    progress: Math.min(100, Math.round(todayStreak / 3 * 100)),
+    action: () => navigate('lesson', { lessonId: 'm1' }),
+  });
+
+  return tasks;
 }
 
 /* ============================================================
@@ -303,36 +401,28 @@ function retriggerModuleRender(lessonId) {
 function mountLesson(lessonId) {
   if (!lessonId) lessonId = 'm1';
   const meta = LESSON_META[lessonId] || LESSON_META.m1;
-
   const pool = document.getElementById('modulePool');
-  if (!pool) { console.error('[shell] #modulePool 不存在'); return; }
+  if (!pool) return;
 
-  // ⭐ 所有 module 取消 active
-  pool.querySelectorAll('.module').forEach(m => {
-    m.classList.remove('active');
-  });
-
-  // ⭐ 目标 module 加 active（容错：遍历找 id）
-  let section = document.getElementById(lessonId);
-  if (!section) {
-    const target = String(lessonId).trim();
-    section = [...pool.querySelectorAll('.module')].find(m =>
-      (m.id || '').trim() === target
-    );
-  }
-  if (!section) {
-    console.error('[shell] 找不到模块:', lessonId);
-    console.warn('[shell] 现有:', [...pool.querySelectorAll('.module')].map(m => m.id));
-    return;
-  }
+  pool.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
+  const section = document.getElementById(lessonId);
+  if (!section) return;
   section.classList.add('active');
-
-  // 重新触发模块渲染（Canvas 模块需要）
   retriggerModuleRender(lessonId);
 
-  // header 渲染
-  const pathHtml = Array.from({ length: meta.steps }).map((_, i) => {
-    const cls = i === 0 ? 'done' : i === 1 ? 'current' : '';
+  // ⭐ 动态路径点：根据本模块历史记录算进度
+  const history = historyLoad();
+  const moduleRecords = history.filter(r => r.moduleId === lessonId);
+  const totalCount = moduleRecords.length;
+  const correctCount = moduleRecords.filter(r => r.isCorrect).length;
+
+  // 简单规则：每做 2 题点亮一个点，最多 4 个点
+  const totalDots = 4;
+  const litDots = Math.min(totalDots, Math.ceil(totalCount / 2));
+  const pathHtml = Array.from({ length: totalDots }).map((_, i) => {
+    let cls = '';
+    if (i < litDots - 1) cls = 'done';
+    else if (i === litDots - 1) cls = 'current';
     return `<span class="path-dot ${cls}"></span>`;
   }).join('');
 
@@ -342,6 +432,14 @@ function mountLesson(lessonId) {
     <div class="lesson-path">${pathHtml}</div>
     <button class="lesson-more" id="lessonMore">⋯</button>
   `;
+
+  // 顶部进度条（新增）
+  const progressBar = document.getElementById('lessonProgress');
+  if (progressBar) {
+    progressBar.innerHTML = totalCount > 0
+      ? `<span>已练 <b>${totalCount}</b> 题 · 正确率 <b>${Math.round(correctCount / totalCount * 100)}%</b></span>`
+      : `<span>还没开始，试试第一题吧</span>`;
+  }
 
   document.getElementById('lessonBack').addEventListener('click', () => navigate('home'));
   document.getElementById('lessonMore').addEventListener('click', () => {
@@ -403,7 +501,12 @@ export function hideThumbBar() {
    ============================================================ */
 function renderGrowth() {
   const stage = document.getElementById('growthStage');
-  if (stage.dataset.mounted === '1') return;
+  if (stage.dataset.mounted === '1') {
+    // ⭐ 已挂载，只刷新总结卡
+    renderWeeklySummary();
+    return;
+  }
+
   const section = document.getElementById('m14');
   if (section) {
     section.parentNode.removeChild(section);
@@ -413,7 +516,7 @@ function renderGrowth() {
   }
   stage.dataset.mounted = '1';
 
-  // 顶部返回
+  // ⭐ 顶部插入本周总结卡
   const hd = document.getElementById('growthHeader');
   hd.innerHTML = `
     <button class="lesson-back" id="growthBack">←</button>
@@ -421,6 +524,110 @@ function renderGrowth() {
     <div style="width:36px"></div>
   `;
   document.getElementById('growthBack').addEventListener('click', () => navigate('home'));
+
+  // ⭐ 在 m14 前面插入总结卡容器
+  const summaryWrap = document.createElement('div');
+  summaryWrap.id = 'weeklySummaryWrap';
+  summaryWrap.className = 'weekly-summary-wrap';
+  stage.insertBefore(summaryWrap, stage.firstChild);
+
+  renderWeeklySummary();
+}
+
+function renderWeeklySummary() {
+  const wrap = document.getElementById('weeklySummaryWrap');
+  if (!wrap) return;
+
+  const now = Date.now();
+  const weekAgo = now - 7 * 86400000;
+  const weekRecords = historyLoad().filter(r => r.timestamp >= weekAgo);
+
+  const total = weekRecords.length;
+  const correct = weekRecords.filter(r => r.isCorrect).length;
+  const rate = total ? Math.round(correct / total * 100) : 0;
+  const days = new Set(weekRecords.map(r => {
+    const d = new Date(r.timestamp); d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  })).size;
+
+  // 本周模块分布
+  const byModule = {};
+  weekRecords.forEach(r => {
+    const mid = r.moduleId || 'other';
+    byModule[mid] = (byModule[mid] || 0) + 1;
+  });
+  const topModules = Object.entries(byModule).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+  // 错题最多的模块
+  const wrongByModule = {};
+  weekRecords.filter(r => !r.isCorrect).forEach(r => {
+    const mid = r.moduleId || 'other';
+    wrongByModule[mid] = (wrongByModule[mid] || 0) + 1;
+  });
+  const topWrong = Object.entries(wrongByModule).sort((a, b) => b[1] - a[1])[0];
+
+  wrap.innerHTML = `
+    <div class="weekly-summary">
+      <div class="weekly-summary-hd">
+        <span>📊 本周学习总结</span>
+        <span class="weekly-summary-range">${new Date(weekAgo).toLocaleDateString('zh-CN')} - 今天</span>
+      </div>
+      <div class="weekly-summary-stats">
+        <div class="weekly-stat">
+          <div class="weekly-stat-value">${total}</div>
+          <div class="weekly-stat-label">做题</div>
+        </div>
+        <div class="weekly-stat">
+          <div class="weekly-stat-value" style="color:#15803d;">${correct}</div>
+          <div class="weekly-stat-label">做对</div>
+        </div>
+        <div class="weekly-stat">
+          <div class="weekly-stat-value" style="color:#2563eb;">${rate}%</div>
+          <div class="weekly-stat-label">正确率</div>
+        </div>
+        <div class="weekly-stat">
+          <div class="weekly-stat-value" style="color:#f59e0b;">${days}</div>
+          <div class="weekly-stat-label">学习天数</div>
+        </div>
+      </div>
+      ${topModules.length ? `
+        <div class="weekly-summary-section">
+          <div class="weekly-summary-section-title">📚 本周练得最多</div>
+          <div class="weekly-summary-tags">
+            ${topModules.map(([mid, count]) => {
+              const meta = LESSON_META[mid] || { title: mid, icon: '📖' };
+              return `<span class="weekly-summary-tag">${meta.icon} ${meta.title} · ${count} 次</span>`;
+            }).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${topWrong ? `
+        <div class="weekly-summary-section">
+          <div class="weekly-summary-section-title">⚠️ 下周重点</div>
+          <div class="weekly-summary-tip">
+            集中练一练「<b>${(LESSON_META[topWrong[0]] || { title: topWrong[0] }).title}</b>」，本周错过 ${topWrong[1]} 次
+          </div>
+        </div>
+      ` : ''}
+      <div class="weekly-summary-actions">
+        <button class="btn-secondary" id="weeklyExportBtn">📤 导出周报</button>
+        <button class="btn" id="weeklyGoWrongBtn">📕 复习错题</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('weeklyExportBtn').addEventListener('click', () => {
+    const name = (typeof getStudentName === 'function' && getStudentName()) || '未命名';
+    const html = typeof buildWeeklyReportHtml === 'function' ? buildWeeklyReportHtml() : '';
+    if (typeof downloadBlob === 'function') {
+      downloadBlob(html, `周报_${name}_${new Date().toISOString().slice(0, 10)}.html`, 'text/html');
+    }
+    if (typeof showToast === 'function') showToast('✅ 周报已导出', 'success');
+  });
+
+  document.getElementById('weeklyGoWrongBtn').addEventListener('click', () => {
+    document.getElementById('wrongBookBtn')?.click();
+  });
 }
 
 /* ============================================================
