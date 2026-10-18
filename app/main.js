@@ -58,8 +58,31 @@ import { isCloudBaseConfigured } from '../core/sync/cloudbase-client.js';
 import { initSyncUI } from './sync-ui.js';
 
 // app/main.js 末尾追加
-
 import { initShell, showThumbBar, hideThumbBar, navigate } from './shell.js';
+
+import { activityAdd, activityStatsByModule } from '../core/activity.js';
+
+// ========== 2. 全局工具 ==========
+const _actTimer = {};
+const _actPending = {};   // ⭐ 存最后一次的参数
+
+function recordActivity(moduleId, label, detail, delay = 2000) {
+  clearTimeout(_actTimer[moduleId]);
+  _actPending[moduleId] = { label, detail };   // ⭐ 存起来
+  _actTimer[moduleId] = setTimeout(() => {
+    activityAdd(moduleId, _actPending[moduleId]);
+    delete _actPending[moduleId];
+  }, delay);
+}
+
+// ⭐ 立即 flush 所有挂起的
+window.__flushActivity = function () {
+  Object.keys(_actPending).forEach(mid => {
+    clearTimeout(_actTimer[mid]);
+    activityAdd(mid, _actPending[mid]);
+    delete _actPending[mid];
+  });
+};
 
 // ========== 2. 全局初始化 ==========
 installGlobalErrorHandlers();
@@ -838,6 +861,7 @@ async function m2FillRow() {
   if (M2.busy) return;
   const total = M2.a * M2.b;
   if (M2.filled >= total) return;
+
   M2.busy = true;
   const start = M2.filled, end = Math.min(total, start + M2.a);
   for (let i = start; i < end; i++) {
@@ -847,7 +871,13 @@ async function m2FillRow() {
   }
   M2.busy = false;
   m2Calc();
+
+  // ⭐ 铺满时才记
+  if (M2.filled >= total) {
+    recordActivity('m2', `${M2.a} × ${M2.b}`, `铺满 ${total} 块`);
+  }
 }
+
 function m2Sync() {
   M2.a = +$('#m2a').value; M2.b = +$('#m2b').value;
   $('#m2aval').textContent = M2.a; $('#m2bval').textContent = M2.b;
@@ -896,7 +926,8 @@ function m3Update() {
   $('#m3denText').textContent = den;
   const t = $('#m3text');
   if (num === 0) { t.textContent = '还没有选任何一份'; t.style.color = '#94a3b8'; }
-  else if (num === den) { t.textContent = `取了全部 ${den} 份，就是 1 个整体`; t.style.color = '#15803d'; }
+  else if (num === den) { t.textContent = `取了全部 ${den} 份，就是 1 个整体`; t.style.color = '#15803d';
+                            recordActivity('m3', `分数披萨 ${num}/${den}`, `分成 ${den} 份`);}
   else { t.textContent = `${CN_NUM[den]}分之${CN_NUM[num]}`; t.style.color = '#334155'; }
 }
 function m3Reset() {
@@ -1184,6 +1215,8 @@ function m4Update() {
     const hl = x.key === unit ? ' hl' : '';
     return `<div class="result-item${hl}"><span class="k">${x.name} ${x.key}</span><span class="v">${fmt(v)}</span></div>`;
   }).join('');
+  // ⭐ 新增：体验记录（防抖 2 秒）
+  recordActivity('m4', `${val} ${u.name}`, '');
 }
 $('#m4val').addEventListener('input', m4Update);
 $('#m4unit').addEventListener('change', m4Update);
@@ -1208,6 +1241,8 @@ $('#m4check').addEventListener('click', () => {
   if (Math.abs(user - m4Quiz.ans) < 1e-9) {
     fb.className = 'feedback ok';
     fb.textContent = `🎉 完全正确！${m4Quiz.val} ${m4Quiz.from.name} = ${fmt(m4Quiz.ans)} ${m4Quiz.to.name}`;
+     // ⭐ 新增：小测做对
+    recordActivity('m4', `小测：${m4Quiz.val} ${m4Quiz.from.name}`, '答对', 0);
   } else {
     fb.className = 'feedback error';
     fb.textContent = `再想想～ 提示：${m4Quiz.from.name}换成${m4Quiz.to.name}要 ${fmt(m4Quiz.from.toM / m4Quiz.to.toM)} 倍`;
@@ -1230,6 +1265,9 @@ function m5Render() {
   $('#m5grid').innerHTML = html;
   $('#m5area').textContent = w * h;
   $('#m5perim').textContent = (w + h) * 2;
+
+  // ⭐ 新增：拖滑块也算体验
+  recordActivity('m5', `长方形 ${w}×${h}`, `面积 ${w*h}`);
 }
 
 /* ============ 面积周长 · 逆向挑战 ============ */
@@ -1403,6 +1441,8 @@ function m5NewChallenge() {
         input.classList.add('correct');
         fb.innerHTML = `✓ 对！答案是 ${q.answer} ${q.unit}`;
         fb.className = 'm5-chal-fb ok';
+        // ⭐ 新增
+        recordActivity('m5', `逆向挑战`, `答对 ${q.answer} ${q.unit}`, 0);
       } else {
         input.classList.add('wrong');
         fb.innerHTML = '❌ 再想想～ ' + q.hint;
@@ -1429,6 +1469,8 @@ $('#m5record').addEventListener('click', () => {
   const tr = document.createElement('tr');
   tr.innerHTML = `<td>${m5RecordIdx}</td><td>${w}</td><td>${h}</td><td>${w} × ${h} = <b style="color:#2563eb">${w*h}</b></td><td>(${w} + ${h}) × 2 = <b style="color:#d97706">${(w+h)*2}</b></td>`;
   $('#m5table tbody').appendChild(tr);
+   recordActivity('m5', `长方形 ${w}×${h}`, `面积 ${w*h}`, 500);
+
 });
 $('#m5cleartable').addEventListener('click', () => {
   $('#m5table tbody').innerHTML = '';
@@ -1518,6 +1560,8 @@ function m6Update() {
     if (jiao) detail += `<br>${jiao} 角 = ${jiao}/10 元 = ${(jiao/10).toFixed(1)} 元`;
     if (fen) detail += `<br>${fen} 分 = ${fen}/100 元 = ${(fen/100).toFixed(2)} 元`;
     sub.innerHTML = parts.join(' + ') + ' = ' + total.toFixed(2) + ' 元' + detail;
+    // M6：放硬币（total > 0）
+    recordActivity('m6', `钱包 ${total.toFixed(2)} 元`, `${yuan}元${jiao}角${fen}分`);
   }
   m6RenderNumline();
 }
@@ -1778,6 +1822,8 @@ function m7NewCalcChallenge() {
         mIn.classList.add('correct');
         fb.innerHTML = `✓ 对！${q.answer.h} 时 ${q.answer.m} 分`;
         fb.className = 'm7-calc-fb ok';
+        // ⭐ 新增
+        recordActivity('m7', `时间推算`, `答对 ${q.answer.h}时${q.answer.m}分`, 0);
       } else {
         hIn.classList.add('wrong');
         mIn.classList.add('wrong');
@@ -1843,6 +1889,12 @@ function m7ClockTick() {
     if (M7.minute >= 60) { M7.minute = 0; M7.hour = (M7.hour % 12) + 1; }
   }
   m7Draw(); m7UpdateDigital();
+  // M7：拖分针 / 秒表结束
+  // ⭐ 整分钟时记一次（防抖 5 秒，避免秒表模式下高频触发）
+  if (M7.second === 0) {
+    recordActivity('m7', `时钟 ${M7.hour}:${String(M7.minute).padStart(2,'0')}`, '', 5000);
+  }
+
   m7PlayTick(false);
 }
 
@@ -1885,6 +1937,8 @@ function m7SwFrame(now) {
     m7PlayTick(true);
     m7UpdateSwDisplay();
     $('#swHint').innerHTML = '⏰ <b style="color:#dc2626;">时间到！</b> 点击「归零」可重新开始。';
+    // ⭐ 新增
+    recordActivity('m7', `倒计时 ${M7.swTarget/1000} 秒`, '完成', 0);
     return;
   }
 
@@ -2010,6 +2064,9 @@ $('#m7canvas').addEventListener('mousedown', e => {
   M7.minute = m7FromPoint(e.clientX, e.clientY);
   M7.second = 0;
   m7Draw(); m7UpdateDigital();
+
+  // ⭐ 新增：拖分针
+  recordActivity('m7', `拖分针到 ${M7.minute} 分`, '', 1000);
 });
 window.addEventListener('mousemove', e => {
   if (!m7Dragging) return;
@@ -2084,6 +2141,9 @@ const M8 = { base: 3, times: 3, maxBase: 5, maxTimes: 20 };
 function m8Render() {
   const { base, times } = M8;
   const total = base * times;
+  // M8：滑块变化
+  recordActivity('m8', `${base} 的 ${times} 倍`, `共 ${base*times} 个`);
+
 
   // 第一行
   $('#m8row1').innerHTML = Array(base).fill('<span class="bei-shape">🍎</span>').join('');
@@ -3223,6 +3283,8 @@ function m10Render() {
   $('#m10calendar').innerHTML = html;
   const isLeap = m10IsLeap(y);
   $('#m10info').innerHTML = `${y} 年是<b>${isLeap ? '闰' : '平'}年</b>，2 月有 <b>${isLeap ? 29 : 28}</b> 天；${m} 月有 <b>${days}</b> 天。`;
+  // M10：切月份
+  recordActivity('m10', `${y} 年 ${m} 月`, `${days} 天`);
 }
 $('#m10year').addEventListener('input', m10Render);
 $('#m10month').addEventListener('change', m10Render);
@@ -3249,6 +3311,7 @@ function m11Render() {
   $('#m11grid-wrap').innerHTML = html;
   if (M11.selected) {
     $('#m11result').innerHTML = `你选的是 <b>第 ${M11.selected.c} 列，第 ${M11.selected.r} 行</b>`;
+    recordActivity('m11', `第 ${M11.selected.c} 列 第 ${M11.selected.r} 行`, '');
   } else {
     $('#m11result').textContent = '还没有选位置';
   }
@@ -3273,6 +3336,8 @@ function m12Update() {
   if (isNaN(val)) { wrap.innerHTML = '<div class="result-item"><span class="k">请输入一个数字</span></div>'; return; }
   const u = MASS_UNITS.find(x => x.key === unit);
   const inG = val * u.toG;
+  // M12：换算变化
+  recordActivity('m12', `${val} ${unit}`, '');
   wrap.innerHTML = MASS_UNITS.map(x => {
     const v = inG / x.toG;
     const hl = x.key === unit ? ' hl' : '';
@@ -8876,13 +8941,32 @@ function hookFeedbackToThumbBar() {
       const isOk  = !isErr && /✓|🎉|正确|对|算完|完成/.test(txt);
       if (!isOk && !isErr) return;
 
+      // ⭐ 调 showThumbBar，不要在这里绑 thumbRetry
       showThumbBar({
         text: txt.replace(/^[✓❌🎉]\s*/, ''),
         ok: isOk,
         onNext: () => {
-          if (next) {
-            const btn = document.getElementById(next);
+          const module = document.querySelector('#modulePool .module.active');
+          if (!module) return;
+          const id = module.id;
+
+          const isWholeDone =
+            (id === 'm1' && typeof M1 !== 'undefined' && M1.done) ||
+            (id === 'm9' && /算出来啦|🎉/.test(document.getElementById('m9fb')?.textContent || ''));
+
+          if (isWholeDone) {
+            const btnMap = {
+              m1: 'm1Random',
+              m9: 'm9random',
+              m13: 'm5NewChallenge',
+            };
+            const btn = document.getElementById(btnMap[id]);
             if (btn) btn.click();
+          } else {
+            const nextBtn = document.getElementById(
+              id === 'm1' ? 'm1InputSubmit' : id === 'm9' ? 'm9step' : null
+            );
+            if (nextBtn) nextBtn.click();
           }
           hideThumbBar();
         },

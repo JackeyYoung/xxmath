@@ -6,6 +6,8 @@ import { historyLoad } from '../core/history.js';
 import { wbLoad } from '../core/wrongbook.js';
 import { on, EVT } from '../core/events.js';
 
+import { activityStatsByModule, activityLoad } from '../core/activity.js';
+
 /* ============================================================
    1. 年级配置（为多年级扩展做准备）
    ============================================================ */
@@ -64,6 +66,7 @@ export function navigate(route, opts = {}) {
   target.classList.add('active');
 
   if (route === 'home') {
+    window.__flushActivity?.();   // ⭐ 回首页前 flush
     renderHome();
     history.pushState({ route: 'home' }, '', '#home');
   } else if (route === 'lesson') {
@@ -88,30 +91,75 @@ window.addEventListener('popstate', (e) => {
    ============================================================ */
 function getIslandStats() {
   const history = historyLoad();
+  const activity = activityStatsByModule();
+
   const stats = {};
+  // ① history
   history.forEach(r => {
-    // 用 problemSource 或 moduleId 判断归属；这里用 problemSource 兜底
     const key = r.moduleId || r.problemSource || 'other';
-    if (!stats[key]) stats[key] = { total: 0, correct: 0 };
+    if (!stats[key]) stats[key] = { total: 0, correct: 0, practiced: 0, lastAt: 0 };
     stats[key].total++;
     if (r.isCorrect) stats[key].correct++;
+    stats[key].practiced++;
+    if (r.timestamp > stats[key].lastAt) stats[key].lastAt = r.timestamp;
   });
+  // ② activity
+  Object.keys(activity).forEach(mid => {
+    if (!stats[mid]) stats[mid] = { total: 0, correct: 0, practiced: 0, lastAt: 0 };
+    stats[mid].practiced += activity[mid].count;
+    if (activity[mid].lastAt > stats[mid].lastAt) stats[mid].lastAt = activity[mid].lastAt;
+  });
+
   return stats;
 }
 
 export function renderHome() {
   const cfg = getGradeConfig();
   const stats = getIslandStats();
-  const history = historyLoad();
 
-  // 今日任务：最近一条做题记录所在模块
-  const last = history[0];
-  const lastIsland = last ? cfg.islands.find(i => i.id === (last.moduleId || last.problemSource)) : null;
+  // ⭐ 合并双数据源，算 last
+  const history = historyLoad();
+  const activity = activityLoad();
+  const recent = [
+    ...history.map(r => ({
+      moduleId: r.moduleId || r.problemSource,
+      at: r.timestamp,
+      text: r.problemText,
+      kind: 'practice',
+    })),
+    ...activity.map(a => ({
+      moduleId: a.moduleId,
+      at: a.at,
+      text: a.label,
+      kind: 'activity',
+    })),
+  ].sort((a, b) => b.at - a.at);
+
+  const last = recent[0];
+  let lastIslandId = null;
+  if (last) {
+    if (last.moduleId && cfg.islands.some(i => i.id === last.moduleId)) {
+      lastIslandId = last.moduleId;
+    } else if (last.moduleId && /^m\d+$/.test(last.moduleId)) {
+      lastIslandId = last.moduleId;
+    } else if (last.kind === 'practice') {
+      lastIslandId = 'm13';
+    }
+  }
+  const lastIsland = cfg.islands.find(i => i.id === lastIslandId);
+
+  // ⭐ hero 文案
+  const heroMeta = last
+    ? (last.kind === 'activity'
+        ? `上次玩了「${last.text}」`
+        : `上次做到「${(last.text || '').slice(0, 16)}…」`)
+    : '先算乘除，后算加减';
+
   const heroHtml = last ? `
-    <button class="home-hero" data-goto="lesson" data-lesson="${lastIsland ? lastIsland.id : 'm1'}">
+    <button class="home-hero" data-goto="lesson" data-lesson="${lastIslandId || 'm1'}">
       <div class="home-hero-kicker">继续上次</div>
       <div class="home-hero-title">${lastIsland ? lastIsland.icon + ' ' + lastIsland.name : '混合运算'}</div>
-      <div class="home-hero-meta">上次做到「${(last.problemText || '').slice(0, 16)}…」</div>
+      <div class="home-hero-meta">${heroMeta}</div>
       <div class="home-hero-cta">▶ 继续</div>
     </button>
   ` : `
@@ -125,16 +173,28 @@ export function renderHome() {
 
   // 知识岛
   const islandsHtml = cfg.islands.map(isl => {
-    const s = stats[isl.id] || { total: 0, correct: 0 };
+    const s = stats[isl.id] || { total: 0, correct: 0, practiced: 0 };
     const rate = s.total ? Math.round(s.correct / s.total * 100) : 0;
-    const progress = Math.min(100, s.total * 8); // 简单进度：每做一题 +8%
+
+    // 有做题记录 → 显示正确率
+    // 只有体验记录 → 显示"玩过 N 次"
+    const metaText = s.total > 0
+      ? `已练 ${s.total} 题 · ${rate}%`
+      : s.practiced > 0
+        ? `玩过 ${s.practiced} 次`
+        : '还没开始';
+
+    // 进度条：有做题记录用正确率，否则用体验次数（每 10 次满）
+    const progress = s.total > 0
+      ? Math.min(100, s.total * 8)
+      : Math.min(100, s.practiced * 10);
     return `
       <button class="island island-${isl.color}" data-goto="lesson" data-lesson="${isl.id}">
         <div class="island-icon">${isl.icon}</div>
         <div class="island-name">${isl.name}</div>
         <div class="island-desc">${isl.desc}</div>
         <div class="island-progress"><span style="width:${progress}%"></span></div>
-        <div class="island-meta">${s.total ? `已练 ${s.total} 题 · ${rate}%` : '还没开始'}</div>
+        <div class="island-meta">${metaText}</div>
       </button>
     `;
   }).join('');
@@ -308,10 +368,10 @@ function ensureThumbBar() {
   `;
   document.body.appendChild(bar);
 
+  // ⭐ 绑一次，永远不重复
   document.getElementById('thumbRetry').addEventListener('click', () => {
-    // 触发当前模块的 reset 按钮（各模块都有 #mXreset）
-    const lesson = document.querySelector('#lessonStage .module.active');
-    if (!lesson) return;
+    const lesson = document.querySelector('#modulePool .module.active');  // ⭐ 改这里
+    if (!lesson) { hideThumbBar(); return; }
     const reset = lesson.querySelector('[id$="reset"]');
     if (reset) reset.click();
     hideThumbBar();

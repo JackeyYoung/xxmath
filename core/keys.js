@@ -16,6 +16,8 @@ export const STUDENT_KEY_FN = () => getGradeKey('student_name');
 export const REASON_KEY_FN  = () => getGradeKey('wrong_reasons_v1');
 // 调用处：lsGet(STUDENT_KEY_FN()) 代替 lsGet(STUDENT_KEY)
 
+export const getActivityKey = () => getGradeKey('activity_v1');
+
 /* 年级相关：必须每次调用时求值 */
 export function getGradeKey(prefix) {
   // 注意：依赖 core/storage 的 lsGet，但为避免循环依赖，
