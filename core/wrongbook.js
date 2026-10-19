@@ -48,13 +48,32 @@ export function markRedoSuccess(problemText) {
   if (idx < 0) return { removed: false, masteredCount: 0 };
 
   const rec = list[idx];
-  rec.masteredCount = (rec.masteredCount || 0) + 1;
+  const now = Date.now();
+  const DAY = 86400000;
 
-  if (rec.masteredCount >= 2) {
+  // 第一次做对 → 标记"明天再来"
+  if (!rec.lastCorrectAt) {
+    rec.lastCorrectAt = now;
+    rec.nextReviewAt = now + DAY;   // 明天
+    rec.masteredCount = 1;
+    wbSave(list);
+    return { removed: false, masteredCount: 1, nextReviewAt: rec.nextReviewAt };
+  }
+
+  // 第二次做对，且距离上次 ≥ 20 小时（隔天）
+  const hoursSinceLast = (now - rec.lastCorrectAt) / 3600000;
+  if (hoursSinceLast >= 20) {
+    rec.masteredCount = 2;
     list.splice(idx, 1);
     wbSave(list);
-    return { removed: true, masteredCount: rec.masteredCount };
+    return { removed: true, masteredCount: 2 };
   }
-  wbSave(list);
-  return { removed: false, masteredCount: rec.masteredCount };
+
+  // 第二次做对，但没隔天 → 不升级，提示"明天再来"
+  return {
+    removed: false,
+    masteredCount: 1,
+    nextReviewAt: rec.nextReviewAt,
+    tooSoon: true,
+  };
 }

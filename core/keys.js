@@ -18,6 +18,9 @@ export const REASON_KEY_FN  = () => getGradeKey('wrong_reasons_v1');
 
 export const getActivityKey = () => getGradeKey('activity_v1');
 
+// “掌握度”状态
+export const getMasteryKey = () => getGradeKey('mastery_v1');
+
 /* 年级相关：必须每次调用时求值 */
 export function getGradeKey(prefix) {
   // 注意：依赖 core/storage 的 lsGet，但为避免循环依赖，
@@ -52,3 +55,12 @@ export const LOCAL_ONLY_KEYS = new Set([
   'grade3_timer_challenge',         // 计时挑战记录
   'grade3_current_grade',           // 当前年级选择
 ]);
+
+/*家长“鼓励按钮”*/
+export const getParentMsgKey = () => getGradeKey('parent_messages_v1');
+
+/*家长“设置孩子目标”*/
+export const getTargetKey = () => getGradeKey('targets_v1');
+
+//周报里加“本周一句话”
+export const getWeeklyNoteKey = () => getGradeKey('weekly_notes_v1');

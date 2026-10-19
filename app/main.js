@@ -62,6 +62,15 @@ import { initShell, showThumbBar, hideThumbBar, navigate } from './shell.js';
 
 import { activityAdd, activityStatsByModule } from '../core/activity.js';
 
+import { masteryRecord } from '../core/mastery.js';
+import { masteryLoad } from '../core/mastery.js';
+
+import { targetLoad, targetSave, targetReset } from '../core/target.js';
+import { msgAdd, msgUnread, msgLoad, msgReply, msgMarkAllRead } from '../core/parent-message.js';
+import { noteSetChild, noteSetParent, noteGetThisWeek } from '../core/weekly-note.js';
+// main.js 顶部
+import { showToast } from '../core/toast.js';
+
 // ========== 2. 全局工具 ==========
 const _actTimer = {};
 const _actPending = {};   // ⭐ 存最后一次的参数
@@ -736,6 +745,18 @@ function m1CommitStep() {
           correctAnswer: fmtNum(finalVal),
           aiFeedback: null,
         });
+        // ⭐ 新增 掌握度
+        const mrec = masteryRecord(M1.original, true);
+        if (mrec && mrec.state === 'mastered') {
+          showToast('🏆 这道题你掌握了！', 'success');
+          setTimeout(() => {
+            showMasteryCard({
+              problemText: M1.original,
+              correctAnswer: fmtNum(M1.tokens[0].val),
+              takeaway: takeawayLoad(M1.original),
+            });
+          }, 800);
+        }
         // ⭐ 可选：触发拇指区反馈
         // showThumbBar({ text: `🎉 全部算完！${fmtNum(finalVal)}`, ok: true });
 
@@ -2907,6 +2928,19 @@ m8Render();
             aiFeedback: null,
         });
 
+        // ⭐ 新增 掌握度
+        const mrec = masteryRecord(`${M9.a} ${M9.op} ${M9.b}`, true);
+        if (mrec && mrec.state === 'mastered') {
+          showToast('🏆 这道题你掌握了！', 'success');
+          setTimeout(() => {
+            showMasteryCard({
+              problemText: `${M9.a} ${M9.op} ${M9.b}`,
+              correctAnswer: String(calcFinalResult()),
+              takeaway: takeawayLoad(`${M9.a} ${M9.op} ${M9.b}`),
+            });
+          }, 800);
+        }
+
         return;
       }
       m9PromptCurrentStep();
@@ -3080,6 +3114,19 @@ m8Render();
             correctAnswer: String(final),
             aiFeedback: null,
             });
+
+            // ⭐ 新增 掌握度
+            const mrec = masteryRecord(`${M9.a} ${M9.op} ${M9.b}`, true);
+            if (mrec && mrec.state === 'mastered') {
+              showToast('🏆 这道题你掌握了！', 'success');
+              setTimeout(() => {
+                showMasteryCard({
+                  problemText: `${M9.a} ${M9.op} ${M9.b}`,
+                  correctAnswer: String(calcFinalResult()),
+                  takeaway: takeawayLoad(`${M9.a} ${M9.op} ${M9.b}`),
+                });
+              }, 800);
+            }
             return;
           }
           m9Render();
@@ -4552,6 +4599,18 @@ function renderLLMFeedback(r) {
   const box = document.getElementById('m13StandardSteps');
   if (!box) return;
 
+  // ⭐ 防御：补齐缺失字段
+  if (!r || typeof r !== 'object') return;
+  r.judgement = r.judgement || {};
+  r.answer = r.answer || { full: '—', value: null, unit: '' };
+  r.steps = Array.isArray(r.steps) ? r.steps : [];
+
+  // judgement 内部字段也补
+  r.judgement.answer_correct = !!r.judgement.answer_correct;
+  r.judgement.student_answer_issue = r.judgement.student_answer_issue || '无';
+  r.judgement.step_issues = Array.isArray(r.judgement.step_issues) ? r.judgement.step_issues : [];
+  r.judgement.step_count_comment = r.judgement.step_count_comment || '';
+
   const ok = r.judgement.answer_correct;
 
   // 步骤问题标注（对应动态生成的输入框）
@@ -4699,14 +4758,28 @@ $('#pCheck').addEventListener('click', async () => {
       // 展示结果
       if (allMatch) {
         badge.className = 'result-badge ok';
-        badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' （历史缓存）参考答案：' + stdFull
+        badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ` （历史缓存）参考答案：${fb.answer?.full || cachedRecord.correctAnswer || '—'}`;
         // ⭐ 跳一下
         badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
         setTimeout(() => { badge.style.animation = ''; }, 500);
         handleRedoSuccess(problemText);
+
+        const mrec = masteryRecord(problemText, true);   // ⭐掌握度
+        if (mrec && mrec.state === 'mastered') {
+          showToast('🏆 这道题你掌握了！', 'success');
+          setTimeout(() => {
+            showMasteryCard({
+              problemText,
+              correctAnswer: stdFull || result.answer.full,
+              takeaway: takeawayLoad(problemText),
+            });
+          }, 800);
+        }
       } else {
         badge.className = 'result-badge no';
         badge.textContent = `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`;
+
+        masteryRecord(problemText, false);  // ⭐掌握度
 
         // ⭐ 触发拇指条
         if (typeof window.__shell?.showThumbBar === 'function') {
@@ -4801,7 +4874,7 @@ $('#pCheck').addEventListener('click', async () => {
 
       if (allMatch) {
       badge.className = 'result-badge ok';
-      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + stdFull;
+      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + result.answer.full;
       // ⭐ 跳一下
       badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
       setTimeout(() => { badge.style.animation = ''; }, 500);
@@ -4824,9 +4897,28 @@ $('#pCheck').addEventListener('click', async () => {
             relation: s.relation,
             substitution: s.substitution,
             result: s.result
-          }))
+          })),
+          judgement: {
+            answer_correct: allMatch,   // ⭐ 补上
+            student_answer_issue: allMatch ? '无' : '答案有误',
+            step_issues: [],
+            step_count_comment: '',
+          },
+          _source: 'bank',
         } : null
       });
+
+      const mrec = masteryRecord(problemText, true);   // ⭐ 掌握度
+      if (mrec && mrec.state === 'mastered') {
+        showToast('🏆 这道题你掌握了！', 'success');
+        setTimeout(() => {
+          showMasteryCard({
+            problemText,
+            correctAnswer: stdFull || result.answer.full,
+            takeaway: takeawayLoad(problemText),
+          });
+        }, 800);
+      }
     } else {
       badge.className = 'result-badge no';
       badge.textContent = `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`;
@@ -4847,9 +4939,18 @@ $('#pCheck').addEventListener('click', async () => {
             relation: s.relation,
             substitution: s.substitution,
             result: s.result
-          }))
+          })),
+          judgement: {
+            answer_correct: allMatch,   // ⭐ 补上
+            student_answer_issue: allMatch ? '无' : '答案有误',
+            step_issues: [],
+            step_count_comment: '',
+          },
+          _source: 'bank',
         } : null
       });
+
+      masteryRecord(problemText, false);  // ⭐掌握度
 
       wbAdd({
         id: p ? p.id : 'bank',
@@ -4918,12 +5019,24 @@ $('#pCheck').addEventListener('click', async () => {
     badge.className = 'result-badge ' + (ok ? 'ok' : 'no');
  
     if (ok) {
-      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + stdFull;
+      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + result.answer.full;
       // ⭐ 跳一下
       badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
       setTimeout(() => { badge.style.animation = ''; }, 500);
+      const mrec = masteryRecord(problemText, true);   // ⭐掌握度
+      if (mrec && mrec.state === 'mastered') {
+        showToast('🏆 这道题你掌握了！', 'success');
+        setTimeout(() => {
+          showMasteryCard({
+            problemText,
+            correctAnswer: stdFull || result.answer.full,
+            takeaway: takeawayLoad(problemText),
+          });
+        }, 800);
+      }
     }else{
       badge.textContent = `❌ ${result.judgement.student_answer_issue || '再检查一下'}`;
+      masteryRecord(problemText, false);  // ⭐掌握度
     }
 
     renderLLMFeedback(result);
@@ -5037,48 +5150,32 @@ function downloadBlob(content, filename, mimeType) {
 
 /* ⭐ 做对后，累计错题本"掌握进度" */
 function handleRedoSuccess(problemText) {
-  const list = wbLoad();
-  const idx = list.findIndex(r => r.text === problemText);
-  if (idx < 0) return;   // 不在错题本里，跳过
+  const result = markRedoSuccess(problemText);   // ⭐ 调用 wrongbook.js 的新逻辑
 
-  const rec = list[idx];
-  rec.masteredCount = (rec.masteredCount || 0) + 1;
-
-  if (rec.masteredCount >= 2) {
-    // 掌握！从错题本移除
-    list.splice(idx, 1);
-    wbSave(list);
-
-    // 显示提示
-    showToast('🎉 太棒了！这道题连续做对 2 次，已从错题本移除！', 'success');
-
-    // 移除"重做中"横幅
+  if (result.removed) {
+    showToast('🎉 太棒了！这道题隔天再做对，已从错题本移除！', 'success');
     document.getElementById('redoBanner')?.remove();
-  } else {
-    // 第一次做对，提示还需做对几次
-    wbSave(list);
-    showToast(`✅ 做对了！还需连续做对 ${2 - rec.masteredCount} 次，就能从错题本移除`, 'info');
-  }
-}
 
-/* ⭐ 简单的 Toast 提示 */
-function showToast(msg, type) {
-  const toast = document.createElement('div');
-  toast.style.cssText = `
-    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
-    background: ${type === 'success' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#3b82f6,#2563eb)'};
-    color: #fff; padding: 12px 24px; border-radius: 10px;
-    font-size: 14px; font-weight: 700; z-index: 99999;
-    box-shadow: 0 8px 24px rgba(0,0,0,.15);
-    animation: fadeUp .3s ease;
-  `;
-  toast.textContent = msg;
-  document.body.appendChild(toast);
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transition = 'opacity .3s';
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
+    // ⭐ 弹成就卡
+    const wb = wbLoad();
+    // 已经从错题本移除了，从 history 找答案
+    const history = historyLoad();
+    const rec = history.find(r => r.problemText === problemText && r.isCorrect);
+    if (rec) {
+      setTimeout(() => {
+        showMasteryCard({
+          problemText,
+          correctAnswer: rec.correctAnswer || rec.studentAnswer || '—',
+          takeaway: takeawayLoad(problemText),
+        });
+      }, 800);
+    }
+  } else if (result.tooSoon) {
+    const nextDate = new Date(result.nextReviewAt).toLocaleDateString('zh-CN');
+    showToast(`✅ 做对了！明天（${nextDate}）再来做对一次，就能从错题本移除`, 'info');
+  } else {
+    showToast(`✅ 做对了！明天再来做对一次，就能从错题本移除`, 'info');
+  }
 }
 
 function wbRender() {
@@ -5088,8 +5185,8 @@ function wbRender() {
 
   // ⭐ 从做题记录统计每道题的"错误次数"
   const history = historyLoad();
-  const wrongCountMap = {};   // { 题目文本: 错误次数 }
-  const totalCountMap = {};   // { 题目文本: 总次数 }
+  const wrongCountMap = {};
+  const totalCountMap = {};
   history.forEach(r => {
     const t = r.problemText;
     if (!totalCountMap[t]) {
@@ -5101,18 +5198,21 @@ function wbRender() {
   });
 
   const list = wbLoad();
+  const now = Date.now();
 
-  // ⭐ 按错误次数排序（错得多的靠前）
+  // ⭐ 到期统计（在列表前）
+  const dueCount = list.filter(r => r.nextReviewAt && r.nextReviewAt <= now).length;
+
+  // ⭐ 排序
   list.sort((a, b) => {
-    // 计算权重：错题次数 × 10 − 掌握进度 × 5
     const aWrong = wrongCountMap[a.text] || 0;
     const bWrong = wrongCountMap[b.text] || 0;
     const aMastered = a.masteredCount || 0;
     const bMastered = b.masteredCount || 0;
     const aScore = aWrong * 10 - aMastered * 5;
     const bScore = bWrong * 10 - bMastered * 5;
-    if (aScore !== bScore) return bScore - aScore;   // 分数高的靠前
-    return b.timestamp - a.timestamp;   // 同分按最新时间
+    if (aScore !== bScore) return bScore - aScore;
+    return b.timestamp - a.timestamp;
   });
 
   // 角标
@@ -5125,17 +5225,25 @@ function wbRender() {
     }
   }
 
-  // 列表
+  // 空状态
   if (!list.length) {
     listEl.innerHTML = '<div class="wrong-book-empty">还没有错题，继续加油 💪</div>';
     return;
   }
 
-  listEl.innerHTML = list.map(r => {
+  // ⭐ 到期提示条（在列表最前）
+  const dueBanner = dueCount > 0
+    ? `<div style="padding:10px 14px;margin-bottom:10px;background:#fef3c7;border:2px solid #fcd34d;border-radius:10px;font-size:13px;font-weight:700;color:#b45309;">
+        🔔 今天有 <b>${dueCount}</b> 道错题到期，复习一下吧
+      </div>`
+    : '';
+
+  // ⭐ 渲染每条错题
+  listEl.innerHTML = dueBanner + list.map(r => {
     const d = new Date(r.timestamp);
     const date = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     const enc = encodeURIComponent(r.text);
-    const takeaway = takeawayLoad(r.text);   // ⭐ 读一下心得
+    const takeaway = takeawayLoad(r.text);
     const takeawayHtml = takeaway ? `
       <div style="margin-top:8px;padding:8px 12px;background:#f0f9ff;border-left:3px solid #3b82f6;border-radius:6px;font-size:12px;color:#334155;line-height:1.6;">
         <b style="color:#2563eb;">💡 一题一得：</b>${escapeHtmlStrict(takeaway)}
@@ -5149,6 +5257,15 @@ function wbRender() {
       </div>
     ` : '';
 
+    // ⭐ 每道题的"到期状态"
+    const due = r.nextReviewAt && r.nextReviewAt <= now;
+    const upcoming = r.nextReviewAt && r.nextReviewAt > now;
+    const reviewBadge = due
+      ? `<span style="background:#fef3c7;color:#b45309;font-size:11px;font-weight:800;padding:2px 8px;border-radius:6px;">🔔 今天复习</span>`
+      : upcoming
+        ? `<span style="background:#e0e7ff;color:#3730a3;font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;">📅 ${new Date(r.nextReviewAt).toLocaleDateString('zh-CN')} 复习</span>`
+        : '';
+
     return `
       <div class="wrong-item">
         <button class="wrong-item-remove" data-text="${enc}">×</button>
@@ -5157,6 +5274,7 @@ function wbRender() {
           <span>你的答案：${escapeHtmlStrict(r.studentAnswer || '（空）')}</span>
           <span>正确：${escapeHtmlStrict(r.correctAnswer || '—')}</span>
           <span>${date}</span>
+          ${reviewBadge}
           ${wrongCountMap[r.text] ? `<span style="background:#fee2e2;color:#b91c1c;font-weight:800;">❌ 错过 ${wrongCountMap[r.text]} 次</span>` : ''}
           ${totalCountMap[r.text] ? `<span style="background:#e0e7ff;color:#3730a3;">📝 共做 ${totalCountMap[r.text]} 次</span>` : ''}
         </div>
@@ -5167,7 +5285,7 @@ function wbRender() {
       </div>
     `;
   }).join('');
-  // ⭐ 刷新成长卡片统计
+
   if (typeof window._refreshGrowthCards === 'function') {
     setTimeout(window._refreshGrowthCards, 50);
   }
@@ -8379,6 +8497,12 @@ function buildWeeklyReport() {
   }));
   const streak = typeof getStudyStreak === 'function' ? getStudyStreak() : 0;
 
+  // ⭐ 本周掌握
+  const masteryMap = masteryLoad();
+  const weekMastered = Object.values(masteryMap).filter(r =>
+    r.state === 'mastered' && r.lastAt >= weekAgo
+  );
+
   // 错题 Top 3
   const wrongCount = {};
   history.filter(r => !r.isCorrect).forEach(r => {
@@ -8406,6 +8530,69 @@ function buildWeeklyReport() {
   });
   const topTag = Object.entries(tagCount).sort((a, b) => b[1] - a[1])[0];
 
+  // ⭐ 月对比
+  const nowDate = new Date();
+  const thisMonthStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1).getTime();
+  const lastMonthStart = new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1).getTime();
+  const allHistory = historyLoad();
+  const thisMonthList = allHistory.filter(r => r.timestamp >= thisMonthStart);
+  const lastMonthList = allHistory.filter(r => r.timestamp >= lastMonthStart && r.timestamp < thisMonthStart);
+  const thisTotal = thisMonthList.length;
+  const thisCorrect = thisMonthList.filter(r => r.isCorrect).length;
+  const thisRate = thisTotal ? Math.round(thisCorrect / thisTotal * 100) : 0;
+  const lastTotal = lastMonthList.length;
+  const lastCorrect = lastMonthList.filter(r => r.isCorrect).length;
+  const lastRate = lastTotal ? Math.round(lastCorrect / lastTotal * 100) : 0;
+
+  const monthCompareHtml = (lastTotal > 0 || thisTotal > 0) ? `
+    <div class="weekly-report-section">
+      <h5>📈 本月 vs 上月</h5>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:#f0f9ff;padding:10px;border-radius:8px;">
+          <div style="font-size:11.5px;color:#64748b;font-weight:700;">做题</div>
+          <div style="font-size:18px;font-weight:800;color:#2563eb;">${thisTotal} <small style="color:#94a3b8;font-size:11px;font-weight:600;">/ 上月 ${lastTotal}</small></div>
+        </div>
+        <div style="background:#f0fdf4;padding:10px;border-radius:8px;">
+          <div style="font-size:11.5px;color:#64748b;font-weight:700;">正确率</div>
+          <div style="font-size:18px;font-weight:800;color:#15803d;">${thisRate}% <small style="color:#94a3b8;font-size:11px;font-weight:600;">/ 上月 ${lastRate}%</small></div>
+        </div>
+      </div>
+    </div>
+  ` : '';
+
+  // ⭐ 本周留言对话
+  const weekMsg = msgLoad().filter(m => m.at >= weekAgo);
+  const msgHtml = weekMsg.length ? `
+    <div class="weekly-report-section">
+      <h5>💌 本周留言</h5>
+      ${weekMsg.map(m => `
+        <div style="margin-bottom:8px;padding:8px 12px;background:#fff;border-radius:8px;font-size:13px;">
+          <div style="color:#be185d;font-weight:700;">家长：${escapeHtmlStrict(m.text)}</div>
+          ${m.reply ? `<div style="color:#334155;margin-top:4px;">👦 孩子：${escapeHtmlStrict(m.reply)}</div>` : `<div style="color:#94a3b8;margin-top:4px;">孩子还没回复</div>`}
+        </div>
+      `).join('')}
+    </div>
+  ` : '';
+
+  const note = noteGetThisWeek();
+  const noteHtml = (note.parent || note.child) ? `
+    <div class="weekly-report-section">
+      <h5>💬 本周一句话</h5>
+      ${note.parent ? `
+        <div style="margin-bottom:8px;padding:10px 14px;background:#fdf2f8;border-radius:8px;">
+          <div style="font-size:11.5px;color:#be185d;font-weight:700;margin-bottom:4px;">👨👩👦 家长说</div>
+          <div style="font-size:13.5px;color:#831843;line-height:1.7;">${escapeHtmlStrict(note.parent)}</div>
+        </div>
+      ` : ''}
+      ${note.child ? `
+        <div style="padding:10px 14px;background:#f0f9ff;border-radius:8px;">
+          <div style="font-size:11.5px;color:#2563eb;font-weight:700;margin-bottom:4px;">👦 孩子说</div>
+          <div style="font-size:13.5px;color:#1e3a8a;line-height:1.7;">${escapeHtmlStrict(note.child)}</div>
+        </div>
+      ` : ''}
+    </div>
+  ` : '';
+
   return `
     <div class="weekly-report-panel" id="weeklyReportPanel">
       <h4>📊 本周学习周报</h4>
@@ -8419,6 +8606,10 @@ function buildWeeklyReport() {
           <div class="value">${total ? rate : '—'}<small>%</small></div>
         </div>
         <div class="weekly-report-stat">
+          <div class="label">掌握</div>
+          <div class="value" style="color:#7c3aed;">${weekMastered.length}<small> 题</small></div>
+        </div>
+        <div class="weekly-report-stat">
           <div class="label">学习天数</div>
           <div class="value">${days.size}<small> 天</small></div>
         </div>
@@ -8426,7 +8617,16 @@ function buildWeeklyReport() {
           <div class="label">连续打卡</div>
           <div class="value">${streak}<small> 天</small></div>
         </div>
+        ${msgHtml}
+        ${noteHtml}
       </div>
+      ${weekMastered.length ? `
+        <div class="weekly-report-section">
+          <h5>🏆 本周掌握的题</h5>
+          ${weekMastered.slice(0, 5).map(r => `<div>• ${escapeHtmlStrict(r.text.slice(0, 40))}…</div>`).join('')}
+          ${weekMastered.length > 5 ? `<div style="color:#94a3b8;font-size:12px;margin-top:4px;">还有 ${weekMastered.length - 5} 题…</div>` : ''}
+        </div>
+      ` : ''}
       ${topWrong.length ? `
         <div class="weekly-report-section">
           <h5>⚠️ 需要重点复习的题</h5>
@@ -8500,6 +8700,9 @@ h1{font-size:22px;color:#7c3aed;text-align:center;margin-bottom:8px;}
 
 </style>
 </head><body>
+<div class="parent-tip" style="background:#fdf2f8;border-left:4px solid #ec4899;padding:12px 16px;border-radius:10px;margin-bottom:16px;font-size:13px;color:#831843;line-height:1.7;">
+  💌 给家长：这是孩子本周的学习记录。如果孩子有进步，记得当面夸夸他/她。
+</div>
 <div class="wrap">
   <h1>📊 ${name} 的数学学习周报</h1>
   <div class="sub">${new Date().toLocaleString('zh-CN')}</div>
@@ -9042,6 +9245,7 @@ function onCorrect(x, y) {
 
   initShell();
   hookFeedbackToThumbBar();   // ⭐ 新增这一行
+  showUnreadParentMsg();   // ⭐ 移到这里
 
   console.log('[启动] ✅ core/ 已就绪, sync =', getSyncState());
 })();
@@ -9532,5 +9736,264 @@ function showDailyComplete({ total, correct, rate }) {
   });
   mask.addEventListener('click', e => {
     if (e.target === mask) mask.remove();
+  });
+}
+
+//掌握时生成“成就卡”
+function showMasteryCard({ problemText, correctAnswer, takeaway }) {
+  if (document.querySelector('.mastery-card-mask')) return;
+
+  const mask = document.createElement('div');
+  mask.className = 'mastery-card-mask';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;z-index:10020;padding:20px;';
+  mask.innerHTML = `
+    <div class="mastery-card">
+      <div class="mastery-card-glow"></div>
+      <div class="mastery-card-inner">
+        <div class="mastery-card-badge">🏆 已掌握</div>
+        <div class="mastery-card-title">我又学会了一道题</div>
+        <div class="mastery-card-problem">
+          <div class="mastery-card-label">📝 题目</div>
+          <div class="mastery-card-text">${escapeHtmlStrict(problemText)}</div>
+        </div>
+        <div class="mastery-card-answer">
+          <div class="mastery-card-label">✅ 答案</div>
+          <div class="mastery-card-answer-text">${escapeHtmlStrict(correctAnswer || '—')}</div>
+        </div>
+        ${takeaway ? `
+          <div class="mastery-card-note">
+            <div class="mastery-card-label">💡 一题一得</div>
+            <div class="mastery-card-note-text">${escapeHtmlStrict(takeaway)}</div>
+          </div>
+        ` : ''}
+        <div class="mastery-card-date">${new Date().toLocaleDateString('zh-CN')}</div>
+        <div class="mastery-card-btns">
+          <button class="mastery-card-close" id="masteryCardClose">继续做题</button>
+          <button class="mastery-card-share" id="masteryCardShare">📤 分享</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  document.getElementById('masteryCardClose').addEventListener('click', () => mask.remove());
+  document.getElementById('masteryCardShare').addEventListener('click', () => {
+    shareMasteryCard({ problemText, correctAnswer, takeaway });
+  });
+  mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
+}
+
+function shareMasteryCard({ problemText, correctAnswer, takeaway }) {
+  const text = `🏆 我掌握了这道题！\n\n📝 ${problemText}\n✅ ${correctAnswer}${takeaway ? `\n💡 ${takeaway}` : ''}\n\n—— 来自「老爸数学互动课堂」`;
+
+  if (navigator.share) {
+    navigator.share({ title: '我掌握了这道题', text }).catch(() => {});
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('✅ 已复制到剪贴板，可以粘贴到微信', 'success');
+    }).catch(() => {
+      showToast('复制失败，请手动截图分享', 'info');
+    });
+  } else {
+    showToast('请手动截图分享', 'info');
+  }
+}
+
+// 家长留言弹窗里显示“孩子的回应”
+function showParentMessageModal() {
+  if (document.querySelector('.parent-msg-mask')) return;
+
+  // ⭐ 读历史留言
+  const history = msgLoad().slice(0, 5);
+
+  const mask = document.createElement('div');
+  mask.className = 'parent-msg-mask';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10015;padding:20px;';
+  mask.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:24px 22px 20px;width:400px;max-width:92vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(15,23,42,.3);">
+      <div style="font-size:36px;text-align:center;margin-bottom:8px;">💌</div>
+      <div style="font-size:17px;font-weight:800;color:#1e293b;text-align:center;margin-bottom:6px;">给孩子留一句话</div>
+      <div style="font-size:12.5px;color:#64748b;text-align:center;line-height:1.7;margin-bottom:16px;">
+        孩子下次打开会看到你的鼓励
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:12px;">
+        ${['你真棒！', '继续加油 💪', '爸爸/妈妈看到了', '今天辛苦了 ❤️', '比昨天更好了'].map(t =>
+          `<button class="parent-msg-quick" data-text="${t}" style="padding:6px 12px;border:1.5px solid #e5e7eb;border-radius:999px;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">${t}</button>`
+        ).join('')}
+      </div>
+      <textarea id="parentMsgInput" placeholder="写一句鼓励的话…" style="width:100%;padding:12px 14px;border:2px solid #e5e7eb;border-radius:12px;font-size:14px;font-family:inherit;outline:none;resize:none;height:80px;margin-bottom:12px;"></textarea>
+      <div style="display:flex;gap:10px;margin-bottom:16px;">
+        <button id="parentMsgCancel" style="flex:1;padding:12px;border-radius:12px;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">取消</button>
+        <button id="parentMsgSend" style="flex:1;padding:12px;border-radius:12px;background:#ec4899;color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #be185d;">发送</button>
+      </div>
+
+      ${history.length ? `
+        <div style="border-top:1px dashed #e2e8f0;padding-top:14px;">
+          <div style="font-size:12.5px;font-weight:800;color:#64748b;margin-bottom:10px;">📜 历史留言</div>
+          ${history.map(m => `
+            <div style="background:#f8fafc;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12.5px;line-height:1.6;">
+              <div style="color:#334155;"><b>你：</b>${escapeHtmlStrict(m.text)}</div>
+              <div style="color:#94a3b8;font-size:11px;margin-top:2px;">${new Date(m.at).toLocaleString('zh-CN')}</div>
+              ${m.reply ? `
+                <div style="margin-top:8px;padding:8px 10px;background:#fff;border-left:3px solid #ec4899;border-radius:6px;">
+                  <div style="color:#be185d;font-weight:700;">👦 孩子回：</div>
+                  <div style="color:#334155;">${escapeHtmlStrict(m.reply)}</div>
+                </div>
+              ` : `
+                <div style="margin-top:6px;font-size:11.5px;color:#94a3b8;">孩子还没回复</div>
+              `}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  const input = document.getElementById('parentMsgInput');
+  input.focus();
+
+  mask.querySelectorAll('.parent-msg-quick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      input.value = btn.dataset.text;
+      input.focus();
+    });
+  });
+
+  document.getElementById('parentMsgCancel').addEventListener('click', () => mask.remove());
+  document.getElementById('parentMsgSend').addEventListener('click', () => {
+    const text = input.value.trim();
+    if (!text) { showToast('写一句再发吧', 'info'); return; }
+    msgAdd({ text, from: '家长', emoji: '❤️' });
+    mask.remove();
+    showToast('💌 已留给孩子，下次打开会看到', 'success');
+  });
+  mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
+}
+
+function showParentSettingsModal() {
+  if (document.querySelector('.parent-settings-mask')) return;
+  const targets = targetLoad();
+
+  const mask = document.createElement('div');
+  const currentNote = (() => {
+    try { return noteGetThisWeek() || {}; } catch (e) { return {}; }
+  })();
+
+  mask.className = 'parent-settings-mask';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10015;padding:20px;';
+  mask.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:24px 22px 20px;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(15,23,42,.3);">
+      <div style="font-size:17px;font-weight:800;color:#1e293b;margin-bottom:6px;">⚙️ 家长设置</div>
+      <div style="font-size:12.5px;color:#64748b;margin-bottom:16px;">设置每天/每周的学习目标</div>
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px;">
+        ${[
+          { key: 'dailyQuestions', label: '每天做题', min: 1, max: 20, unit: '道' },
+          { key: 'dailyStreak', label: '每天连对', min: 1, max: 10, unit: '题' },
+          { key: 'dailyMastered', label: '每天掌握', min: 1, max: 5, unit: '题' },
+          { key: 'weeklyQuestions', label: '每周做题', min: 5, max: 100, unit: '道' },
+          { key: 'wrongReview', label: '每天复习错题', min: 0, max: 10, unit: '道' },
+        ].map(t => `
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="flex:1;font-size:13px;font-weight:700;color:#475569;">${t.label}</span>
+            <input type="number" data-target-key="${t.key}" value="${targets[t.key]}" min="${t.min}" max="${t.max}" style="width:70px;padding:8px 10px;border:2px solid #e5e7eb;border-radius:8px;font-size:14px;font-weight:700;text-align:center;font-family:inherit;outline:none;">
+            <span style="font-size:12px;color:#64748b;font-weight:600;">${t.unit}</span>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button id="parentSetReset" style="flex:1;padding:12px;border-radius:12px;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">恢复默认</button>
+        <button id="parentSetSave" style="flex:1;padding:12px;border-radius:12px;background:#2563eb;color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #1d4ed8;">保存</button>
+      </div>
+
+      <div style="border-top:1px dashed #e2e8f0;padding-top:12px;margin-top:12px;">
+        <div style="font-size:13px;font-weight:700;color:#475569;margin-bottom:8px;">💬 本周对孩子说一句</div>
+        <textarea id="parentWeeklyNote" placeholder="这一周，你想对孩子说什么？" style="width:100%;padding:10px 12px;border:2px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:inherit;outline:none;resize:none;height:60px;">${noteGetThisWeek().parent || ''}</textarea>
+        <button id="parentWeeklyNoteSend" style="margin-top:8px;width:100%;padding:10px;border-radius:10px;background:#ec4899;color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #be185d;">发送给孩子</button>
+      </div>
+  `;
+
+  document.body.appendChild(mask);
+
+  document.getElementById('parentSetReset').addEventListener('click', () => {
+    targetReset();
+    mask.remove();
+    showToast('✅ 已恢复默认目标', 'success');
+  });
+  
+  document.getElementById('parentWeeklyNoteSend')?.addEventListener('click', () => {
+    const input = document.getElementById('parentWeeklyNote');
+    const text = input.value.trim();
+    if (!text) {
+      showToast('写一句再发送吧', 'info');
+      return;
+    }
+    noteSetParent(text);
+    showToast('✅ 已发送，孩子打开成长页会看到', 'success');
+    // 不关弹窗，让家长继续改目标
+  });
+
+  document.getElementById('parentSetSave').addEventListener('click', () => {
+    const newTargets = { ...targets };
+    mask.querySelectorAll('[data-target-key]').forEach(inp => {
+      newTargets[inp.dataset.targetKey] = parseInt(inp.value, 10) || 1;
+    });
+    targetSave(newTargets);
+    mask.remove();
+    showToast('✅ 目标已保存', 'success');
+    if (window.__shell?.renderHome) window.__shell.renderHome();
+  });
+  mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
+
+}
+
+window.__showParentMessageModal = showParentMessageModal;
+window.__showParentSettingsModal = showParentSettingsModal;
+
+/* ⭐ 孩子打开时，弹未读家长留言 */
+function showUnreadParentMsg() {
+  const unread = msgUnread();
+  if (!unread.length) return;
+  if (sessionStorage.getItem('grade3_parent_msg_shown') === '1') return;
+  sessionStorage.setItem('grade3_parent_msg_shown', '1');
+
+  const msg = unread[0];
+
+  const mask = document.createElement('div');
+  mask.className = 'parent-msg-read-mask';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.6);display:flex;align-items:center;justify-content:center;z-index:10018;padding:20px;';
+  mask.innerHTML = `
+    <div style="background:linear-gradient(135deg,#fff,#fdf2f8);border-radius:24px;padding:28px 24px 20px;width:340px;max-width:92vw;text-align:center;box-shadow:0 24px 80px rgba(236,72,153,.3);">
+      <div style="font-size:56px;margin-bottom:8px;">💌</div>
+      <div style="font-size:13px;color:#ec4899;font-weight:800;letter-spacing:1px;margin-bottom:10px;">${msg.from} 给你留了一句话</div>
+      <div style="font-size:17px;font-weight:800;color:#1e293b;line-height:1.7;padding:16px;background:#fff;border-radius:14px;margin-bottom:16px;">
+        ${escapeHtmlStrict(msg.text)}
+      </div>
+      <div id="parentMsgReplyBox" style="display:none;margin-bottom:12px;">
+        <textarea id="parentMsgReplyInput" placeholder="回一句…" style="width:100%;padding:10px 12px;border:2px solid #fbcfe8;border-radius:10px;font-size:14px;font-family:inherit;outline:none;resize:none;height:60px;"></textarea>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button id="parentMsgReplyToggle" style="flex:1;padding:12px;border-radius:12px;background:#fdf2f8;color:#be185d;border:2px solid #fbcfe8;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">💬 回一句</button>
+        <button id="parentMsgReadClose" style="flex:1;padding:12px;border-radius:12px;background:#ec4899;color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #be185d;">我看到了 ❤️</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  const replyBox = document.getElementById('parentMsgReplyBox');
+  const replyInput = document.getElementById('parentMsgReplyInput');
+
+  document.getElementById('parentMsgReplyToggle').addEventListener('click', () => {
+    const willShow = replyBox.style.display === 'none';
+    replyBox.style.display = willShow ? 'block' : 'none';
+    if (willShow) replyInput.focus();
+  });
+
+  document.getElementById('parentMsgReadClose').addEventListener('click', () => {
+    const reply = replyInput.value.trim();
+    if (reply) msgReply(msg.id, reply);
+    msgMarkAllRead();
+    mask.remove();
+    if (reply) showToast('💬 已回复，家长下次打开会看到', 'success');
   });
 }
