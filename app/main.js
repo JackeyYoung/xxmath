@@ -67,9 +67,10 @@ import { masteryLoad } from '../core/mastery.js';
 
 import { targetLoad, targetSave, targetReset } from '../core/target.js';
 import { msgAdd, msgUnread, msgLoad, msgReply, msgMarkAllRead } from '../core/parent-message.js';
-import { noteSetChild, noteSetParent, noteGetThisWeek } from '../core/weekly-note.js';
 // main.js 顶部
 import { showToast } from '../core/toast.js';
+
+import { focusInput, focusInputWhenReady } from '../core/input-focus.js';
 
 // ========== 2. 全局工具 ==========
 const _actTimer = {};
@@ -144,16 +145,6 @@ function lockBodyScroll(lock) {
   else document.body.classList.remove('modal-open');
 }
 
-/* 标签页 */
-$$('.tab').forEach(tab => {
-  tab.addEventListener('click', () => {
-    $$('.tab').forEach(t => t.classList.remove('active'));
-    $$('.module').forEach(m => m.classList.remove('active'));
-    tab.classList.add('active');
-    $('#' + tab.dataset.target).classList.add('active');
-  });
-});
-
 /* ============ 模块1：混合运算 · 步步为营 ============ */
 const M1_PRESETS = [
   { name: '括号加法',  expr: '(3 + 6) ÷ (4 - 1)' },
@@ -178,6 +169,8 @@ const M1_PRESETS = [
   { name: '数鸭子',    expr: '7 × 6 + 25' },
   { name: '分糖果',    expr: '48 ÷ 6 + 15 - 8' }
 ];
+
+window.__M1_PRESETS = M1_PRESETS;
 
 const M1 = {
   tokens: [],
@@ -321,8 +314,6 @@ function m1RenderSteps() {
         <span class="step-part">( ${fmtNum(left.val)} ${op.val} ${fmtNum(right.val)} )</span>
         <span style="margin: 0 8px; color: #94a3b8;">→</span>
         <input type="text" class="step-input" id="m1Input" inputmode="numeric" enterkeyhint="done" placeholder="?" autocomplete="off">
-        <button class="step-input-btn" id="m1InputSubmit">✓</button>
-        <button class="step-input-btn secondary" id="m1InputCancel">✕</button>
       </span>
     </div>`;
 
@@ -337,17 +328,14 @@ function m1RenderSteps() {
   // 绑定输入框事件（每次重绘都要重新绑定）
   if (M1.waitingOpIdx >= 0) {
     const inp = document.getElementById('m1Input');
-    const sub = document.getElementById('m1InputSubmit');
-    const can = document.getElementById('m1InputCancel');
     if (inp) {
-      try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
       inp.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); m1SubmitAnswer(); }
         else if (e.key === 'Escape') { m1CancelInput(); }
       });
+      // ⭐ 统一聚焦
+      focusInputWhenReady('m1Input');
     }
-    if (sub) sub.addEventListener('click', m1SubmitAnswer);
-    if (can) can.addEventListener('click', m1CancelInput);
   }
 }
 
@@ -440,30 +428,26 @@ function m1ShowPriorityBox() {
   // 绑定
   opts.querySelectorAll('.priority-opt').forEach(btn => {
     btn.addEventListener('click', () => {
-      const key = btn.dataset.key;
-      const isCorrect = M1_PRIORITY.expectedOps.includes(key);
+      const level = window.__m9CurrentLevel || null;
+      let op;
+      if (level === 'add') op = '+';
+      else if (level === 'sub') op = '−';
+      else if (level === 'mul') op = '×';
+      else if (level === 'div') op = '÷';
+      else op = ['+', '−', '×', '÷'][Math.floor(Math.random() * 4)];
 
-      // 清除所有 chosen
-      opts.querySelectorAll('.priority-opt').forEach(b => {
-        b.classList.remove('chosen', 'wrong', 'correct');
-      });
-      btn.classList.add('chosen');
-      btn.classList.add(isCorrect ? 'correct' : 'wrong');
+      const { a, b } = randomProblemByOp(op);
+      aInput.value = a;
+      bInput.value = b;
+      opInput.value = op;
+      aInput.dispatchEvent(new Event('input', { bubbles: true }));
+      bInput.dispatchEvent(new Event('input', { bubbles: true }));
+      opInput.dispatchEvent(new Event('change', { bubbles: true }));
 
-      if (isCorrect) {
-        fb.textContent = '✓ 对！先算乘除，再算加减。现在点击算式中的运算符。';
-        fb.className = 'priority-feedback ok';
-        M1_PRIORITY.passed = true;
-        setTimeout(() => {
-          box.style.display = 'none';
-          m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
-        }, 800);
-      } else {
-        fb.textContent = '❌ 再想想——有乘除时，要先算乘除哦！';
-        fb.className = 'priority-feedback error';
-        setTimeout(() => {
-          btn.classList.remove('chosen', 'wrong');
-        }, 800);
+      const fb = document.getElementById('m9fb');
+      if (fb) {
+        fb.className = 'feedback ok';
+        fb.innerHTML = `🎲 已生成：${a} ${op} ${b}，点击「下一步」开始计算`;
       }
     });
   });
@@ -559,6 +543,16 @@ function m1ClickOp(i) {
   m1Render();
 
   m1SetFeedback('✏️ 请算出这一步的得数', '');
+}
+
+// ⭐ 当前 M1 层级（由 shell.js 的 __m1LoadPresets 或 level 选择器写入）
+// 读 localStorage，因为 shell 里点击层级时会 setItem
+function m1CurrentLevel() {
+  try {
+    return localStorage.getItem('grade3_m1_level') || 'no-paren';
+  } catch (e) {
+    return 'no-paren';
+  }
 }
 
 /* ============================================================
@@ -668,8 +662,22 @@ function m1ShowWrong(input, fb, msg) {
   input.classList.add('wrong');
   fb.textContent = msg;
   fb.className = 'calc-input-feedback error';
-  // 抖动动画结束后移除 class，方便下次触发
   setTimeout(() => input.classList.remove('wrong'), 400);
+
+  // ⭐ 高亮当前运算符两侧的数字，让用户看到"这两个数在做什么"
+  const exprEl = document.getElementById('m1expr');
+  if (exprEl && M1.waitingOpIdx >= 0) {
+    const tokens = exprEl.querySelectorAll('.token');
+    const i = M1.waitingOpIdx;
+    const left = tokens[i - 1];
+    const right = tokens[i + 1];
+    if (left) left.classList.add('explore-highlight');
+    if (right) right.classList.add('explore-highlight');
+    setTimeout(() => {
+      left?.classList.remove('explore-highlight');
+      right?.classList.remove('explore-highlight');
+    }, 1200);
+  }
 }
 
 /* 确认正确，推进到下一步 */
@@ -685,15 +693,20 @@ function m1CommitStep() {
   const opEl = opEls[i];
   const rightEl = opEls[i + 1];
   if (leftEl && opEl && rightEl) {
+    // m1CommitStep 里，动画前
+    exprEl.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+
+    // 然后用相对位移
     const leftRect = leftEl.getBoundingClientRect();
     const rightRect = rightEl.getBoundingClientRect();
-    const midX = (leftRect.right + rightRect.left) / 2;
+    const dx = rightRect.left - leftRect.right;  // 右块左移的距离
+    leftEl.style.transform = `translateX(${dx / 2}px)`;
+    rightEl.style.transform = `translateX(${-dx / 2}px)`;
 
     leftEl.style.transition = 'transform .28s cubic-bezier(.34,1.3,.64,1), opacity .28s';
     rightEl.style.transition = 'transform .28s cubic-bezier(.34,1.3,.64,1), opacity .28s';
     opEl.style.transition = 'opacity .2s, transform .2s';
-    leftEl.style.transform = `translateX(${midX - leftRect.right}px) scale(1.1)`;
-    rightEl.style.transform = `translateX(${midX - rightRect.left}px) scale(1.1)`;
+
     opEl.style.opacity = '0';
     opEl.style.transform = 'scale(0)';
   }
@@ -795,6 +808,18 @@ function m1InitSelect(items) {
   ).join('');
 }
 
+// ⭐ 按层级切换 M1 的预设池（供 shell.js 调用）
+window.__m1LoadPresets = function (presets) {
+  if (!Array.isArray(presets) || presets.length === 0) return;
+  M1_PRESETS.length = 0;
+  presets.forEach(p => M1_PRESETS.push(p));
+  m1InitSelect(M1_PRESETS);
+
+  // ⭐ 从当前层级的池里随机挑一条载入，而不是永远第一条
+  const idx = Math.floor(Math.random() * M1_PRESETS.length);
+  m1LoadExpression(M1_PRESETS[idx].expr);
+};
+
 /* 载入按钮 */
 $('#m1Load').addEventListener('click', () => {
   const idx = +$('#m1Select').value;
@@ -834,36 +859,63 @@ $('#m1Upload').addEventListener('change', e => {
 
 /* 随机出题 */
 function rnd(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+/* ============ ⭐ M1 按层级随机出题 ============ */
 $('#m1Random').addEventListener('click', () => {
-  const type = rnd(1, 9);   // ⭐ 从 6 改成 9
-  let expr = '';
-  if (type === 1) {
-    expr = `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
-  } else if (type === 2) {
-    expr = `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(2, 9)} × ${rnd(2, 9)}`;
-  } else if (type === 3) {
-    const a = rnd(2, 9);
-    expr = `100 - ${a} × ${rnd(2, Math.floor(80 / a))}`;
-  } else if (type === 4) {
-    const b = rnd(2, 9), q = rnd(2, 9);
-    expr = `${b * q} ÷ ${b} + ${rnd(10, 50)}`;
-  } else if (type === 5) {
-    expr = `${rnd(30, 90)} - ${rnd(5, 15)} - ${rnd(5, 15)}`;
-  } else if (type === 6) {
-    expr = `${rnd(2, 9)} × ${rnd(2, 9)} - ${rnd(2, 9)}`;
-  } else if (type === 7) {
-    // ⭐ 括号：先加后乘
-    const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9);
-    expr = `(${a} + ${b}) × ${c}`;
-  } else if (type === 8) {
-    // ⭐ 括号：先减后除
-    const b = rnd(2, 9), q = rnd(2, 9), a = rnd(1, 5);
-    expr = `(${b * q + a} - ${a}) ÷ ${b}`;
-  } else {
-    // ⭐ 括号：连乘连加
-    const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9), d = rnd(2, 9);
-    expr = `(${a} + ${b}) × ${c} - ${d}`;
-  }
+  const level = m1CurrentLevel();
+
+  // 每个层级一个生成器
+  const GEN = {
+    // 1️⃣ 无括号：乘加/乘减/除加/连减/连乘 等，绝不出现括号
+    'no-paren': () => {
+      const type = rnd(1, 6);
+      if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
+      if (type === 2) return `${rnd(30, 90)} - ${rnd(5, 15)} - ${rnd(5, 15)}`;
+      if (type === 3) {
+        const b = rnd(2, 9), q = rnd(2, 9);
+        return `${b * q} ÷ ${b} + ${rnd(10, 50)}`;
+      }
+      if (type === 4) return `${rnd(2, 9)} × ${rnd(2, 9)} - ${rnd(2, 9)}`;
+      if (type === 5) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(2, 9)} × ${rnd(2, 9)}`;
+      return `${rnd(10, 99)} - ${rnd(2, 9)} × ${rnd(2, 9)}`;
+    },
+
+    // 2️⃣ 有括号：必须有 ()
+    'with-paren': () => {
+      const type = rnd(1, 3);
+      if (type === 1) {
+        const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9);
+        return `(${a} + ${b}) × ${c}`;
+      }
+      if (type === 2) {
+        const b = rnd(2, 9), q = rnd(2, 9), a = rnd(1, 5);
+        return `(${b * q + a} - ${a}) ÷ ${b}`;
+      }
+      const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9), d = rnd(2, 9);
+      return `(${a} + ${b}) × ${c} - ${d}`;
+    },
+
+    // 3️⃣ 乘除混合：含 ×÷ 且含 +-
+    'mul-div': () => {
+      const type = rnd(1, 3);
+      if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
+      if (type === 2) {
+        const b = rnd(2, 9), q = rnd(2, 9);
+        return `${b * q} ÷ ${b} + ${rnd(10, 50)}`;
+      }
+      return `${rnd(10, 99)} - ${rnd(2, 9)} × ${rnd(2, 9)}`;
+    },
+
+    // 4️⃣ 加减混合：只有 +-，多步，不含 ×÷()
+    'add-sub': () => {
+      const type = rnd(1, 3);
+      if (type === 1) return `${rnd(30, 90)} - ${rnd(5, 15)} - ${rnd(5, 15)}`;
+      if (type === 2) return `${rnd(10, 50)} + ${rnd(10, 50)} - ${rnd(5, 30)}`;
+      return `${rnd(10, 40)} + ${rnd(5, 30)} + ${rnd(5, 30)}`;
+    },
+  };
+
+  const gen = GEN[level] || GEN['no-paren'];
+  const expr = gen();
   m1LoadExpression(expr);
 });
 
@@ -2733,6 +2785,11 @@ m8Render();
     } else {
       setFeedback(`✅ 已算到第 ${M9.step + 1} 步`, 'ok');
     }
+
+    if (stepBtn) {
+      stepBtn.disabled = !!M9.waitingFor;
+      stepBtn.style.opacity = M9.waitingFor ? '.5' : '';
+    }
   }
 
   /* ============ 竖式 · 先估算 ============ */
@@ -2791,8 +2848,10 @@ m8Render();
           setTimeout(() => {
             box.style.display = 'none';
             m9Render();
-            // ⭐ 不调 m9PromptCurrentStep，等用户点"下一步"再推进
-            setFeedback('✅ 估算正确！点击「下一步」开始计算。', 'ok');
+            setFeedback('✅ 估算正确！「下一步」开始计算。', 'ok');
+            // ⭐ 估算通过后，直接进输入状态
+            M9.step = 0;
+            m9PromptCurrentStep();
           }, 800);
         } else {
           fb.textContent = `❌ 再想想——精确结果在 ${options[correctIdx].label} 之间`;
@@ -2953,34 +3012,8 @@ m8Render();
 
   function focusInlineInput() {
     if (M9.submitting) return;
-    if (_m9FocusTimer) clearTimeout(_m9FocusTimer);
-    const myToken = ++_m9FocusToken;
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (myToken !== _m9FocusToken) return;
-        const input = document.getElementById('m9InlineInput');
-        if (!input) return;
-        if (!M9.waitingFor) return;
-
-        // ⭐ preventScroll: true 阻止浏览器自动滚动
-        try {
-          input.focus({ preventScroll: true });
-        } catch (e) {
-          input.focus();   // 老浏览器兜底
-        }
-        try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
-
-        // ⭐ 只在输入框真的不可见时，才用最小幅度滚动
-        try {
-          const rect = input.getBoundingClientRect();
-          const vh = window.innerHeight;
-          if (rect.top < 80 || rect.bottom > vh - 80) {
-            input.scrollIntoView({ block: 'nearest', behavior: 'auto' });
-          }
-        } catch (e) {}
-      });
-    });
+    if (!M9.waitingFor) return;
+    focusInputWhenReady('m9InlineInput');
   }
 
   /* ---------- 检查当前步是否完成 ---------- */
@@ -3022,6 +3055,33 @@ m8Render();
     }
 
     return true;
+  }
+
+  function highlightM9WrongHint() {
+    // 找到当前 step 对应的"该看哪里"
+    if (M9.op === '+' || M9.op === '−') {
+      const curI = getAddSubMaxLen() - 1 - M9.step;
+      // 高亮当前位的两个数字
+      const cells = document.querySelectorAll('#m9display .vc-row .vc-cell');
+      // 简单做法：给当前高亮的格子加脉冲
+      document.querySelectorAll('#m9display .vc-cell.highlight').forEach(el => {
+        el.classList.add('explore-highlight');
+        setTimeout(() => el.classList.remove('explore-highlight'), 1200);
+      });
+    } else if (M9.op === '×') {
+      // 高亮乘数 b 和当前位
+      document.querySelectorAll('#m9display .vc-cell.highlight').forEach(el => {
+        el.classList.add('explore-highlight');
+        setTimeout(() => el.classList.remove('explore-highlight'), 1200);
+      });
+    } else if (M9.op === '÷') {
+      // 高亮除数
+      const divisor = document.querySelector('#m9display .vc-div-divisor');
+      if (divisor) {
+        divisor.classList.add('explore-highlight');
+        setTimeout(() => divisor.classList.remove('explore-highlight'), 1200);
+      }
+    }
   }
 
   /* ---------- 提交当前输入 ---------- */
@@ -3143,6 +3203,8 @@ m8Render();
       M9.submitting = false;   // ⭐ 答错立即解锁
       input.focus();
       try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) {}
+      // ⭐ 高亮"该看哪里"
+      highlightM9WrongHint();
     }
   }
 
@@ -3196,6 +3258,21 @@ m8Render();
       return { a, b, op };
     }
 
+    function randomProblemByOp(op) {
+      const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+      let a, b;
+      if (op === '+') {
+        do { a = rnd(100, 999); b = rnd(100, 999); } while (!hasCarry(a, b, '+'));
+      } else if (op === '−') {
+        do { a = rnd(200, 999); b = rnd(100, a - 1); } while (!hasCarry(a, b, '−'));
+      } else if (op === '×') {
+        do { a = rnd(12, 99); b = rnd(2, 9); } while (a * b < 100 && rnd(0, 1) === 0);
+      } else {
+        do { b = rnd(2, 9); const q = rnd(2, Math.floor(999 / b)); a = q * b + rnd(0, b - 1); } while (a > 999 || a < b * 2);
+      }
+      return { a, b };
+    }
+
     /* 判断 a op b 是否产生进位/借位 */
     function hasCarry(a, b, op) {
       const sa = String(a).split('').reverse().map(Number);
@@ -3246,6 +3323,33 @@ m8Render();
         fb.className = 'feedback ok';
         fb.innerHTML = `🎲 已生成：${a} ${op} ${b}，点击「下一步」开始计算`;
       }
+    });
+
+    // ⭐ M9 按层级出题
+    window.__m9SetLevel = function(levelId) {
+      window.__m9CurrentLevel = levelId;
+    };
+
+    // m9random 的点击逻辑改（找到 `$('#m9random')` 那段）：
+    $('#m9random').addEventListener('click', () => {
+      const level = window.__m9CurrentLevel || null;
+      // 按层级生成
+      let op;
+      if (level === 'add') op = '+';
+      else if (level === 'sub') op = '−';
+      else if (level === 'mul') op = '×';
+      else if (level === 'div') op = '÷';
+      else op = ['+', '−', '×', '÷'][Math.floor(Math.random() * 4)];
+      
+      // 用原来的 randomProblem，但锁定 op
+      // 这里需要改 randomProblem 让它接收 op
+      const { a, b } = randomProblemByOp(op);
+      document.getElementById('m9a').value = a;
+      document.getElementById('m9b').value = b;
+      document.getElementById('m9op').value = op;
+      aInput.dispatchEvent(new Event('input', { bubbles: true }));
+      bInput.dispatchEvent(new Event('input', { bubbles: true }));
+      opInput.dispatchEvent(new Event('change', { bubbles: true }));
     });
   })();
 
@@ -3565,8 +3669,18 @@ function m13RenderSteps() {
         }
       }
 
-      if (nextInput) nextInput.focus();
+      // ⭐ 新增：回车跳到下一个输入框
+      if (nextInput) focusInput(nextInput);
     });
+  });
+
+  // ⭐ 自动聚焦第一个空输入框
+  requestAnimationFrame(() => {
+    const inputs = [...c.querySelectorAll('input[data-idx]')];
+    const firstEmpty = inputs.find(inp => !inp.value.trim());
+    if (firstEmpty) {
+      focusInput(firstEmpty);
+    }
   });
 }
 
@@ -3905,12 +4019,29 @@ document.addEventListener('click', e => {
 
 let M13_CurrentAnswer = null;
 
+// ⭐ M13 按层级筛选题库
+window.__m13SetLevel = function(levelId) {
+  window.__m13CurrentLevel = levelId;
+  m13InitSelect();
+};
+
 function m13InitSelect() {
+  let bank = M13_BANK;
+  const level = window.__m13CurrentLevel;
+  if (level) {
+    const stepCount = parseInt(level.replace('step-', ''), 10);
+    bank = bank.filter(p => {
+      const steps = p.stepsCount || (p.steps ? p.steps.length : 2);
+      return steps === stepCount || (level === 'step-4' && steps >= 4);
+    });
+  }
+
   const groups = {};
-  M13_BANK.forEach((p, i) => {
-    const type = p.type || '其他';
+  bank.forEach((p) => {
+    const type = p.type || '其他';                 // ✅ 补回来
+    const origIdx = M13_BANK.indexOf(p);   // 或预先 map 保留原 idx
     if (!groups[type]) groups[type] = [];
-    groups[type].push({ p, i });
+    groups[type].push({ p, i: origIdx });
   });
 
   let html = '<option value="">— 选择一道题目 —</option>';
@@ -4718,6 +4849,13 @@ $('#pCheck').addEventListener('click', async () => {
   const badge = $('#pResult');
   const problemText = $('#problem-text').innerText.trim();
 
+  // ⭐ 判断依据改为 M13_ProblemSource，而不是下拉框当前值
+  const p = (M13_ProblemSource === 'bank') ? M13_CurrentProblem : null;
+  const stdValue = p && p.answer && typeof p.answer === 'object' ? p.answer.value : null;
+  const stdFull  = p && p.answer
+    ? (typeof p.answer === 'string' ? p.answer : p.answer.full)
+    : null;
+
   // ---- 前置校验（不占用按钮状态）----
   if (!problemText) {
     badge.className = 'result-badge no';
@@ -4770,7 +4908,7 @@ $('#pCheck').addEventListener('click', async () => {
           setTimeout(() => {
             showMasteryCard({
               problemText,
-              correctAnswer: stdFull || result.answer.full,
+              correctAnswer: stdFull || fb.answer.full,
               takeaway: takeawayLoad(problemText),
             });
           }, 800);
@@ -4780,6 +4918,18 @@ $('#pCheck').addEventListener('click', async () => {
         badge.textContent = `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`;
 
         masteryRecord(problemText, false);  // ⭐掌握度
+
+        // ⭐ 如果标准解法有，展开第一步"关系式"，让用户对比
+        const stdSteps = document.querySelectorAll('#m13StandardSteps .std-fold');
+        if (stdSteps.length > 0) {
+          // 展开第一步
+          const firstStep = stdSteps[0];
+          firstStep.classList.add('open');
+          // 滚动到标准解法
+          setTimeout(() => {
+            document.getElementById('m13StandardSteps')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }, 300);
+        }
 
         // ⭐ 触发拇指条
         if (typeof window.__shell?.showThumbBar === 'function') {
@@ -4856,14 +5006,6 @@ $('#pCheck').addEventListener('click', async () => {
       return;
     }
 
-
-  // ⭐ 判断依据改为 M13_ProblemSource，而不是下拉框当前值
-  const p = (M13_ProblemSource === 'bank') ? M13_CurrentProblem : null;
-  const stdValue = p && p.answer && typeof p.answer === 'object' ? p.answer.value : null;
-  const stdFull  = p && p.answer
-    ? (typeof p.answer === 'string' ? p.answer : p.answer.full)
-    : null;
-
   // ========== ① 题库内的题：本地比对 ==========
   if (M13_ProblemSource === 'bank' && (stdValue != null || stdFull)) {
     const uNums = m13ExtractNums(user);
@@ -4874,7 +5016,7 @@ $('#pCheck').addEventListener('click', async () => {
 
       if (allMatch) {
       badge.className = 'result-badge ok';
-      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + result.answer.full;
+      badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + stdFull;
       // ⭐ 跳一下
       badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
       setTimeout(() => { badge.style.animation = ''; }, 500);
@@ -4922,6 +5064,18 @@ $('#pCheck').addEventListener('click', async () => {
     } else {
       badge.className = 'result-badge no';
       badge.textContent = `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`;
+
+      // ⭐ 如果标准解法有，展开第一步"关系式"，让用户对比
+      const stdSteps = document.querySelectorAll('#m13StandardSteps .std-fold');
+      if (stdSteps.length > 0) {
+        // 展开第一步
+        const firstStep = stdSteps[0];
+        firstStep.classList.add('open');
+        // 滚动到标准解法
+        setTimeout(() => {
+          document.getElementById('m13StandardSteps')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 300);
+      }
 
       // ⭐ 记录做题历史
       historyAdd({
@@ -5037,6 +5191,18 @@ $('#pCheck').addEventListener('click', async () => {
     }else{
       badge.textContent = `❌ ${result.judgement.student_answer_issue || '再检查一下'}`;
       masteryRecord(problemText, false);  // ⭐掌握度
+
+      // ⭐ 如果标准解法有，展开第一步"关系式"，让用户对比
+      const stdSteps = document.querySelectorAll('#m13StandardSteps .std-fold');
+      if (stdSteps.length > 0) {
+        // 展开第一步
+        const firstStep = stdSteps[0];
+        firstStep.classList.add('open');
+        // 滚动到标准解法
+        setTimeout(() => {
+          document.getElementById('m13StandardSteps')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 300);
+      }
     }
 
     renderLLMFeedback(result);
@@ -6591,6 +6757,19 @@ function showExplainLoading() {
 /* 渲染讲解结果到弹窗 */
 function renderExplainResult(result) {
   const body = document.getElementById('explainModalBody');
+  if (!body) return;
+
+  // ⭐ Koji 的提问开头
+  const kojiIntro = result.problem_understanding
+    ? `💡 Koji 想跟你说：先想想——${escapeHtmlStrict(result.problem_understanding)}`
+    : `💡 Koji 想跟你说：我们一步一步来看看这道题。`;
+
+  const introHtml = `
+    <div class="koji-intro">
+      <span class="koji-intro-emoji">🤖</span>
+      <span>${kojiIntro}</span>
+    </div>
+  `;
 
   /* -------- 题目 -------- */
   const problemHtml = `
@@ -6651,6 +6830,7 @@ function renderExplainResult(result) {
 
   /* -------- 组装 -------- */
   body.innerHTML = `
+    ${introHtml}
     ${problemHtml}
     ${understandingHtml}
     ${insight.strengthsHtml}
@@ -7747,27 +7927,6 @@ const SFX = (function () {
   };
 })();
 
-/* 音效开关按钮 */
-(function patchSoundToggle() {
-  const btn = document.getElementById('soundToggleBtn');
-  if (!btn) return;
-  const refresh = () => {
-    if (SFX.isEnabled()) {
-      btn.textContent = '🔊';
-      btn.classList.add('on');
-    } else {
-      btn.textContent = '🔇';
-      btn.classList.remove('on');
-    }
-  };
-  btn.addEventListener('click', () => {
-    SFX.setEnabled(!SFX.isEnabled());
-    refresh();
-    if (SFX.isEnabled()) SFX.correct();
-  });
-  refresh();
-})();
-
 /* ============================================================
    A. 错题智能标签 + 错题画像
    ============================================================ */
@@ -8574,25 +8733,6 @@ function buildWeeklyReport() {
     </div>
   ` : '';
 
-  const note = noteGetThisWeek();
-  const noteHtml = (note.parent || note.child) ? `
-    <div class="weekly-report-section">
-      <h5>💬 本周一句话</h5>
-      ${note.parent ? `
-        <div style="margin-bottom:8px;padding:10px 14px;background:#fdf2f8;border-radius:8px;">
-          <div style="font-size:11.5px;color:#be185d;font-weight:700;margin-bottom:4px;">👨👩👦 家长说</div>
-          <div style="font-size:13.5px;color:#831843;line-height:1.7;">${escapeHtmlStrict(note.parent)}</div>
-        </div>
-      ` : ''}
-      ${note.child ? `
-        <div style="padding:10px 14px;background:#f0f9ff;border-radius:8px;">
-          <div style="font-size:11.5px;color:#2563eb;font-weight:700;margin-bottom:4px;">👦 孩子说</div>
-          <div style="font-size:13.5px;color:#1e3a8a;line-height:1.7;">${escapeHtmlStrict(note.child)}</div>
-        </div>
-      ` : ''}
-    </div>
-  ` : '';
-
   return `
     <div class="weekly-report-panel" id="weeklyReportPanel">
       <h4>📊 本周学习周报</h4>
@@ -8618,7 +8758,6 @@ function buildWeeklyReport() {
           <div class="value">${streak}<small> 天</small></div>
         </div>
         ${msgHtml}
-        ${noteHtml}
       </div>
       ${weekMastered.length ? `
         <div class="weekly-report-section">
@@ -9250,56 +9389,6 @@ function onCorrect(x, y) {
   console.log('[启动] ✅ core/ 已就绪, sync =', getSyncState());
 })();
 
-/* ---------- 存储健康红点 ---------- */
-(function patchStorageHealthBadge() {
-  const badge = document.createElement('button');
-  badge.id = 'storageHealthBadge';
-  badge.title = '存储健康状态';
-  badge.style.cssText = `
-    position: fixed; top: 12px; left: 12px;
-    width: 30px; height: 30px; border-radius: 50%;
-    border: none; background: #10b981; color: #fff;
-    font-size: 15px; cursor: pointer; z-index: 99998;
-    box-shadow: 0 3px 10px rgba(0,0,0,.15);
-    display: flex; align-items: center; justify-content: center;
-    transition: background .2s;
-  `;
-  badge.textContent = '💾';
-  document.body.appendChild(badge);
-
-  function refresh() {
-    const h = getStorageHealth();
-    if (h.ok) {
-      badge.style.background = '#10b981';
-      badge.textContent = '💾';
-      badge.title = '存储正常';
-    } else {
-      badge.style.background = '#ef4444';
-      badge.textContent = '⚠️';
-      badge.title = `存储失败 ${h.failCount} 次（最近：${h.lastErrorKey}）`;
-    }
-  }
-
-  onStorageError(() => refresh());
-  refresh();
-
-  badge.addEventListener('click', () => {
-    const h = getStorageHealth();
-    const log = getErrorLog();
-    const lines = [
-      `存储失败次数：${h.failCount}`,
-      h.lastError ? `最近失败 key：${h.lastErrorKey}` : '最近失败 key：—',
-      h.lastError ? `错误：${h.lastError.message || h.lastError}` : '',
-      '',
-      `错误日志（最近 ${log.length} 条）：`,
-      ...log.slice(-10).map(x =>
-        `[${new Date(x.at).toLocaleTimeString('zh-CN')}] ${x.scope}: ${x.message}`
-      ),
-    ].filter(Boolean).join('\n');
-    alert(lines);
-  });
-})();
-
 /* ---------- 切后台 / 关页面：把挂起写入落盘 ---------- */
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -9593,6 +9682,76 @@ function showKojiChoiceModal(problemText) {
 
   let stuckTimer = null;
   let errorCount = 0;
+  let correctCount = 0;
+
+  // ⭐ Koji 的三种状态
+  const KOJI_STATE = {
+    IDLE: 'idle',        // 默认
+    ALERT: 'alert',      // 用户卡住了，脉冲
+    RETREAT: 'retreat',  // 用户很顺利，退后变暗
+  };
+
+  function setKojiState(state) {
+    btn.classList.remove('koji-idle', 'koji-alert', 'koji-retreat');
+    btn.classList.add('koji-' + state);
+    btn.dataset.state = state;
+
+    if (state === 'alert') {
+      btn.title = '卡住了？点我看看 🤖';
+    } else if (state === 'retreat') {
+      btn.title = '你做得很好，我不打扰你';
+    } else {
+      btn.title = 'Koji 助手';
+    }
+  }
+
+  // 初始状态
+  setKojiState(KOJI_STATE.IDLE);
+
+  // ⭐ M1 答对：correctCount + 1，连对 3 次 → RETREAT
+  const m1Fb = document.getElementById('m1InputFeedback');
+  if (m1Fb) {
+    new MutationObserver(() => {
+      const txt = m1Fb.textContent;
+      if (/✓ 正确/.test(txt)) {
+        correctCount++;
+        errorCount = 0;
+        if (correctCount >= 3) setKojiState(KOJI_STATE.RETREAT);
+        else setKojiState(KOJI_STATE.IDLE);
+      } else if (/❌/.test(txt)) {
+        errorCount++;
+        correctCount = 0;
+        if (errorCount >= 3) {
+          setKojiState(KOJI_STATE.ALERT);
+          showKojiBubble('卡住了？点我看看这步怎么算 🤖');
+        }
+      }
+    }).observe(m1Fb, { childList: true, subtree: true, characterData: true });
+  }
+
+  // ⭐ M9 同理
+  const m9Fb = document.getElementById('m9fb');
+  if (m9Fb) {
+    let last = '';
+    new MutationObserver(() => {
+      const txt = m9Fb.textContent;
+      if (txt === last) return;
+      last = txt;
+      if (/✓ 正确/.test(txt)) {
+        correctCount++;
+        errorCount = 0;
+        if (correctCount >= 3) setKojiState(KOJI_STATE.RETREAT);
+        else setKojiState(KOJI_STATE.IDLE);
+      } else if (/❌/.test(txt)) {
+        errorCount++;
+        correctCount = 0;
+        if (errorCount >= 3) {
+          setKojiState(KOJI_STATE.ALERT);
+          showKojiBubble('卡住了？点我看看这一步 🤖');
+        }
+      }
+    }).observe(m9Fb, { childList: true, subtree: true, characterData: true });
+  }
 
   function showKojiBubble(text) {
     if (document.querySelector('.koji-bubble')) return;
@@ -9640,7 +9799,6 @@ function showKojiChoiceModal(problemText) {
   }
 
   // 监听 M9 的错误反馈
-  const m9Fb = document.getElementById('m9fb');
   if (m9Fb) {
     let last = '';
     new MutationObserver(() => {
@@ -9799,78 +9957,6 @@ function shareMasteryCard({ problemText, correctAnswer, takeaway }) {
   }
 }
 
-// 家长留言弹窗里显示“孩子的回应”
-function showParentMessageModal() {
-  if (document.querySelector('.parent-msg-mask')) return;
-
-  // ⭐ 读历史留言
-  const history = msgLoad().slice(0, 5);
-
-  const mask = document.createElement('div');
-  mask.className = 'parent-msg-mask';
-  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10015;padding:20px;';
-  mask.innerHTML = `
-    <div style="background:#fff;border-radius:20px;padding:24px 22px 20px;width:400px;max-width:92vw;max-height:88vh;overflow-y:auto;box-shadow:0 20px 60px rgba(15,23,42,.3);">
-      <div style="font-size:36px;text-align:center;margin-bottom:8px;">💌</div>
-      <div style="font-size:17px;font-weight:800;color:#1e293b;text-align:center;margin-bottom:6px;">给孩子留一句话</div>
-      <div style="font-size:12.5px;color:#64748b;text-align:center;line-height:1.7;margin-bottom:16px;">
-        孩子下次打开会看到你的鼓励
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-bottom:12px;">
-        ${['你真棒！', '继续加油 💪', '爸爸/妈妈看到了', '今天辛苦了 ❤️', '比昨天更好了'].map(t =>
-          `<button class="parent-msg-quick" data-text="${t}" style="padding:6px 12px;border:1.5px solid #e5e7eb;border-radius:999px;background:#fff;color:#475569;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">${t}</button>`
-        ).join('')}
-      </div>
-      <textarea id="parentMsgInput" placeholder="写一句鼓励的话…" style="width:100%;padding:12px 14px;border:2px solid #e5e7eb;border-radius:12px;font-size:14px;font-family:inherit;outline:none;resize:none;height:80px;margin-bottom:12px;"></textarea>
-      <div style="display:flex;gap:10px;margin-bottom:16px;">
-        <button id="parentMsgCancel" style="flex:1;padding:12px;border-radius:12px;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">取消</button>
-        <button id="parentMsgSend" style="flex:1;padding:12px;border-radius:12px;background:#ec4899;color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #be185d;">发送</button>
-      </div>
-
-      ${history.length ? `
-        <div style="border-top:1px dashed #e2e8f0;padding-top:14px;">
-          <div style="font-size:12.5px;font-weight:800;color:#64748b;margin-bottom:10px;">📜 历史留言</div>
-          ${history.map(m => `
-            <div style="background:#f8fafc;border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:12.5px;line-height:1.6;">
-              <div style="color:#334155;"><b>你：</b>${escapeHtmlStrict(m.text)}</div>
-              <div style="color:#94a3b8;font-size:11px;margin-top:2px;">${new Date(m.at).toLocaleString('zh-CN')}</div>
-              ${m.reply ? `
-                <div style="margin-top:8px;padding:8px 10px;background:#fff;border-left:3px solid #ec4899;border-radius:6px;">
-                  <div style="color:#be185d;font-weight:700;">👦 孩子回：</div>
-                  <div style="color:#334155;">${escapeHtmlStrict(m.reply)}</div>
-                </div>
-              ` : `
-                <div style="margin-top:6px;font-size:11.5px;color:#94a3b8;">孩子还没回复</div>
-              `}
-            </div>
-          `).join('')}
-        </div>
-      ` : ''}
-    </div>
-  `;
-  document.body.appendChild(mask);
-
-  const input = document.getElementById('parentMsgInput');
-  input.focus();
-
-  mask.querySelectorAll('.parent-msg-quick').forEach(btn => {
-    btn.addEventListener('click', () => {
-      input.value = btn.dataset.text;
-      input.focus();
-    });
-  });
-
-  document.getElementById('parentMsgCancel').addEventListener('click', () => mask.remove());
-  document.getElementById('parentMsgSend').addEventListener('click', () => {
-    const text = input.value.trim();
-    if (!text) { showToast('写一句再发吧', 'info'); return; }
-    msgAdd({ text, from: '家长', emoji: '❤️' });
-    mask.remove();
-    showToast('💌 已留给孩子，下次打开会看到', 'success');
-  });
-  mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
-}
-
 function showParentSettingsModal() {
   if (document.querySelector('.parent-settings-mask')) return;
   const targets = targetLoad();
@@ -9905,12 +9991,6 @@ function showParentSettingsModal() {
         <button id="parentSetReset" style="flex:1;padding:12px;border-radius:12px;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">恢复默认</button>
         <button id="parentSetSave" style="flex:1;padding:12px;border-radius:12px;background:#2563eb;color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #1d4ed8;">保存</button>
       </div>
-
-      <div style="border-top:1px dashed #e2e8f0;padding-top:12px;margin-top:12px;">
-        <div style="font-size:13px;font-weight:700;color:#475569;margin-bottom:8px;">💬 本周对孩子说一句</div>
-        <textarea id="parentWeeklyNote" placeholder="这一周，你想对孩子说什么？" style="width:100%;padding:10px 12px;border:2px solid #e5e7eb;border-radius:10px;font-size:13px;font-family:inherit;outline:none;resize:none;height:60px;">${noteGetThisWeek().parent || ''}</textarea>
-        <button id="parentWeeklyNoteSend" style="margin-top:8px;width:100%;padding:10px;border-radius:10px;background:#ec4899;color:#fff;border:none;cursor:pointer;font-size:13px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #be185d;">发送给孩子</button>
-      </div>
   `;
 
   document.body.appendChild(mask);
@@ -9919,18 +9999,6 @@ function showParentSettingsModal() {
     targetReset();
     mask.remove();
     showToast('✅ 已恢复默认目标', 'success');
-  });
-  
-  document.getElementById('parentWeeklyNoteSend')?.addEventListener('click', () => {
-    const input = document.getElementById('parentWeeklyNote');
-    const text = input.value.trim();
-    if (!text) {
-      showToast('写一句再发送吧', 'info');
-      return;
-    }
-    noteSetParent(text);
-    showToast('✅ 已发送，孩子打开成长页会看到', 'success');
-    // 不关弹窗，让家长继续改目标
   });
 
   document.getElementById('parentSetSave').addEventListener('click', () => {
@@ -9947,7 +10015,6 @@ function showParentSettingsModal() {
 
 }
 
-window.__showParentMessageModal = showParentMessageModal;
 window.__showParentSettingsModal = showParentSettingsModal;
 
 /* ⭐ 孩子打开时，弹未读家长留言 */

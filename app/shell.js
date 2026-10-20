@@ -14,12 +14,20 @@ import {
 escapeHtmlStrict, escapeHtml,
 } from '../core/html.js';
 
-import { targetLoad } from '../core/target.js';
-
-import { msgLoad } from '../core/parent-message.js';
-
-import { noteGetThisWeek, noteSetChild } from '../core/weekly-note.js';
 import { showToast } from '../core/toast.js';
+
+import { msgLoad, msgAdd, msgReply, msgGroupByTime, msgMarkAllRead } from '../core/parent-message.js';
+import { targetLoad, targetSave, targetReset, DEFAULT_TARGETS } from '../core/target.js';
+import { getStorageHealth, onStorageError } from '../core/storage.js';
+import { getSyncState, forceSync, onSyncStateChange } from '../core/sync/sync-manager.js';
+import { getErrorLog } from '../core/errors.js';
+import { lsGet, lsSet } from '../core/storage.js';
+
+import { openSyncSetupModal } from './sync-setup-ui.js';
+import {
+  getCurrentUser,
+  ensureAnonymousLogin,
+} from '../core/sync/auth.js';
 
 /* ============================================================
    1. 年级配置（为多年级扩展做准备）
@@ -54,9 +62,9 @@ export function getGradeConfig() {
 }
 
 /* ============================================================
-   2. 路由：home / lesson / growth
+   2. 路由：home / lesson / growth / message
    ============================================================ */
-const ROUTES = ['home', 'lesson', 'growth'];
+const ROUTES = ['home', 'lesson', 'growth', 'messages', 'settings'];
 let currentRoute = 'home';
 let currentLessonId = null;
 
@@ -69,8 +77,11 @@ export function navigate(route, opts = {}) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 
   const targetId = route === 'home'   ? 'page-home'
-                 : route === 'lesson' ? 'page-lesson'
-                 :                      'page-growth';
+               : route === 'lesson' ? 'page-lesson'
+               : route === 'growth' ? 'page-growth'
+               : route === 'messages' ? 'page-messages'
+               : route === 'settings' ? 'page-settings'
+               :                        'page-home';
   const target = document.getElementById(targetId);
   if (!target) {
     console.error('[shell] 找不到页面容器:', targetId);
@@ -85,9 +96,15 @@ export function navigate(route, opts = {}) {
   } else if (route === 'lesson') {
     mountLesson(currentLessonId);
     history.pushState({ route: 'lesson', lessonId: currentLessonId }, '', `#lesson/${currentLessonId}`);
-  } else {
+  } else if (route === 'growth') {
     renderGrowth();
     history.pushState({ route: 'growth' }, '', '#growth');
+  } else if (route === 'messages') {           // ⭐ 新增
+    renderMessages();
+    history.pushState({ route: 'messages' }, '', '#messages');
+  } else if (route === 'settings') {
+    renderSettings();
+    history.pushState({ route: 'settings' }, '', '#settings');
   }
 
   window.scrollTo({ top: 0, behavior: 'auto' });
@@ -105,39 +122,42 @@ window.addEventListener('popstate', (e) => {
 function getIslandStats() {
   const history = historyLoad();
   const activity = activityStatsByModule();
+  const masteryMap = masteryLoad();
 
+  // ⭐ 一次遍历 history，建 problemText → moduleId 的 map
+  //    同时累计 stats
+  const textToModule = {};
   const stats = {};
-  // ① history
+
   history.forEach(r => {
-    const key = r.moduleId || r.problemSource || 'other';
-    if (!stats[key]) stats[key] = { total: 0, correct: 0, practiced: 0, lastAt: 0 };
-    stats[key].total++;
-    if (r.isCorrect) stats[key].correct++;
-    stats[key].practiced++;
-    if (r.timestamp > stats[key].lastAt) stats[key].lastAt = r.timestamp;
+    const text = (r.problemText || '').trim();
+    const mid = r.moduleId || r.problemSource || 'other';
+
+    // 建 map：用最新的记录覆盖（history 是 unshift 存的，最新的在前面，
+    // 所以后面的会覆盖前面的，但我们只要一个映射，覆盖不覆盖无所谓）
+    if (text) textToModule[text] = mid;
+
+    if (!stats[mid]) stats[mid] = { total: 0, correct: 0, practiced: 0, lastAt: 0, mastered: 0 };
+    stats[mid].total++;
+    if (r.isCorrect) stats[mid].correct++;
+    stats[mid].practiced++;
+    if (r.timestamp > stats[mid].lastAt) stats[mid].lastAt = r.timestamp;
   });
-  // ② activity
+
+  // ⭐ activity 合并
   Object.keys(activity).forEach(mid => {
-    if (!stats[mid]) stats[mid] = { total: 0, correct: 0, practiced: 0, lastAt: 0 };
+    if (!stats[mid]) stats[mid] = { total: 0, correct: 0, practiced: 0, lastAt: 0, mastered: 0 };
     stats[mid].practiced += activity[mid].count;
     if (activity[mid].lastAt > stats[mid].lastAt) stats[mid].lastAt = activity[mid].lastAt;
   });
 
-  // ⭐ 加掌握度
-  const masteryMap = masteryLoad();
-  const masteredByModule = {};
-  // 需要知道每道题属于哪个模块 → 从 history 反查
-  const historyAll = historyLoad();
+  // ⭐ mastery 统计：O(n)，直接查 textToModule，不再 find
   Object.values(masteryMap).forEach(rec => {
     if (rec.state !== 'mastered') return;
-    const hist = historyAll.find(r => (r.problemText || '').trim() === rec.text);
-    if (!hist) return;
-    const mid = hist.moduleId || 'other';
-    masteredByModule[mid] = (masteredByModule[mid] || 0) + 1;
-  });
-
-  Object.keys(stats).forEach(mid => {
-    stats[mid].mastered = masteredByModule[mid] || 0;
+    const mid = textToModule[rec.text];
+    if (!mid) return;
+    if (!stats[mid]) stats[mid] = { total: 0, correct: 0, practiced: 0, lastAt: 0, mastered: 0 };
+    stats[mid].mastered = (stats[mid].mastered || 0) + 1;
   });
 
   return stats;
@@ -380,22 +400,17 @@ export function renderHome() {
       <button class="home-growth-entry" data-goto="growth">
         📊 我的成长与家长周报 →
       </button>
-      <button class="home-parent-entry" id="homeParentEntry">
-        💌 给孩子留一句话
+      <button class="home-messages-entry" data-goto="messages">
+        💬 留言板
       </button>
-      <button class="home-parent-settings" id="homeParentSettings">
-        ⚙️ 家长设置
+
+      <button class="home-settings-entry" data-goto="settings">
+        ⚙️ 设置
       </button>
     </div>
   `;
 
-  // Home 页加“家长入口”
-  document.getElementById('homeParentEntry')?.addEventListener('click', () => {
-    window.__showParentMessageModal?.();
-  });
-  document.getElementById('homeParentSettings')?.addEventListener('click', () => {
-    window.__showParentSettingsModal?.();
-  });
+
 
   // ⭐ 任务点击
   document.querySelectorAll('.home-task[data-task-id]').forEach(btn => {
@@ -438,7 +453,11 @@ function getTodayTasks() {
     desc: `已完成 ${todayCount} / ${todayGoal}`,
     done: todayCount >= todayGoal,
     progress: Math.min(100, Math.round(todayCount / todayGoal * 100)),
-    action: () => navigate('lesson', { lessonId: 'm1' }),
+    action: () => {
+      const currentLevel = localStorage.getItem('grade3_m1_level') || 'no-paren';
+      navigate('lesson', { lessonId: 'm1' });
+      // mountLesson 会根据当前层级出题
+    }
   });
 
   // 任务 2：复习错题本
@@ -617,15 +636,110 @@ function mountLesson(lessonId) {
   const totalCount = moduleRecords.length;
   const correctCount = moduleRecords.filter(r => r.isCorrect).length;
 
-  // 简单规则：每做 2 题点亮一个点，最多 4 个点
-  const totalDots = 4;
-  const litDots = Math.min(totalDots, Math.ceil(totalCount / 2));
-  const pathHtml = Array.from({ length: totalDots }).map((_, i) => {
-    let cls = '';
-    if (i < litDots - 1) cls = 'done';
-    else if (i === litDots - 1) cls = 'current';
-    return `<span class="path-dot ${cls}"></span>`;
-  }).join('');
+  // ⭐ 路径点对应"难度层级"，而不是"做题数量"
+  const LEVELS = {
+    m1: [
+      {
+        id: 'no-paren',
+        name: '无括号',
+        icon: '1️⃣',
+        desc: '先算乘除，后算加减',
+        unlockAt: 0,           // 0 = 一开始就解锁
+        test: (r) => !/[()（）]/.test(r.problemText),
+        generate: () => window.__M1_PRESETS.filter(p => !/[()（）]/.test(p.expr)),
+      },
+      {
+        id: 'with-paren',
+        name: '有括号',
+        icon: '2️⃣',
+        desc: '先算括号里的',
+        unlockAt: 1,           // 完成 1 个"无括号"才解锁
+        test: (r) => /[()（）]/.test(r.problemText),
+        generate: () => window.__M1_PRESETS.filter(p => /[()（）]/.test(p.expr)),
+      },
+      {
+        id: 'mul-div',
+        name: '乘除混合',
+        icon: '3️⃣',
+        desc: '乘除和加减一起出现',
+        unlockAt: 1,
+        test: (r) => /[×÷]/.test(r.problemText) && /[+\-]/.test(r.problemText),
+        generate: () => window.__M1_PRESETS.filter(p => /[×÷]/.test(p.expr) && /[+\-]/.test(p.expr)),
+      },
+      {
+        id: 'add-sub',
+        name: '加减混合',
+        icon: '4️⃣',
+        desc: '只有加减，但有多步',
+        unlockAt: 2,
+        test: (r) => /[+\-]/.test(r.problemText) && !/[×÷()（）]/.test(r.problemText),
+        generate: () => window.__M1_PRESETS.filter(p => /[+\-]/.test(p.expr) && !/[×÷()（）]/.test(p.expr)),
+      },
+    ],
+    m9: [
+      { id: 'add', name: '加法', icon: '➕', unlockAt: 0, test: (r) => r.problemText.includes('+') },
+      { id: 'sub', name: '减法', icon: '➖', unlockAt: 1, test: (r) => r.problemText.includes('−') },
+      { id: 'mul', name: '乘法', icon: '✖️', unlockAt: 1, test: (r) => r.problemText.includes('×') },
+      { id: 'div', name: '除法', icon: '➗', unlockAt: 2, test: (r) => r.problemText.includes('÷') },
+    ],
+    m13: [
+      { id: 'step-1', name: '一步', icon: '1️⃣', unlockAt: 0, test: (r) => (r.studentSteps?.length || 0) === 1 },
+      { id: 'step-2', name: '两步', icon: '2️⃣', unlockAt: 1, test: (r) => (r.studentSteps?.length || 0) === 2 },
+      { id: 'step-3', name: '三步', icon: '3️⃣', unlockAt: 2, test: (r) => (r.studentSteps?.length || 0) === 3 },
+      { id: 'step-4', name: '四步', icon: '4️⃣', unlockAt: 3, test: (r) => (r.studentSteps?.length || 0) >= 4 },
+    ],
+  };
+
+  const levels = LEVELS[lessonId];
+  let pathHtml;
+
+  // ⭐ 根据当前层级出题
+  if (levels) {
+    const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || levels[0].id;
+    const currentLevel = levels.find(lv => lv.id === currentLevelId);
+    
+    if (currentLevel && currentLevel.generate) {
+      const pool = currentLevel.generate();
+      if (pool.length > 0) {
+        // ⭐ 对 M1：把预设池换成这一层的题
+        if (lessonId === 'm1' && window.__m1LoadPresets) {
+          window.__m1LoadPresets(pool);
+        }
+        // ⭐ 对 M9：随机出题时只出这一层的
+        if (lessonId === 'm9' && window.__m9SetLevel) {
+          window.__m9SetLevel(currentLevelId);
+        }
+        // ⭐ 对 M13：题库筛选
+        if (lessonId === 'm13' && window.__m13SetLevel) {
+          window.__m13SetLevel(currentLevelId);
+        }
+      }
+    }
+  }
+
+  if (levels) {
+    // 计算每个层级是否"已完成"
+    const levelDone = levels.map(lv => 
+      moduleRecords.some(r => lv.test(r) && r.isCorrect)
+    );
+    const litDots = levelDone.filter(Boolean).length;
+    pathHtml = levels.map((lv, i) => {
+      let cls = '';
+      if (i < litDots - 1) cls = 'done';
+      else if (i === litDots - 1) cls = 'current';
+      return `<span class="path-dot ${cls}" title="${lv.name}"></span>`;
+    }).join('');
+  } else {
+    // 兜底：原有规则
+    const totalDots = 4;
+    const litDots = Math.min(totalDots, Math.ceil(totalCount / 2));
+    pathHtml = Array.from({ length: totalDots }).map((_, i) => {
+      let cls = '';
+      if (i < litDots - 1) cls = 'done';
+      else if (i === litDots - 1) cls = 'current';
+      return `<span class="path-dot ${cls}"></span>`;
+    }).join('');
+  }
 
   document.getElementById('lessonHeader').innerHTML = `
     <button class="lesson-back" id="lessonBack">←</button>
@@ -636,10 +750,67 @@ function mountLesson(lessonId) {
 
   // 顶部进度条（新增）
   const progressBar = document.getElementById('lessonProgress');
-  if (progressBar) {
-    progressBar.innerHTML = totalCount > 0
-      ? `<span>已练 <b>${totalCount}</b> 题 · 正确率 <b>${Math.round(correctCount / totalCount * 100)}%</b></span>`
-      : `<span>还没开始，试试第一题吧</span>`;
+  if (progressBar && levels) {
+    const levelDone = levels.map(lv => 
+      moduleRecords.some(r => lv.test(r) && r.isCorrect)
+    );
+    const litDots = levelDone.filter(Boolean).length;
+    const currentLevel = levels[litDots - 1] || levels[0];
+    progressBar.innerHTML = `
+      <span>已练 <b>${totalCount}</b> 题 · 正确率 <b>${Math.round(correctCount / totalCount * 100)}%</b></span>
+      <span class="lesson-progress-level">当前层级：<b>${currentLevel.name}</b></span>
+    `;
+  }
+
+  // ⭐ 层级选择器
+  const levelSelectorWrap = document.getElementById('lessonLevels');
+  if (levelSelectorWrap && levels) {
+    const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || levels[0].id;
+    
+    // 计算每层是否已完成
+    const levelDone = levels.map(lv => 
+      moduleRecords.some(r => lv.test(r) && r.isCorrect)
+    );
+    
+    // 计算每层是否解锁
+    const levelUnlocked = levels.map((lv, i) => {
+      if (i === 0) return true;
+      const prevDone = levelDone.slice(0, i).filter(Boolean).length;
+      return prevDone >= lv.unlockAt;
+    });
+
+    levelSelectorWrap.innerHTML = levels.map((lv, i) => {
+      const done = levelDone[i];
+      const unlocked = levelUnlocked[i];
+      const isCurrent = lv.id === currentLevelId;
+      return `
+        <button class="level-btn ${done ? 'done' : ''} ${isCurrent ? 'current' : ''} ${!unlocked ? 'locked' : ''}"
+                data-level-id="${lv.id}"
+                data-level-index="${i}"
+                ${!unlocked ? 'disabled' : ''}>
+          <span class="level-btn-icon">${done ? '✅' : unlocked ? lv.icon : '🔒'}</span>
+          <span class="level-btn-name">${lv.name}</span>
+        </button>
+      `;
+    }).join('');
+
+    // 绑定点击
+    levelSelectorWrap.querySelectorAll('.level-btn:not(.locked)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const levelId = btn.dataset.levelId;
+        localStorage.setItem(`grade3_${lessonId}_level`, levelId);
+        mountLesson(lessonId);
+
+        // ⭐ 切层级后，M1 立刻随机出一题（更有"新关卡"的感觉）
+        if (lessonId === 'm1') {
+          setTimeout(() => document.getElementById('m1Random')?.click(), 50);
+        }
+        // M9 同理
+        if (lessonId === 'm9') {
+          setTimeout(() => document.getElementById('m9random')?.click(), 50);
+        }
+      });
+    });
   }
 
   document.getElementById('lessonBack').addEventListener('click', () => navigate('home'));
@@ -654,6 +825,18 @@ function mountLesson(lessonId) {
    5. 拇指区反馈条（Brilliant 式底部 Banner）
    ============================================================ */
 function ensureThumbBar() {
+  if (window.visualViewport) {
+    const adjustThumbBar = () => {
+      const bar = document.getElementById('thumbBar');
+      if (!bar) return;
+      const vv = window.visualViewport;
+      const keyboardHeight = window.innerHeight - vv.height;
+      bar.style.bottom = keyboardHeight > 0 ? `${keyboardHeight}px` : '0';
+    };
+    window.visualViewport.addEventListener('resize', adjustThumbBar);
+    window.visualViewport.addEventListener('scroll', adjustThumbBar);
+  }
+
   if (document.getElementById('thumbBar')) return;
   const bar = document.createElement('div');
   bar.id = 'thumbBar';
@@ -837,32 +1020,6 @@ function renderWeeklySummary() {
     `;
   })();
 
-  const note = noteGetThisWeek();
-  const weeklyNoteHtml = `
-    <div class="weekly-note">
-      <div class="weekly-note-hd">
-        <span>💬 本周一句话</span>
-      </div>
-      <div class="weekly-note-row">
-        <div class="weekly-note-label">👨 家长</div>
-        <div class="weekly-note-text ${note.parent ? '' : 'empty'}">
-          ${note.parent ? escapeHtmlStrict(note.parent) : '家长还没写'}
-        </div>
-        ${!note.parent ? `<button class="weekly-note-write" id="weeklyNoteParentWrite">提醒家长 →</button>` : ''}
-        ${!note.parent ? `<button class="weekly-note-write" id="weeklyNoteParentWrite">写一句 →</button>` : ''}
-      </div>
-      <div class="weekly-note-row">
-        <div class="weekly-note-label">👦 孩子</div>
-        <div class="weekly-note-text ${note.child ? '' : 'empty'}">
-          ${note.child ? escapeHtmlStrict(note.child) : '我还没写'}
-        </div>
-        <button class="weekly-note-write" id="weeklyNoteChildWrite">
-          ${note.child ? '改一句' : '写一句 →'}
-        </button>
-      </div>
-    </div>
-  `;
-
   document.getElementById('weeklyNoteParentWrite')?.addEventListener('click', () => {
     window.__showParentSettingsModal?.();
     // 弹窗打开后自动聚焦 textarea
@@ -934,7 +1091,7 @@ function renderWeeklySummary() {
         <button class="btn" id="weeklyGoWrongBtn">📕 复习错题</button>
       </div>
     </div>
-    ${weeklyNoteHtml}
+
     ${monthCompareHtml}
     ${achievementHtml}
   `;
@@ -950,12 +1107,6 @@ function renderWeeklySummary() {
 
   document.getElementById('weeklyGoWrongBtn').addEventListener('click', () => {
     document.getElementById('wrongBookBtn')?.click();
-  });
-
-   // 孩子写一句
-  // ⭐ 改成：
-  document.getElementById('weeklyNoteChildWrite')?.addEventListener('click', () => {
-    showWeeklyNoteModal();
   });
   
 }
@@ -1018,14 +1169,10 @@ function renderGrowth() {
   }
 }
 
-
-
 /* ============================================================
    7. 初始化
    ============================================================ */
 export function initShell() {
-  //在 initShell 里把 .tabs 隐藏
-  document.querySelector('.tabs')?.style.setProperty('display', 'none');
   // ⭐ 事件委托：绑在 #page-home 上，永不丢失
   const homeEl = document.getElementById('page-home');
   if (homeEl && !homeEl.dataset._delegated) {
@@ -1046,6 +1193,7 @@ export function initShell() {
   // ⭐ 暴露给 Console 调试
   window.__shell = {
     navigate, renderHome, refreshHomeTasks, mountLesson, renderGrowth,
+    renderMessages, renderSettings,
     showThumbBar, hideThumbBar,
   };
 
@@ -1172,4 +1320,417 @@ function showWeeklyNoteModal() {
       input.focus();
     }
   }, 250);
+}
+
+/* ============================================================
+   8. Messages 页：留言板
+   ============================================================ */
+
+let _msgIdentity = '家长';  // 当前身份：'家长' | '孩子'
+
+function renderMessages() {
+  const stage = document.getElementById('messagesStage');
+  if (!stage) return;
+
+  // 顶部 header
+  const hd = document.getElementById('messagesHeader');
+  hd.innerHTML = `
+    <button class="lesson-back" id="messagesBack">←</button>
+    <div class="lesson-title">💬 留言板</div>
+    <div style="width:36px"></div>
+  `;
+  document.getElementById('messagesBack').addEventListener('click', () => navigate('home'));
+
+  const groups = msgGroupByTime();
+
+  const composeHtml = `
+    <div class="msg-compose">
+      <div class="msg-identity">
+        <span class="msg-identity-label">我是：</span>
+        <button class="msg-identity-btn ${_msgIdentity === '家长' ? 'active' : ''}" data-identity="家长">👨‍👩‍👦 家长</button>
+        <button class="msg-identity-btn ${_msgIdentity === '孩子' ? 'active' : ''}" data-identity="孩子">👦 孩子</button>
+      </div>
+      <textarea id="msgInput" placeholder="写一句…" maxlength="120"></textarea>
+      <div class="msg-compose-actions">
+        <button class="msg-attach-btn" id="msgAttachBtn">📎 关联题目</button>
+        <button class="msg-send-btn" id="msgSendBtn">发送</button>
+      </div>
+      <div id="msgAttachPreview" class="msg-attach-preview" style="display:none;"></div>
+    </div>
+  `;
+
+  const renderGroup = (title, list) => {
+    if (!list.length) return '';
+    return `
+      <div class="msg-group">
+        <div class="msg-group-hd">${title}</div>
+        ${list.map(m => renderMessageItem(m)).join('')}
+      </div>
+    `;
+  };
+
+  const listHtml = [
+    renderGroup('今天', groups.today),
+    renderGroup('本周', groups.week),
+    renderGroup('本月', groups.month),
+    renderGroup('更早', groups.earlier),
+  ].join('') || '<div class="msg-empty">还没有留言，写第一句吧 💬</div>';
+
+  stage.innerHTML = `
+    <div class="messages-wrap">
+      ${composeHtml}
+      ${listHtml}
+    </div>
+  `;
+
+  // 身份切换
+  stage.querySelectorAll('.msg-identity-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _msgIdentity = btn.dataset.identity;
+      renderMessages();
+    });
+  });
+
+  // 关联题目
+  let _pendingAttach = null;
+  document.getElementById('msgAttachBtn')?.addEventListener('click', () => {
+    showAttachProblemModal((problem) => {
+      _pendingAttach = problem;
+      const preview = document.getElementById('msgAttachPreview');
+      preview.style.display = 'block';
+      preview.innerHTML = `
+        <span>📎 关联：${escapeHtmlStrict(problem.text)}</span>
+        <button id="msgAttachRemove" style="margin-left:8px;border:none;background:transparent;color:#ef4444;cursor:pointer;font-weight:700;">✕</button>
+      `;
+      document.getElementById('msgAttachRemove')?.addEventListener('click', () => {
+        _pendingAttach = null;
+        preview.style.display = 'none';
+        preview.innerHTML = '';
+      });
+    });
+  });
+
+  // 发送
+  document.getElementById('msgSendBtn')?.addEventListener('click', () => {
+    const input = document.getElementById('msgInput');
+    const text = input.value.trim();
+    if (!text) { showToast('写一句再发吧', 'info'); return; }
+    msgAdd({ text, from: _msgIdentity, linkedProblem: _pendingAttach });
+    input.value = '';
+    _pendingAttach = null;
+    renderMessages();
+    showToast('✅ 已留言', 'success');
+  });
+
+  // 回复按钮
+  stage.querySelectorAll('.msg-reply-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.msgId;
+      const text = prompt('回一句…');
+      if (text && text.trim()) {
+        msgReply(id, text);
+        renderMessages();
+        showToast('✅ 已回复', 'success');
+      }
+    });
+  });
+
+  // 标记已读
+  msgMarkAllRead();
+}
+
+function renderMessageItem(m) {
+  const time = new Date(m.at);
+  const timeStr = `${time.getMonth() + 1}/${time.getDate()} ${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
+  const isParent = m.from === '家长';
+
+  return `
+    <div class="msg-item ${isParent ? 'from-parent' : 'from-child'}">
+      <div class="msg-hd">
+        <span class="msg-avatar">${isParent ? '👨‍👩‍👦' : '👦'}</span>
+        <span class="msg-from">${m.from}</span>
+        <span class="msg-time">${timeStr}</span>
+      </div>
+      <div class="msg-text">${escapeHtmlStrict(m.text)}</div>
+      ${m.linkedProblem ? `
+        <div class="msg-linked">
+          <span>📎</span>
+          <span>${escapeHtmlStrict(m.linkedProblem.text)}</span>
+          ${m.linkedProblem.answer ? `<span class="msg-linked-answer">答案 ${escapeHtmlStrict(m.linkedProblem.answer)}</span>` : ''}
+        </div>
+      ` : ''}
+      ${m.reply ? `
+        <div class="msg-reply">
+          <div class="msg-reply-hd">${isParent ? '👦 孩子回复' : '👨‍👩‍👦 家长回复'} · ${new Date(m.repliedAt).toLocaleTimeString('zh-CN', {hour: '2-digit', minute: '2-digit'})}</div>
+          <div class="msg-reply-text">${escapeHtmlStrict(m.reply)}</div>
+        </div>
+      ` : `
+        <button class="msg-reply-btn" data-msg-id="${m.id}">💬 回一句</button>
+      `}
+    </div>
+  `;
+}
+
+/* ⭐ 关联题目选择弹窗 */
+function showAttachProblemModal(onSelect) {
+  if (document.querySelector('.msg-attach-mask')) return;
+
+  // 最近掌握的 5 条
+  const masteryMap = masteryLoad();
+  const mastered = Object.values(masteryMap)
+    .filter(r => r.state === 'mastered')
+    .sort((a, b) => b.lastAt - a.lastAt)
+    .slice(0, 5);
+
+  // 最近做错的 5 条
+  const wrong = wbLoad().slice(0, 5);
+
+  const mask = document.createElement('div');
+  mask.className = 'msg-attach-mask';
+  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10020;padding:20px;';
+  mask.innerHTML = `
+    <div style="background:#fff;border-radius:20px;padding:20px;width:400px;max-width:92vw;max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(15,23,42,.3);">
+      <div style="font-size:16px;font-weight:800;color:#1e293b;margin-bottom:14px;">📎 关联一道题</div>
+
+      ${mastered.length ? `
+        <div style="font-size:12.5px;font-weight:800;color:#15803d;margin-bottom:8px;">🏆 最近掌握的</div>
+        ${mastered.map(r => `
+          <button class="msg-attach-item" data-text="${escapeHtmlStrict(r.text)}" data-module=""
+                  style="width:100%;text-align:left;padding:10px 12px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;margin-bottom:6px;font-size:13px;color:#15803d;cursor:pointer;font-family:inherit;">
+            ${escapeHtmlStrict(r.text.slice(0, 40))}${r.text.length > 40 ? '…' : ''}
+          </button>
+        `).join('')}
+      ` : ''}
+
+      ${wrong.length ? `
+        <div style="font-size:12.5px;font-weight:800;color:#b45309;margin-top:14px;margin-bottom:8px;">❌ 最近做错的</div>
+        ${wrong.map(r => `
+          <button class="msg-attach-item" data-text="${escapeHtmlStrict(r.text)}" data-module="${escapeHtmlStrict(r.moduleId || '')}" data-answer="${escapeHtmlStrict(r.correctAnswer || '')}"
+                  style="width:100%;text-align:left;padding:10px 12px;background:#fffbeb;border:1.5px solid #fcd34d;border-radius:10px;margin-bottom:6px;font-size:13px;color:#b45309;cursor:pointer;font-family:inherit;">
+            ${escapeHtmlStrict(r.text.slice(0, 40))}${r.text.length > 40 ? '…' : ''}
+          </button>
+        `).join('')}
+      ` : ''}
+
+      ${!mastered.length && !wrong.length ? `
+        <div style="text-align:center;padding:30px 20px;color:#94a3b8;font-size:13px;">还没有题，做几道再来关联吧</div>
+      ` : ''}
+
+      <button id="msgAttachCancel" style="width:100%;margin-top:12px;padding:10px;border-radius:10px;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">取消</button>
+    </div>
+  `;
+  document.body.appendChild(mask);
+
+  mask.querySelectorAll('.msg-attach-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      onSelect({
+        text: btn.dataset.text,
+        answer: btn.dataset.answer || '',
+        moduleId: btn.dataset.module || '',
+      });
+      mask.remove();
+    });
+  });
+
+  document.getElementById('msgAttachCancel').addEventListener('click', () => mask.remove());
+  mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
+}
+
+/* ============================================================
+   9. Settings 页：设置
+   ============================================================ */
+function renderSettings() {
+  const stage = document.getElementById('settingsStage');
+  if (!stage) return;
+
+  // 顶部 header
+  const hd = document.getElementById('settingsHeader');
+  hd.innerHTML = `
+    <button class="lesson-back" id="settingsBack">←</button>
+    <div class="lesson-title">⚙️ 设置</div>
+    <div style="width:36px"></div>
+  `;
+  document.getElementById('settingsBack').addEventListener('click', () => navigate('home'));
+
+  const targets = targetLoad();
+  const storageHealth = getStorageHealth();
+  const syncState = getSyncState();
+  const soundOn = lsGet('grade3_sound_on') === '1';
+  const errorLog = getErrorLog();
+  const recentErrors = errorLog.filter(e => Date.now() - e.at < 7 * 86400000);
+
+  const currentUser = (() => {
+    try {
+      if (typeof getCurrentUser === 'function') return getCurrentUser();
+      if (typeof cloudbase !== 'undefined') {
+        const s = cloudbase.auth().getLoginState();
+        return s && s.user ? s.user : null;
+      }
+    } catch (e) {}
+    return null;
+  })();
+  const isLoggedIn = !!currentUser;
+  const accountName = currentUser?.nickName || currentUser?.uid || currentUser?.customUserId || '';
+
+  stage.innerHTML = `
+    <div class="settings-wrap">
+
+      <!-- 1. 学习目标 -->
+      <div class="settings-section">
+        <div class="settings-section-hd">
+          <span class="settings-section-icon">🎯</span>
+          <span class="settings-section-title">学习目标</span>
+          <span class="settings-section-desc">家长可以调整</span>
+        </div>
+        <div class="settings-section-body">
+          ${[
+            { key: 'dailyQuestions', label: '每天做题', min: 1, max: 20, unit: '道' },
+            { key: 'dailyStreak', label: '每天连对', min: 1, max: 10, unit: '题' },
+            { key: 'dailyMastered', label: '每天掌握', min: 1, max: 5, unit: '题' },
+            { key: 'weeklyQuestions', label: '每周做题', min: 5, max: 100, unit: '道' },
+            { key: 'wrongReview', label: '每天复习错题', min: 0, max: 10, unit: '道' },
+          ].map(t => `
+            <div class="settings-row">
+              <span class="settings-label">${t.label}</span>
+              <input type="number" data-target-key="${t.key}" value="${targets[t.key]}" min="${t.min}" max="${t.max}" class="settings-input">
+              <span class="settings-unit">${t.unit}</span>
+            </div>
+          `).join('')}
+          <div class="settings-row-actions">
+            <button id="settingsResetTargets" class="settings-btn-secondary">恢复默认</button>
+            <button id="settingsSaveTargets" class="settings-btn-primary">保存</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. 数据与同步 -->
+      <div class="settings-section">
+        <div class="settings-section-hd">
+          <span class="settings-section-icon">☁️</span>
+          <span class="settings-section-title">数据与同步</span>
+        </div>
+        <div class="settings-section-body">
+          <div class="settings-row">
+            <span class="settings-label">账号</span>
+            <span class="settings-status ${isLoggedIn ? 'ok' : 'err'}">
+              ${isLoggedIn
+                ? `✅ 已登录${accountName ? '：' + escapeHtmlStrict(accountName.slice(0, 12)) : ''}`
+                : '⚠️ 未登录'}
+            </span>
+            <button id="settingsSyncBtn" class="settings-btn-secondary">管理账号</button>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">云同步状态</span>
+            <span class="settings-status ${syncState === 'idle' ? 'ok' : ''}" id="syncStatusText">
+              ${syncState === 'idle' ? '✅ 已同步' : syncState === 'syncing' ? '⏳ 同步中' : '⚠️ 未同步'}
+            </span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-label">本地存储状态</span>
+            <span class="settings-status ${storageHealth.ok ? 'ok' : 'err'}">
+              ${storageHealth.ok ? '✅ 正常' : `⚠️ 失败 ${storageHealth.failCount} 次`}
+            </span>
+          </div>
+          ${recentErrors.length ? `
+            <div class="settings-row">
+              <span class="settings-label">最近错误</span>
+              <span class="settings-status err">${recentErrors.length} 个</span>
+              <button id="settingsErrorLog" class="settings-btn-secondary">查看</button>
+            </div>
+          ` : ''}
+        </div>
+      </div>
+
+      <!-- 3. 体验 -->
+      <div class="settings-section">
+        <div class="settings-section-hd">
+          <span class="settings-section-icon">🔊</span>
+          <span class="settings-section-title">体验</span>
+        </div>
+        <div class="settings-section-body">
+          <div class="settings-row">
+            <span class="settings-label">音效</span>
+            <button id="settingsSoundToggle" class="settings-toggle ${soundOn ? 'on' : ''}">
+              ${soundOn ? '🔊 已开启' : '🔇 已关闭'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 关于 -->
+      <div class="settings-section">
+        <div class="settings-section-hd">
+          <span class="settings-section-icon">ℹ️</span>
+          <span class="settings-section-title">关于</span>
+        </div>
+        <div class="settings-section-body">
+          <div class="settings-row">
+            <span class="settings-label">版本</span>
+            <span class="settings-value">v1.0.0</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  // 保存目标
+  document.getElementById('settingsSaveTargets')?.addEventListener('click', () => {
+    const newTargets = { ...targets };
+    stage.querySelectorAll('[data-target-key]').forEach(inp => {
+      newTargets[inp.dataset.targetKey] = parseInt(inp.value, 10) || 1;
+    });
+    targetSave(newTargets);
+    if (window.__shell?.refreshHomeTasks) window.__shell.refreshHomeTasks();
+    window.showToast?.('✅ 目标已保存', 'success');
+  });
+
+  // 恢复默认
+  document.getElementById('settingsResetTargets')?.addEventListener('click', () => {
+    targetReset();
+    renderSettings();
+    if (window.__shell?.refreshHomeTasks) window.__shell.refreshHomeTasks();
+    window.showToast?.('✅ 已恢复默认', 'success');
+  });
+
+  // 管理账号
+  document.getElementById('settingsSyncBtn')?.addEventListener('click', async () => {
+    openSyncSetupModal();
+  });
+
+  /* 手动同步
+  document.getElementById('handleSyncBtn')?.addEventListener('click', async () => {
+    const btn = document.getElementById('handleSyncBtn');
+    const txt = document.getElementById('syncStatusText');
+    btn.disabled = true;
+    btn.textContent = '同步中…';
+    if (txt) txt.textContent = '⏳ 同步中';
+    try {
+      await forceSync();
+      if (txt) txt.textContent = '✅ 已同步';
+      window.showToast?.('✅ 同步完成', 'success');
+    } catch (e) {
+      if (txt) txt.textContent = '⚠️ 同步失败';
+      window.showToast?.('同步失败：' + e.message, 'info');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '手动同步';
+    }
+  });
+  */
+  
+
+  // 音效开关
+  document.getElementById('settingsSoundToggle')?.addEventListener('click', () => {
+    const newVal = !(lsGet('grade3_sound_on') === '1');
+    lsSet('grade3_sound_on', newVal ? '1' : '0');
+    renderSettings();
+    window.showToast?.(newVal ? '🔊 音效已开启' : '🔇 音效已关闭', 'success');
+  });
+
+  // 错误日志
+  document.getElementById('settingsErrorLog')?.addEventListener('click', () => {
+    const log = getErrorLog().slice(-10);
+    alert(log.map(e => `[${new Date(e.at).toLocaleTimeString('zh-CN')}] ${e.scope}: ${e.message}`).join('\n'));
+  });
 }

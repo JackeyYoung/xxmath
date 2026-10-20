@@ -37,18 +37,6 @@ body {
 }
 .app-header p { margin-top:8px; font-size:14px; color:var(--muted); letter-spacing:2px; }
 
-.tabs {
-  display:flex; gap:6px; flex-wrap:wrap; justify-content:center;
-  max-width:1200px; margin:0 auto; padding:0 16px;
-}
-.tab {
-  padding:9px 14px; border:none; border-radius:10px 10px 0 0;
-  background:#dde6f0; color:#55657a; font-size:13.5px; font-weight:600;
-  cursor:pointer; transition:all .18s; font-family:inherit;
-}
-.tab:hover { background:#cfdbe9; }
-.tab.active { background:var(--card); color:var(--primary-d); box-shadow:0 -3px 0 var(--primary-d) inset; }
-
 main { max-width:1200px; margin:0 auto; padding:0 16px; }
 .module { display:none; }
 .module.active { display:block; animation:fadeUp .3s ease; }
@@ -239,32 +227,6 @@ input:focus, textarea:focus {
 /* ============================================================
    ⭐⭐ 儿童友好优化 · 1-10 项
    ============================================================ */
-
-/* ---------- 1. tab 图标 + 短文字 ---------- */
-.tab {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 12px;
-  font-size: 13px;
-}
-.tab .tab-ico {
-  font-size: 16px;
-  line-height: 1;
-}
-.tab .tab-txt {
-  font-size: 12.5px;
-  font-weight: 700;
-}
-.tab.active .tab-ico {
-  animation: tabIconPop .3s cubic-bezier(.34,1.5,.64,1);
-}
-@keyframes tabIconPop {
-  0% { transform: scale(.7); }
-  60% { transform: scale(1.25); }
-  100% { transform: scale(1); }
-}
-
 /* ---------- 2. "我的成长" 卡片化 ---------- */
 #m14 .card {
   padding-bottom: 32px;
@@ -695,9 +657,6 @@ button:not(.tab):not(:disabled) {
 
 /* 移动端：tab 更紧凑 */
 @media (max-width: 600px) {
-  .tab { padding: 7px 10px; }
-  .tab .tab-ico { font-size: 15px; }
-  .tab .tab-txt { font-size: 11.5px; }
   .growth-card { padding: 14px 16px; }
   .growth-card-icon { font-size: 26px; }
   .growth-card-title { font-size: 15px; }
@@ -948,12 +907,12 @@ button:not(.tab):not(:disabled) {
 
 /* 先算哪步 */
 .priority-box {
-  margin-top: 12px;
-  padding: 14px 18px;
-  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
-  border: 2px dashed #bae6fd;
-  border-radius: 12px;
-  animation: fadeUp .25s ease;
+  position: sticky;
+  bottom: 0;
+  z-index: 100;
+  margin: 12px -16px -16px;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 16px rgba(15,23,42,.1);
 }
 .priority-label {
   font-size: 14px;
@@ -2110,7 +2069,6 @@ table.data-table th { background:#f8fafc; font-size:13px; color:var(--muted); fo
 
 @media (max-width:600px) {
   .card { padding:18px 14px 22px; border-radius:0 12px 12px 12px; }
-  .tab { padding:8px 11px; font-size:12px; }
   .app-header h1 { font-size:20px; }
   .token { font-size:24px; min-width:40px; height:48px; }
   #m3canvas { width:260px; height:260px; }
@@ -2119,7 +2077,7 @@ table.data-table th { background:#f8fafc; font-size:13px; color:var(--muted); fo
 /* ============ 错题本 ============ */
 .wrong-book-btn {
   position: fixed;
-  bottom: 24px;
+  bottom: 50px;
   right: 24px;
   width: 52px;
   height: 52px;
@@ -2979,16 +2937,6 @@ body.modal-open {
 }
 
 @media (max-width: 600px) {
-  /* ⭐ 标签栏横向滚动 */
-  .tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 6px;
-    justify-content: flex-start;
-  }
-  .tabs::-webkit-scrollbar { display: none; }
-  .tab { flex-shrink: 0; }
 
   /* ⭐ 学习看板两列 */
   .dashboard { grid-template-columns: repeat(2, 1fr); }
@@ -3043,7 +2991,7 @@ body.modal-open {
 }
 
 /* ⭐ iOS 安全区适配 */
-.wrong-book-btn { bottom: max(24px, env(safe-area-inset-bottom)); right: max(24px, env(safe-area-inset-right)); }
+.wrong-book-btn { bottom: max(50px, env(safe-area-inset-bottom)); right: max(24px, env(safe-area-inset-right)); }
 #redoBanner { padding-top: max(10px, env(safe-area-inset-top)); }
 
 /* ============================================================
@@ -3193,21 +3141,6 @@ input, textarea {
 /* ---------- 12. 数字等宽防抖（已在 .dash-value 处理，这里兜底） ---------- */
 .sw-display, .clock-digital { font-variant-numeric: tabular-nums; }
 
-/* ---------- 13. tab 指示条 ---------- */
-.tab { position: relative; }
-.tab.active::after {
-  content: '';
-  position: absolute;
-  left: 14px; right: 14px; bottom: 0;
-  height: 3px;
-  background: var(--primary-d);
-  border-radius: 2px 2px 0 0;
-  animation: tabIn .22s ease;
-}
-@keyframes tabIn {
-  from { transform: scaleX(0); }
-  to   { transform: scaleX(1); }
-}
 .module.active {
   animation: fadeUp .28s cubic-bezier(.34,1.3,.64,1);
 }
@@ -3217,12 +3150,6 @@ input, textarea {
   display: inline-block;
   min-width: 42px;
   text-align: left;
-}
-
-/* ---------- 15. tabs 防横滑触发返回 ---------- */
-.tabs {
-  overscroll-behavior-x: contain;
-  touch-action: pan-x;
 }
 
 /* ---------- 16. 按钮统一 active 缩放 ---------- */
@@ -3338,7 +3265,7 @@ html { scroll-padding-bottom: 300px; }
 
 /* ---------- F. 交互控件禁用长按选中 ---------- */
 .btn, .btn-secondary, .token, .vc-cell, .coord-cell,
-.tab, .sw-tab, .frac-tab, .hl-btn, .qty-ctrl button,
+.sw-tab, .frac-tab, .hl-btn, .qty-ctrl button,
 .priority-opt, .m5-chal-opt, .frac-cmp-btn, .step-input-btn {
   user-select: none;
   -webkit-user-select: none;
@@ -3351,39 +3278,6 @@ html { scroll-padding-bottom: 300px; }
 .std-line, .std-answer, .std-keywords {
   user-select: text;
   -webkit-user-select: text;
-}
-
-/* ---------- H. 音效开关按钮 ---------- */
-.sound-toggle-btn {
-  position: fixed;
-  bottom: 24px;
-  right: 88px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  background: linear-gradient(145deg, #3b82f6, #2563eb);
-  color: #fff;
-  font-size: 22px;
-  cursor: pointer;
-  box-shadow: 0 6px 20px rgba(59, 130, 246, .35);
-  z-index: 998;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform .15s;
-}
-.sound-toggle-btn:active { transform: scale(.92); }
-.sound-toggle-btn.on {
-  background: linear-gradient(145deg, #10b981, #059669);
-  box-shadow: 0 6px 20px rgba(16, 185, 129, .4);
-}
-@media (max-width: 600px) {
-  .sound-toggle-btn {
-    bottom: max(24px, env(safe-area-inset-bottom));
-    right: max(88px, calc(env(safe-area-inset-right) + 88px));
-    width: 48px; height: 48px; font-size: 20px;
-  }
 }
 
 /* ---------- A. 错题画像面板 ---------- */
@@ -4435,16 +4329,16 @@ html { scroll-padding-bottom: 300px; }
   content: '';
 }
 
- //错题本"弹跳"动画
+/*错题本"弹跳"动画*/
 @keyframes wrongBookBounce {
   0%, 100% { transform: scale(1); }
   40%      { transform: scale(1.25); }
   70%      { transform: scale(.92); }
 }
 
-//soundToggleBtn 和 wrongBookBtn 在移动端不重叠
+/*.koji-btn 和 wrongBookBtn 在移动端不重叠*/
 @media (max-width: 380px) {
-  .sound-toggle-btn { right: 78px; width: 44px; height: 44px; font-size: 18px; }
+  .koji-btn { right: 78px; width: 44px; height: 44px; font-size: 18px; }
   .wrong-book-btn { width: 44px; height: 44px; font-size: 20px; }
 }
 
@@ -4607,7 +4501,13 @@ html { scroll-padding-bottom: 300px; }
   transition: all .18s;
   font-family: inherit;
 }
-.island:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(15,23,42,.08); border-color: #c7d5e6; }
+@media (hover: hover) {
+  .island:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(15,23,42,.08);
+    border-color: #c7d5e6;
+  }
+}
 .island:active { transform: scale(.97); }
 .island-icon { font-size: 30px; line-height: 1; margin-bottom: 8px; }
 .island-name { font-size: 15px; font-weight: 800; color: #1e293b; }
@@ -4739,8 +4639,8 @@ html { scroll-padding-bottom: 300px; }
 
 .koji-btn {
   position: fixed;
-  bottom: max(24px, env(safe-area-inset-bottom));
-  right: max(144px, calc(env(safe-area-inset-right) + 144px));
+  bottom: max(50px, env(safe-area-inset-bottom));
+  right: max(88px, calc(env(safe-area-inset-right) + 88px));
   width: 52px; height: 52px;
   border-radius: 50%;
   border: none;
@@ -4788,8 +4688,14 @@ html { scroll-padding-bottom: 300px; }
   transition: all .15s;
 }
 .home-task:hover { border-color: #c7d5e6; background: #fff; }
-.home-task.done { background: #f0fdf4; border-color: #86efac; }
-.home-task-icon { font-size: 24px; flex-shrink: 0; }
+.home-task.done .home-task-icon {
+  animation: taskDonePop .4s cubic-bezier(.34,1.5,.64,1);
+}
+@keyframes taskDonePop {
+  0% { transform: scale(0); }
+  60% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
 .home-task-body { flex: 1; min-width: 0; }
 .home-task-title { font-size: 14px; font-weight: 800; color: #1e293b; }
 .home-task.done .home-task-title { color: #15803d; }
@@ -5355,70 +5261,590 @@ html { scroll-padding-bottom: 300px; }
   font-weight: 800;
 }
 
-/*本周一句话*/
-.weekly-note {
-  margin-top: 16px;
+/* ============================================================
+   Messages 页 —— 留言板
+   ============================================================ */
+.messages-stage {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.messages-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* ---------- 写留言区 ---------- */
+.msg-compose {
   background: #fff;
   border: 2px solid #e5e7eb;
   border-radius: 16px;
-  padding: 16px 18px;
+  padding: 16px;
 }
-.weekly-note-hd {
-  font-size: 15px;
-  font-weight: 800;
-  color: #1e293b;
-  margin-bottom: 14px;
-}
-.weekly-note-row {
+
+.msg-identity {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px 12px;
-  background: #f8fafc;
-  border-radius: 10px;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
-.weekly-note-label {
-  flex-shrink: 0;
-  width: 72px;
+
+.msg-identity-label {
   font-size: 12.5px;
   font-weight: 700;
   color: #64748b;
 }
-.weekly-note-text {
+
+.msg-identity-btn {
+  padding: 6px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+
+.msg-identity-btn.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  box-shadow: 0 2px 0 #1d4ed8;
+}
+
+#msgInput {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  resize: none;
+  height: 72px;
+  box-sizing: border-box;
+  transition: border-color .15s;
+}
+
+#msgInput:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+}
+
+.msg-compose-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.msg-attach-btn {
   flex: 1;
+  padding: 10px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
   font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+
+.msg-attach-btn:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.msg-send-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 3px 0 #1d4ed8;
+}
+
+.msg-send-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #1d4ed8;
+}
+
+.msg-attach-preview {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: #15803d;
+  display: flex;
+  align-items: center;
+}
+
+/* ---------- 分组 ---------- */
+.msg-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.msg-group-hd {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #64748b;
+  padding: 4px 4px 2px;
+  letter-spacing: .5px;
+}
+
+/* ---------- 单条留言 ---------- */
+.msg-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff;
+  border: 2px solid #e5e7eb;
+}
+
+.msg-item.from-parent {
+  border-left: 4px solid #ec4899;
+}
+
+.msg-item.from-child {
+  border-left: 4px solid #2563eb;
+}
+
+.msg-hd {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 12.5px;
+  color: #64748b;
+}
+
+.msg-avatar {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.msg-from {
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.msg-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: ui-monospace, monospace;
+}
+
+.msg-text {
+  font-size: 14px;
   line-height: 1.7;
   color: #334155;
+  word-break: break-word;
 }
-.weekly-note-text.empty {
+
+.msg-linked {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #475569;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.msg-linked-answer {
+  background: #dcfce7;
+  color: #15803d;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 11.5px;
+}
+
+.msg-reply {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-left: 3px solid #cbd5e1;
+  border-radius: 0 8px 8px 0;
+}
+
+.msg-reply-hd {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.msg-reply-text {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
+}
+
+.msg-reply-btn {
+  margin-top: 10px;
+  padding: 6px 14px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  color: #64748b;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+
+.msg-reply-btn:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+
+/* ---------- 空状态 ---------- */
+.msg-empty {
+  text-align: center;
+  padding: 40px 20px;
   color: #94a3b8;
+  font-size: 13px;
   font-style: italic;
 }
-.weekly-note-write {
-  flex-shrink: 0;
-  padding: 4px 10px;
-  border: 1.5px solid #fbcfe8;
+
+/* ---------- Home 留言板入口 ---------- */
+.home-messages-entry {
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border: 2px solid #c7d2fe;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+  color: #3730a3;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .18s;
+}
+
+.home-messages-entry:hover {
+  border-color: #6366f1;
+  background: #e0e7ff;
+}
+
+@media (max-width: 600px) {
+  .messages-stage { padding: 12px; }
+  .msg-text { font-size: 13.5px; }
+}
+
+/* ============================================================
+   Settings 页
+   ============================================================ */
+.settings-stage {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+.settings-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-section {
+  background: #fff;
+  border: 2px solid #e5e7eb;
+  border-radius: 16px;
+  overflow: hidden;
+}
+.settings-section-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}
+.settings-section-icon { font-size: 20px; }
+.settings-section-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e293b;
+}
+.settings-section-desc {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+.settings-section-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-label {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #475569;
+}
+.settings-input {
+  width: 72px;
+  padding: 8px 10px;
+  border: 2px solid #e5e7eb;
   border-radius: 8px;
-  background: #fdf2f8;
-  color: #be185d;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  font-family: inherit;
+  outline: none;
+}
+.settings-input:focus {
+  border-color: #2563eb;
+}
+.settings-unit {
+  width: 24px;
   font-size: 12px;
+  color: #94a3b8;
+  font-weight: 600;
+}
+.settings-value {
+  font-size: 13px;
+  color: #64748b;
+  font-family: ui-monospace, monospace;
+}
+.settings-status {
+  font-size: 13px;
+  font-weight: 700;
+  color: #64748b;
+}
+.settings-status.ok { color: #15803d; }
+.settings-status.err { color: #b91c1c; }
+.settings-btn-primary {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 10px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: 0 3px 0 #1d4ed8;
+}
+.settings-btn-primary:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #1d4ed8;
+}
+.settings-btn-secondary {
+  padding: 8px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  color: #475569;
+  font-size: 13px;
   font-weight: 700;
   cursor: pointer;
   font-family: inherit;
 }
-
-/*每周一句话滑入动画*/
-@keyframes weeklyNoteSlideUp {
-  from { transform: translateY(100%); }
-  to   { transform: translateY(0); }
-}
-
-/* 弹窗背景点击关闭已内置，输入框聚焦时防止 iOS 自动滚动 */
-.weekly-note-mask textarea:focus {
+.settings-btn-secondary:hover {
   border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+  color: #2563eb;
 }
+.settings-row-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.settings-toggle {
+  padding: 8px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.settings-toggle.on {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #15803d;
+}
+
+/* ---------- Home 设置入口 ---------- */
+.home-settings-entry {
+  width: 100%;
+  margin-top: 12px;
+  padding: 14px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  background: #fff;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .18s;
+}
+.home-settings-entry:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+@media (max-width: 600px) {
+  .settings-stage { padding: 12px; }
+}
+
+/* 探索性高亮：做错时，让用户看到关键元素 */
+.token.explore-highlight {
+  animation: explorePulse 1.2s ease-in-out;
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, .45);
+}
+@keyframes explorePulse {
+  0%   { box-shadow: 0 0 0 0 rgba(251, 191, 36, .6); }
+  50%  { box-shadow: 0 0 0 8px rgba(251, 191, 36, .2); }
+  100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0); }
+}
+
+.vc-cell.explore-highlight {
+  animation: explorePulse 1.2s ease-in-out;
+  background: #fef3c7 !important;
+}
+
+/* ⭐ Koji 三种状态 */
+.koji-btn {
+  transition: transform .2s, opacity .2s, background .2s;
+}
+.koji-btn.koji-idle {
+  background: linear-gradient(145deg, #8b5cf6, #7c3aed);
+  opacity: 1;
+  transform: scale(1);
+}
+.koji-btn.koji-alert {
+  background: linear-gradient(145deg, #f59e0b, #d97706);
+  animation: kojiAlertPulse 1.4s ease-in-out infinite;
+}
+@keyframes kojiAlertPulse {
+  0%, 100% { box-shadow: 0 6px 20px rgba(245, 158, 11, .4); transform: scale(1); }
+  50%      { box-shadow: 0 6px 20px rgba(245, 158, 11, .4), 0 0 0 10px rgba(245, 158, 11, 0); transform: scale(1.05); }
+}
+.koji-btn.koji-retreat {
+  opacity: .35;
+  transform: scale(.85);
+  background: linear-gradient(145deg, #94a3b8, #64748b);
+}
+
+.koji-intro {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #f5f3ff, #ede9fe);
+  border: 2px solid #c4b5fd;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: #5b21b6;
+  font-weight: 600;
+}
+.koji-intro-emoji {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.lesson-progress {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.lesson-progress-level {
+  font-size: 12px;
+  color: #64748b;
+}
+.lesson-progress-level b {
+  color: #2563eb;
+  font-size: 14px;
+}
+
+.lesson-levels {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 16px;
+  max-width: 1200px;
+  margin: 0 auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.lesson-levels::-webkit-scrollbar { display: none; }
+
+.level-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 999px;
+  background: #fff;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .18s;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.level-btn:hover:not(:disabled) {
+  border-color: #c7d5e6;
+  color: #1e293b;
+}
+.level-btn.done {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #15803d;
+}
+.level-btn.current {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+  box-shadow: 0 3px 0 #1d4ed8;
+}
+.level-btn.current:hover { background: #1d4ed8; }
+.level-btn.locked {
+  opacity: .45;
+  cursor: not-allowed;
+  background: #f8fafc;
+}
+.level-btn-icon { font-size: 14px; }
 
 </style>
 </head>
@@ -5428,29 +5854,13 @@ html { scroll-padding-bottom: 300px; }
   <h1 id="appTitle">🎓 三年级数学互动课堂</h1>
   <p>动 手 操 作 · 即 时 反 馈 · 发 现 规 律</p>
 
-<nav class="tabs">
-  <button class="tab active" data-target="m1"><span class="tab-ico">🎯</span><span class="tab-txt">运算</span></button>
-  <button class="tab" data-target="m2"><span class="tab-ico">🧱</span><span class="tab-txt">铺砖</span></button>
-  <button class="tab" data-target="m3"><span class="tab-ico">🍕</span><span class="tab-txt">分数</span></button>
-  <button class="tab" data-target="m4"><span class="tab-ico">📏</span><span class="tab-txt">长度</span></button>
-  <button class="tab" data-target="m5"><span class="tab-ico">📐</span><span class="tab-txt">面积</span></button>
-  <button class="tab" data-target="m6"><span class="tab-ico">💰</span><span class="tab-txt">小数</span></button>
-  <button class="tab" data-target="m7"><span class="tab-ico">🕐</span><span class="tab-txt">时间</span></button>
-  <button class="tab" data-target="m8"><span class="tab-ico">🍎</span><span class="tab-txt">倍数</span></button>
-  <button class="tab" data-target="m9"><span class="tab-ico">🔢</span><span class="tab-txt">竖式</span></button>
-  <button class="tab" data-target="m10"><span class="tab-ico">📅</span><span class="tab-txt">日期</span></button>
-  <button class="tab" data-target="m11"><span class="tab-ico">📍</span><span class="tab-txt">方向</span></button>
-  <button class="tab" data-target="m12"><span class="tab-ico">⚖️</span><span class="tab-txt">质量</span></button>
-  <button class="tab" data-target="m13"><span class="tab-ico">💡</span><span class="tab-txt">思维</span></button>
-  <button class="tab" data-target="m14"><span class="tab-ico">📊</span><span class="tab-txt">成长</span></button>
-</nav>
-
 <!-- 新增：三个 page 容器 -->
 <div id="page-home"   class="page active"></div>
   
 <div id="page-lesson" class="page">
   <div id="lessonHeader" class="lesson-header"></div>
   <div id="lessonProgress" class="lesson-progress"></div>   <!-- ⭐ 新增 -->
+  <div id="lessonLevels" class="lesson-levels"></div>   <!-- ⭐ 新增 等级选择-->
   <!-- ⭐ modulePool 就是 lesson 内容区，不再需要 lessonStage -->
   <div id="modulePool" class="lesson-stage">
     <main>
@@ -6250,6 +6660,18 @@ html { scroll-padding-bottom: 300px; }
   <div id="growthStage"  class="growth-stage"></div>
 </div>
 
+<!-- ⭐ 新增留言 -->
+<div id="page-messages" class="page">
+  <div id="messagesHeader" class="lesson-header"></div>
+  <div id="messagesStage" class="messages-stage"></div>
+</div>
+
+<!-- ⭐ 新增加 page-settings 容器 -->
+<div id="page-settings" class="page">
+  <div id="settingsHeader" class="lesson-header"></div>
+  <div id="settingsStage" class="settings-stage"></div>
+</div>
+
 <script type="module">
   import { initGradeSelector, updateTitle } from './js/grade.js';
   initGradeSelector();
@@ -6257,13 +6679,8 @@ html { scroll-padding-bottom: 300px; }
 </script>
 
 
-
-<!-- ============ 错题本（抽屉） ============ -->
-<!-- ⭐ H. 音效开关 -->
-<button id="soundToggleBtn" class="sound-toggle-btn" title="音效开关">🔇</button>
 <button id="kojiBtn" class="koji-btn" title="Koji 助手">🤖</button>
-<button id="wrongBookBtn" class="wrong-book-btn" title="错题本">
-  📕
+<button id="wrongBookBtn" class="wrong-book-btn" title="错题本">📕
   <span class="wrong-book-badge" id="wrongBookBadge" style="display:none;">0</span>
 </button>
 

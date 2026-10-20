@@ -33,7 +33,7 @@ export function initSyncUI() {
     transition: background .2s;
   `;
   btn.textContent = '☁️';
-  document.body.appendChild(btn);
+  //document.body.appendChild(btn);
   console.log('[SyncUI] ☁️ 按钮已添加到 DOM');
 
   function updateUI(state) {
@@ -76,6 +76,6 @@ function _renderSetupButton() {
     display: flex; align-items: center; justify-content: center;
   `;
   btn.addEventListener('click', openSyncSetupModal);
-  document.body.appendChild(btn);
+  //document.body.appendChild(btn);
   console.log('[SyncUI] 灰色 ☁️ 配置按钮已添加');
 }
