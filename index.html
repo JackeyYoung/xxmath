@@ -1899,10 +1899,35 @@ table.data-table th { background:#f8fafc; font-size:13px; color:var(--muted); fo
 .formula-step { background:#fff; border:2px solid var(--border); border-radius:12px; padding:16px 18px; margin-bottom:12px; }
 .formula-step-hd { font-size:14px; font-weight:800; color:var(--accent); margin-bottom:10px; display:flex; align-items:center; gap:8px; }
 .formula-step-hd::before { content:''; width:4px; height:16px; background:var(--accent); border-radius:2px; }
-.formula-line { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.formula-line { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  margin-bottom: 10px; 
+  width: 100%; /* ⭐ 确保整行不超出 */
+  box-sizing: border-box;
+}
 .formula-line:last-child { margin-bottom:0; }
-.formula-line label { font-size:14px; font-weight:700; color:#475569; min-width:76px; flex-shrink:0; }
-.formula-line input { flex:1; padding:9px 14px; border:2px solid var(--border); border-radius:8px; font-size:15px; font-family:inherit; outline:none; transition:border-color .2s; }
+.formula-line label { 
+  font-size: 14px; 
+  font-weight: 700; 
+  color: #475569; 
+  min-width: 70px; 
+  flex-shrink: 0; 
+}
+.formula-line input { 
+  flex: 1; 
+  width: 100%;       /* ⭐ 关键：宽度 100% */
+  min-width: 0;      /* ⭐ 关键：打破 flex 子项最小宽度限制，防止撑破 */
+  padding: 10px 12px; 
+  border: 2px solid var(--border); 
+  border-radius: 8px; 
+  font-size: 15px; 
+  font-family: inherit; 
+  outline: none; 
+  transition: border-color .2s; 
+  box-sizing: border-box; /* ⭐ 包含 padding 在内 */
+}
 .formula-line input:focus { border-color:var(--primary); background:#f8fbff; }
 .formula-line input.ok { border-color:var(--green); background:#f0fdf4; }
 
@@ -6405,9 +6430,43 @@ body.thumb-bar-open .koji-btn {
 }
 .m13-step.expanded .m13-step-bd {
   max-height: 3000px;
-  padding: 16px 18px 20px;
+  /* ⭐ 右侧 padding 减小，因为输入框自带边框，容易视觉贴边 */
+  padding: 16px 14px 20px; 
   border-top: 1px dashed #e5e7eb;
+  overflow: hidden; /* ⭐ 防止内部元素溢出 */
+  padding-bottom: 120px; /* 给软键盘和候选词留出空间 */
 }
+
+@media (max-width: 600px) {
+  /* ⭐ 移动端加大 M13 的外层卡片左右内边距 */
+  #m13 .card {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+  
+  .m13-step.expanded .m13-step-bd {
+    padding: 14px 12px 16px; /* 进一步收紧，让输入框显得更宽 */
+  }
+
+  /* ⭐ 缩小“第1步”等标签的宽度，给输入框让出更多空间 */
+  .formula-line label {
+    min-width: 64px; 
+    font-size: 13px;
+  }
+  
+  .formula-line input {
+    padding: 9px 10px;
+    font-size: 14px;
+  }
+}
+
+.formula-line input::placeholder {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* 放不下时显示省略号 */
+}
+
 .m13-step-hint {
   background: #eff6ff;
   border-left: 3px solid #3b82f6;
@@ -6425,10 +6484,6 @@ body.thumb-bar-open .koji-btn {
 }
 .m13-step-actions .btn-secondary {
   flex: 1;
-}
-
-.m13-step.expanded .m13-step-bd {
-  padding-bottom: 120px; /* 给软键盘和候选词留出空间 */
 }
 
 /* ---------- 高亮工具栏（移动端横向滚动） ---------- */
@@ -6635,9 +6690,6 @@ body.thumb-bar-open .koji-btn {
   .m13-step-num {
     width: 24px; height: 24px;
     font-size: 12px;
-  }
-  .m13-step.expanded .m13-step-bd {
-    padding: 14px 14px 16px;
   }
   .m13-step-hint {
     font-size: 12px;
