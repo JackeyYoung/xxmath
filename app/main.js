@@ -3250,6 +3250,7 @@ m8Render();
       return { a, b, op };
     }
 
+    /* m9完全随机
     btn.addEventListener('click', () => {
       const { a, b, op } = randomProblem();
       const aInput = document.getElementById('m9a');
@@ -3280,6 +3281,7 @@ m8Render();
         fb.innerHTML = `🎲 已生成：${a} ${op} ${b}，点击「下一步」开始计算`;
       }
     });
+    */
 
     // ⭐ M9 按层级出题
     window.__m9SetLevel = function(levelId) {
@@ -3976,9 +3978,15 @@ document.addEventListener('click', e => {
 let M13_CurrentAnswer = null;
 
 // ⭐ M13 按层级筛选题库
-window.__m13SetLevel = function(levelId) {
+window.__m13SetLevel = function (levelId) {
   window.__m13CurrentLevel = levelId;
   m13InitSelect();
+  // 自动选第一道
+  const sel = $('#pSelect');
+  if (sel && sel.options.length > 1) {
+    sel.selectedIndex = 1;                // 第一个是"选择一道题目"
+    document.getElementById('pLoad')?.click();
+  }
 };
 
 function m13InitSelect() {

@@ -708,6 +708,7 @@ function mountLesson(lessonId) {
         // ⭐ 对 M9：随机出题时只出这一层的
         if (lessonId === 'm9' && window.__m9SetLevel) {
           window.__m9SetLevel(currentLevelId);
+          setTimeout(() => document.getElementById('m9random')?.click(), 30);
         }
         // ⭐ 对 M13：题库筛选
         if (lessonId === 'm13' && window.__m13SetLevel) {
