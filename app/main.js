@@ -3600,6 +3600,7 @@ function m13RenderSteps() {
         <span>第 ${i + 1} 步</span>
         ${total > 1 ? `<span style="font-size:12px;color:#94a3b8;font-weight:500;margin-left:6px;">（${i + 1} / ${total}）</span>` : ''}
       </div>
+      
       <div class="formula-line">
         <label>关系式</label>
         <input type="text" data-idx="${i}" data-field="rel"
@@ -3607,6 +3608,7 @@ function m13RenderSteps() {
                placeholder="${i === 0 ? '例：还剩的钱 = 总钱数 − 用去的钱' : '例：总棵树 = 苹果树 + 梨树'}"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
+      
       <div class="formula-line">
         <label>代入数字</label>
         <input type="text" data-idx="${i}" data-field="sub"
@@ -3614,11 +3616,13 @@ function m13RenderSteps() {
                placeholder="${i === 0 ? '例：15 − 8 − 3' : '例：32 + 5'}"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
+      
       <div class="formula-line">
         <label>得数</label>
         <input type="text" data-idx="${i}" data-field="res"
                value="${escapeHtmlStrict(s.res)}"
-               placeholder="${i === 0 ? '例：4' : '例：37'}">
+               placeholder="${i === 0 ? '例：4' : '例：37'}"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
     </div>
   `).join('');
