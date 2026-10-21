@@ -694,27 +694,28 @@ function mountLesson(lessonId) {
   let pathHtml;
 
   // ⭐ 根据当前层级出题
+  // ⭐ 根据当前层级出题
   if (levels) {
     const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || levels[0].id;
     const currentLevel = levels.find(lv => lv.id === currentLevelId);
-    
-    if (currentLevel && currentLevel.generate) {
-      const pool = currentLevel.generate();
-      if (pool.length > 0) {
-        // ⭐ 对 M1：把预设池换成这一层的题
-        if (lessonId === 'm1' && window.__m1LoadPresets) {
-          window.__m1LoadPresets(pool);
-        }
-        // ⭐ 对 M9：随机出题时只出这一层的
-        if (lessonId === 'm9' && window.__m9SetLevel) {
-          window.__m9SetLevel(currentLevelId);
-          setTimeout(() => document.getElementById('m9random')?.click(), 30);
-        }
-        // ⭐ 对 M13：题库筛选
-        if (lessonId === 'm13' && window.__m13SetLevel) {
-          window.__m13SetLevel(currentLevelId);
-        }
+
+    // ⭐ M1：需要 generate 换题目池（M1 有 generate）
+    if (lessonId === 'm1' && currentLevel && currentLevel.generate) {
+      const presets = currentLevel.generate();
+      if (presets.length > 0 && window.__m1LoadPresets) {
+        window.__m1LoadPresets(presets);
       }
+    }
+
+    // ⭐ M9：只需要 level id（不依赖 generate）
+    if (lessonId === 'm9' && window.__m9SetLevel) {
+      window.__m9SetLevel(currentLevelId);
+      setTimeout(() => document.getElementById('m9random')?.click(), 30);
+    }
+
+    // ⭐ M13：只需要 level id（不依赖 generate）
+    if (lessonId === 'm13' && window.__m13SetLevel) {
+      window.__m13SetLevel(currentLevelId);
     }
   }
 
