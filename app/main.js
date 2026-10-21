@@ -382,6 +382,27 @@ const M1_PRIORITY = {
   expectedOps: [],      // 应该先算的运算符（可能多个）
 };
 
+/* 判断 a op b 是否产生进位/借位 */
+function hasCarry(a, b, op) {
+  const sa = String(a).split('').reverse().map(Number);
+  const sb = String(b).split('').reverse().map(Number);
+  const len = Math.max(sa.length, sb.length);
+  let carry = 0;
+  for (let i = 0; i < len; i++) {
+    const da = sa[i] || 0, db = sb[i] || 0;
+    if (op === '+') {
+      const sum = da + db + carry;
+      if (sum >= 10) return true;
+      carry = Math.floor(sum / 10);
+    } else {
+      const diff = da - db - carry;
+      if (diff < 0) return true;
+      carry = diff < 0 ? 1 : 0;
+    }
+  }
+  return false;
+}
+
 function randomProblemByOp(op) {
   const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
   let a, b;
@@ -3271,27 +3292,6 @@ m8Render();
       }
 
       return { a, b, op };
-    }
-
-    /* 判断 a op b 是否产生进位/借位 */
-    function hasCarry(a, b, op) {
-      const sa = String(a).split('').reverse().map(Number);
-      const sb = String(b).split('').reverse().map(Number);
-      const len = Math.max(sa.length, sb.length);
-      let carry = 0;
-      for (let i = 0; i < len; i++) {
-        const da = sa[i] || 0, db = sb[i] || 0;
-        if (op === '+') {
-          const sum = da + db + carry;
-          if (sum >= 10) return true;
-          carry = Math.floor(sum / 10);
-        } else {
-          const diff = da - db - carry;
-          if (diff < 0) return true;
-          carry = diff < 0 ? 1 : 0;
-        }
-      }
-      return false;
     }
 
     btn.addEventListener('click', () => {
