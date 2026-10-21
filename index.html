@@ -83,25 +83,6 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* ⭐ 固定视口，防止键盘弹起时整页上移 */
-html {
-  height: 100%;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-body {
-  min-height: 100%;
-  position: relative;
-  /* ⭐ 阻止 iOS 键盘弹起时页面被压缩 */
-  overscroll-behavior-y: contain;
-}
-
-/* ⭐ 输入框 focus 时，不要有任何滚动缓冲 */
-input:focus, textarea:focus {
-  scroll-margin-top: 0;
-  scroll-margin-bottom: 0;
-}
-
 /* ============ 学生姓名设置弹窗 ============ */
 .student-modal-mask {
   position: fixed; inset: 0;
@@ -6736,144 +6717,171 @@ body.thumb-bar-open .koji-btn {
 body.input-focused .m13-bottom-bar {
   display: none !important;
 }
+
 /* ============================================================
-   ⭐ 全局布局修复：彻底解决手机端挤压、变形
+   ⭐ 终极布局修复（整合版）
    ============================================================ */
 
-/* 1. 释放 html 的强制锁定，让原生页面能正常滚动 */
+/* 1. 恢复原生滚动，不再锁死根节点 */
 html, body {
-  height: auto !important;
   min-height: 100%;
-  overflow-y: auto !important;
-  overflow-x: hidden !important; /* 防止横向溢出 */
+  overflow-x: hidden !important;
+  overscroll-behavior-y: auto; /* 允许正常的惯性滚动 */
 }
-
-/* 2. 修复 modulePool 的宽度和高度限制 */
-#modulePool {
+/* 移除所有会阻碍滚动的死锁 */
+.page, #modulePool, .lesson-stage {
   height: auto !important;
   overflow: visible !important;
-  width: 100%;
 }
 
-/* 3. 限制主容器的最大宽度，并保证居中 */
-.lesson-stage, .home-wrap {
-  width: 100% !important;
-  max-width: 100vw !important;
-  padding: 16px !important;
-  box-sizing: border-box;
-}
-
-/* 4. 确保卡片不会被压缩 */
-.card {
-  width: 100% !important;
-  max-width: 100% !important;
-  box-sizing: border-box;
-  overflow: hidden; /* 防止内部元素撑破卡片 */
-}
-
-/* ⭐ 仅当键盘弹出时，隐藏悬浮球和底部固定栏（防遮挡） */
-body.input-focused .koji-btn,
-body.input-focused .wrong-book-btn,
-body.input-focused .m13-bottom-bar {
-  display: none !important;
-}
-
-/* 修复 Safari 键盘弹起时留下的白边 */
-body.input-focused #modulePool {
-  padding-bottom: 50vh; /* 强制留出键盘高度的空间 */
-}
-
-/* ⭐ 键盘弹起时，隐藏所有悬浮元素和底部反馈条 */
-body.input-focused .koji-btn,
-body.input-focused .wrong-book-btn,
-body.input-focused .m13-bottom-bar,
-body.input-focused .thumb-bar, 
-body.input-focused .daily-cheat,
-body.input-focused .daily-suggest {
-  display: none !important;
-}
-
-/* ============================================================
-   ⭐ M1 顶部工具栏防挤压
-   ============================================================ */
+/* 2. 统一 M1 和 M13 顶部工具栏的布局 */
 .problem-bar {
   display: flex;
-  flex-wrap: wrap; /* 允许换行 */
+  flex-wrap: wrap; /* 允许换行，防止挤压 */
   gap: 8px;
-  align-items: center;
+  align-items: flex-start;
   width: 100%;
+  background: #fff;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
-/* 下拉框和输入框占满可用宽度 */
+/* M13 的顶部题目卡：占满整行 */
+.problem-bar-current {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+.problem-bar-current #problem-text {
+  min-height: 60px;
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: 12px 16px;
+  border: 2px solid #e5e7eb;
+  border-radius: 14px;
+  font-size: 15px;
+  line-height: 1.7;
+  background: #fff;
+  outline: none;
+}
+.problem-bar-change {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border: 2px solid #2563eb;
+  border-radius: 12px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+@media (min-width: 601px) {
+  .problem-bar-current { flex: 1 1 auto; }
+  .problem-bar-change { width: auto; flex-shrink: 0; flex-direction: column; }
+}
+
+/* M1 的控件：输入框和按钮平铺，绝不挤压 */
 .problem-bar select,
 .problem-bar input[type="text"] {
-  flex: 1 1 120px; /* 最小 120px，能伸展 */
-  min-width: 0;    /* 允许缩小 */
-  padding: 8px 10px;
-  height: 40px;
-  box-sizing: border-box;
+  flex: 1 1 140px; /* 最小 140px，填满剩余空间 */
+  min-width: 0;
+  padding: 10px;
+  height: 44px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  font-weight: 600;
+  outline: none;
 }
-
-/* 按钮固定尺寸，绝对不被压缩 */
 .problem-bar .btn,
 .problem-bar .btn-secondary,
 .problem-bar .file-btn {
-  flex-shrink: 0; 
-  white-space: nowrap; /* 强制不换行，解决“载入”变竖排 */
-  height: 40px;
+  flex-shrink: 0;
+  white-space: nowrap;
+  height: 44px;
+  padding: 0 16px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 16px;
-  box-sizing: border-box;
+  font-size: 14px;
 }
 
-/* 修复长算式显示不全，允许横向滑动 */
+/* 3. 修复长算式显示不全（关键！） */
 .expr-box {
   background: linear-gradient(135deg, #f8fbff, #eef5ff);
   border: 2px dashed #bfd7f5;
   border-radius: 16px;
-  padding: 24px 16px;
+  padding: 20px 0; /* 左右不留 padding，靠内部滚动 */
   min-height: 110px;
   display: flex;
   align-items: center;
-  /* ⭐ 关键：不使用 center，而是默认靠左，由子元素自己控制居中 */
-  justify-content: flex-start;
-  overflow-x: auto;       /* ⭐ 允许横向滑动 */
+  justify-content: flex-start; /* 默认靠左 */
+  overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;  /* 隐藏滚动条 */
+  scrollbar-width: none;
 }
-.expr-box::-webkit-scrollbar { 
-  display: none; 
-}
+.expr-box::-webkit-scrollbar { display: none; }
 
 .expr {
   display: flex;
   gap: 12px;
   align-items: center;
-  flex-wrap: nowrap;      /* ⭐ 强制不换行 */
-  /* ⭐ 关键：用 margin: 0 auto 实现「内容短时居中，内容长时靠左可以滑动」 */
-  margin: 0 auto;         
-  padding: 0 16px;        /* 左右留白，防止第一个和最后一个数字贴边 */
+  flex-wrap: nowrap;
+  margin: 0 auto; /* 短的居中，长的靠左滑 */
+  padding: 0 16px;
 }
 
-/* 修复 M9 头部控制区（随机按钮被挤压） */
-.controls {
+/* 4. 彻底解决 M13 键盘弹起白屏和遮挡 */
+body.input-focused .koji-btn,
+body.input-focused .wrong-book-btn,
+body.input-focused .m13-bottom-bar,
+body.input-focused .thumb-bar,
+body.input-focused .daily-suggest {
+  display: none !important;
+}
+
+/* 5. 恢复 M13 底部操作栏（非 sticky） */
+.m13-bottom-bar {
+  position: relative;
+  margin-top: 20px;
+  padding: 12px 0;
+  background: transparent;
+}
+.m13-bottom-row {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 10px;
 }
-.controls input[type="text"],
-.controls select {
-  flex: 1;
-  min-width: 80px;
+.m13-check-btn {
+  flex-shrink: 0;
+  min-width: 140px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  font-family: inherit;
+  box-shadow: 0 4px 0 #1d4ed8;
+}
+@media (max-width: 600px) {
+  .m13-bottom-row { flex-direction: column-reverse; }
+  .m13-check-btn { width: 100%; }
 }
 
-/* 修复 Safari 键盘弹起后的白边 */
-@media (max-width: 600px) {
-  body {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+/* 6. 修复卡片溢出 */
+.card {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 16px !important;
 }
 
 </style>
