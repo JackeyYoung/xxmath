@@ -10309,25 +10309,50 @@ function showUnreadParentMsg() {
 
 /* ⭐ 监听全局输入框聚焦，动态加 body class */
 (function patchInputFocusClass() {
-  document.addEventListener('focusin', (e) => {
-    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) {
-      document.body.classList.add('input-focused');
-      
-      // ⭐ 阻止 iOS 因为聚焦而顶飞整个页面
-      setTimeout(() => {
-        // 滚动页面，让输入框居中
-        e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }, 300);
+  // ⭐ 辅助函数：判断是否为可输入元素（包含 input、textarea 和 contenteditable）
+  function isInputTarget(el) {
+    if (!el) return false;
+    return /INPUT|TEXTAREA/.test(el.tagName) || 
+           el.isContentEditable || 
+           el.closest('[contenteditable="true"]') !== null;
+  }
 
+  document.addEventListener('focusin', (e) => {
+    if (isInputTarget(e.target)) {
+      // 1. 加上类名，隐藏底栏和悬浮球
+      document.body.classList.add('input-focused');
+
+      // 2. 强制清除上一题遗留的“大拇指反馈条”
+      const thumbBar = document.getElementById('thumbBar');
+      if (thumbBar) {
+        thumbBar.classList.remove('show', 'ok', 'err');
+        // 如果是在 m13 输入题目，确保底部栏也消失
+        if (e.target.id === 'problem-text') {
+           const bottomBar = document.querySelector('.m13-bottom-bar');
+           if (bottomBar) bottomBar.style.display = 'none';
+        }
+      }
+
+      // 3. 延迟滚动，把输入框推到屏幕中间
+      setTimeout(() => {
+        try {
+          e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        } catch (err) {}
+      }, 300);
     }
   });
 
   document.addEventListener('focusout', (e) => {
-    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) {
+    if (isInputTarget(e.target)) {
+      // 延迟检查，防止 iOS 切换输入法时误判失焦
       setTimeout(() => {
         const active = document.activeElement;
-        if (!active || !/INPUT|TEXTAREA/.test(active.tagName)) {
+        if (!isInputTarget(active)) {
           document.body.classList.remove('input-focused');
+          
+          // 恢复 m13 底部栏
+          const bottomBar = document.querySelector('.m13-bottom-bar');
+          if (bottomBar) bottomBar.style.display = '';
         }
       }, 100);
     }

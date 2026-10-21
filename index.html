@@ -3487,7 +3487,7 @@ input:focus, textarea:focus, select:focus {
 /* ---------- E. iOS 键盘避让 ---------- */
 html { scroll-padding-bottom: 300px; }
 @media (max-width: 600px) {
-  body { padding-bottom: 120px; }
+  body { padding-bottom: 60px; }
 }
 
 /* ---------- F. 交互控件禁用长按选中 ---------- */
@@ -4036,6 +4036,12 @@ html { scroll-padding-bottom: 300px; }
   border: 2px dashed #fdba74;
   gap: 12px;
   flex-wrap: wrap;
+}
+@media (max-width: 600px) {
+  /* 手机上可以变成上下两行，或者稍微缩小字体 */
+  .timer-challenge-bar {
+    font-size: 12px;
+  }
 }
 .timer-challenge-toggle {
   display: inline-flex;
@@ -6822,18 +6828,33 @@ body.input-focused .daily-suggest {
   box-sizing: border-box;
 }
 
-/* 修复 M1 算式区域的滚动和居中 */
+/* 修复长算式显示不全，允许横向滑动 */
 .expr-box {
-  width: 100%;
-  overflow-x: auto; /* 题目太长时允许横向滑动，不挤压 */
+  background: linear-gradient(135deg, #f8fbff, #eef5ff);
+  border: 2px dashed #bfd7f5;
+  border-radius: 16px;
+  padding: 24px 16px;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  /* ⭐ 关键：不使用 center，而是默认靠左，由子元素自己控制居中 */
+  justify-content: flex-start;
+  overflow-x: auto;       /* ⭐ 允许横向滑动 */
   -webkit-overflow-scrolling: touch;
-  padding: 20px 10px;
+  scrollbar-width: none;  /* 隐藏滚动条 */
 }
+.expr-box::-webkit-scrollbar { 
+  display: none; 
+}
+
 .expr {
-  display: inline-flex;
-  flex-wrap: nowrap; /* 强制不换行 */
-  justify-content: center;
-  min-width: min-content;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: nowrap;      /* ⭐ 强制不换行 */
+  /* ⭐ 关键：用 margin: 0 auto 实现「内容短时居中，内容长时靠左可以滑动」 */
+  margin: 0 auto;         
+  padding: 0 16px;        /* 左右留白，防止第一个和最后一个数字贴边 */
 }
 
 /* 修复 M9 头部控制区（随机按钮被挤压） */
