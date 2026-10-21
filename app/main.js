@@ -382,6 +382,21 @@ const M1_PRIORITY = {
   expectedOps: [],      // 应该先算的运算符（可能多个）
 };
 
+function randomProblemByOp(op) {
+  const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+  let a, b;
+  if (op === '+') {
+    do { a = rnd(100, 999); b = rnd(100, 999); } while (!hasCarry(a, b, '+'));
+  } else if (op === '−') {
+    do { a = rnd(200, 999); b = rnd(100, a - 1); } while (!hasCarry(a, b, '−'));
+  } else if (op === '×') {
+    do { a = rnd(12, 99); b = rnd(2, 9); } while (a * b < 100 && rnd(0, 1) === 0);
+  } else {
+    do { b = rnd(2, 9); const q = rnd(2, Math.floor(999 / b)); a = q * b + rnd(0, b - 1); } while (a > 999 || a < b * 2);
+  }
+  return { a, b };
+}
+
 function m1ShowPriorityBox() {
   const box = document.getElementById('m1PriorityBox');
   const opts = document.getElementById('m1PriorityOptions');
@@ -3256,21 +3271,6 @@ m8Render();
       }
 
       return { a, b, op };
-    }
-
-    function randomProblemByOp(op) {
-      const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-      let a, b;
-      if (op === '+') {
-        do { a = rnd(100, 999); b = rnd(100, 999); } while (!hasCarry(a, b, '+'));
-      } else if (op === '−') {
-        do { a = rnd(200, 999); b = rnd(100, a - 1); } while (!hasCarry(a, b, '−'));
-      } else if (op === '×') {
-        do { a = rnd(12, 99); b = rnd(2, 9); } while (a * b < 100 && rnd(0, 1) === 0);
-      } else {
-        do { b = rnd(2, 9); const q = rnd(2, Math.floor(999 / b)); a = q * b + rnd(0, b - 1); } while (a > 999 || a < b * 2);
-      }
-      return { a, b };
     }
 
     /* 判断 a op b 是否产生进位/借位 */
