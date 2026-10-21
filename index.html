@@ -4951,11 +4951,6 @@ body.thumb-bar-open .koji-btn {
 }
 .koji-btn:active { transform: scale(.92); }
 
-/* modulePool 作为 lesson 内容区 */
-#modulePool { display: block; }
-#modulePool .module { display: none; }
-#modulePool .module.active { display: block; }
-
 /* home 页显示时，lesson 页隐藏（已有 .page 规则） */
 
 .home-tasks {
@@ -6602,14 +6597,10 @@ body.thumb-bar-open .koji-btn {
 
 /* ---------- 底部固定栏 ---------- */
 .m13-bottom-bar {
-  position: sticky;
-  bottom: 0;
-  /* ⭐ 原本是负边距：margin: 20px -16px -16px; 改成下面这样 */
-  margin: 20px 0 -16px 0;    /* 只往下延伸，左右不扩 */
-  padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(to top, #fff 60%, rgba(255,255,255,0));
-  z-index: 50;
-  pointer-events: none;
+  position: relative !important; /* 去掉 sticky */
+  margin-top: 20px;
+  padding-bottom: 20px;
+  background: transparent;
 }
 .m13-bottom-bar > * { pointer-events: auto; }
 
@@ -6715,15 +6706,11 @@ body.thumb-bar-open .koji-btn {
   }
 
   .m13-bottom-bar {
-  position: sticky;
-  bottom: 0;
-  /* ⭐ 原本是负边距：margin: 20px -16px -16px; 改成下面这样 */
-  margin: 20px 0 -16px 0;    /* 只往下延伸，左右不扩 */
-  padding: 12px 0 calc(12px + env(safe-area-inset-bottom));
-  background: linear-gradient(to top, #fff 60%, rgba(255,255,255,0));
-  z-index: 50;
-  pointer-events: none;
-}
+    position: relative !important; /* 去掉 sticky */
+    margin-top: 20px;
+    padding-bottom: 20px;
+    background: transparent;
+  }
   .m13-bottom-row {
     flex-direction: column-reverse;
     gap: 8px;
@@ -6743,17 +6730,39 @@ body.thumb-bar-open .koji-btn {
 body.input-focused .m13-bottom-bar {
   display: none !important;
 }
-/* 防止 iOS 输入法切换时页面上下抖动 */
+/* ============================================================
+   ⭐ 全局布局修复：彻底解决手机端挤压、变形
+   ============================================================ */
+
+/* 1. 释放 html 的强制锁定，让原生页面能正常滚动 */
 html, body {
-  overscroll-behavior-y: none;
+  height: auto !important;
+  min-height: 100%;
+  overflow-y: auto !important;
+  overflow-x: hidden !important; /* 防止横向溢出 */
 }
 
-/* 允许主容器滚动 */
+/* 2. 修复 modulePool 的宽度和高度限制 */
 #modulePool {
-  height: 100%;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 120px; /* 给底部留空间 */
+  height: auto !important;
+  overflow: visible !important;
+  width: 100%;
+}
+
+/* 3. 限制主容器的最大宽度，并保证居中 */
+.lesson-stage, .home-wrap {
+  width: 100% !important;
+  max-width: 100vw !important;
+  padding: 16px !important;
+  box-sizing: border-box;
+}
+
+/* 4. 确保卡片不会被压缩 */
+.card {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box;
+  overflow: hidden; /* 防止内部元素撑破卡片 */
 }
 
 /* ⭐ 仅当键盘弹出时，隐藏悬浮球和底部固定栏（防遮挡） */
@@ -6776,6 +6785,74 @@ body.input-focused .thumb-bar,
 body.input-focused .daily-cheat,
 body.input-focused .daily-suggest {
   display: none !important;
+}
+
+/* ============================================================
+   ⭐ M1 顶部工具栏防挤压
+   ============================================================ */
+.problem-bar {
+  display: flex;
+  flex-wrap: wrap; /* 允许换行 */
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+}
+
+/* 下拉框和输入框占满可用宽度 */
+.problem-bar select,
+.problem-bar input[type="text"] {
+  flex: 1 1 120px; /* 最小 120px，能伸展 */
+  min-width: 0;    /* 允许缩小 */
+  padding: 8px 10px;
+  height: 40px;
+  box-sizing: border-box;
+}
+
+/* 按钮固定尺寸，绝对不被压缩 */
+.problem-bar .btn,
+.problem-bar .btn-secondary,
+.problem-bar .file-btn {
+  flex-shrink: 0; 
+  white-space: nowrap; /* 强制不换行，解决“载入”变竖排 */
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+/* 修复 M1 算式区域的滚动和居中 */
+.expr-box {
+  width: 100%;
+  overflow-x: auto; /* 题目太长时允许横向滑动，不挤压 */
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 10px;
+}
+.expr {
+  display: inline-flex;
+  flex-wrap: nowrap; /* 强制不换行 */
+  justify-content: center;
+  min-width: min-content;
+}
+
+/* 修复 M9 头部控制区（随机按钮被挤压） */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.controls input[type="text"],
+.controls select {
+  flex: 1;
+  min-width: 80px;
+}
+
+/* 修复 Safari 键盘弹起后的白边 */
+@media (max-width: 600px) {
+  body {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
 }
 
 </style>
