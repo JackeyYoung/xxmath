@@ -424,6 +424,18 @@ function m1ShowPriorityBox() {
   const fb = document.getElementById('m1PriorityFeedback');
   if (!box || !opts) return;
 
+  // ⭐ 今天已通过 → 直接跳过，不弹选项
+  try {
+    const d = new Date();
+    const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    if (lsGet('grade3_priority_passed_date') === todayStr) {
+      M1_PRIORITY.passed = true;
+      box.style.display = 'none';
+      m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
+      return;
+    }
+  } catch (e) {}
+
   const toks = M1.tokens;
   const hasParen = toks.some(t => t.type === 'lparen');
   const hasMulDiv = toks.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
@@ -477,14 +489,18 @@ function m1ShowPriorityBox() {
         fb.textContent = '✓ 对！先算乘除，再算加减。现在点击算式中的运算符。';
         fb.className = 'priority-feedback ok';
         M1_PRIORITY.passed = true;
+
+        // ⭐ 当天选对 → 标记今天已通过，后续不再弹
+        try {
+          const d = new Date();
+          const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          lsSet('grade3_priority_passed_date', todayStr, { skipSync: true });
+        } catch (e) {}
+
         setTimeout(() => {
           box.style.display = 'none';
           m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
         }, 800);
-      } else {
-        fb.textContent = '❌ 再想想——有乘除时，要先算乘除哦！';
-        fb.className = 'priority-feedback error';
-        setTimeout(() => btn.classList.remove('chosen', 'wrong'), 800);
       }
     });
   });
@@ -591,67 +607,6 @@ function m1CurrentLevel() {
     return 'no-paren';
   }
 }
-
-/* ============================================================
-   ⭐ 混合运算：每天只问一次"先算哪步"
-   ============================================================ */
-(function patchPriorityOncePerDay() {
-  const KEY = 'grade3_priority_passed_date';
-
-  function todayStr() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-
-  function hasPassedToday() {
-    try { return lsGet(KEY) === todayStr(); } catch (e) { return false; }
-  }
-
-  function markPassedToday() {
-    try { lsSet(KEY, todayStr(), { skipSync: true }); } catch (e) {}
-  }
-
-  /* 覆盖 m1ShowPriorityBox：如果今天已通过，则直接跳过 */
-  if (typeof m1ShowPriorityBox === 'function') {
-    const orig = m1ShowPriorityBox;
-    window.m1ShowPriorityBox = function () {
-      if (hasPassedToday()) {
-        // 直接标记已通过，不弹窗
-        if (typeof M1_PRIORITY !== 'undefined') {
-          M1_PRIORITY.passed = true;
-        }
-        const box = document.getElementById('m1PriorityBox');
-        if (box) box.style.display = 'none';
-        return;
-      }
-      orig.apply(this, arguments);
-    };
-  }
-
-  /* 当 M1_PRIORITY.passed 变为 true 时，写入当日标记 */
-  if (typeof M1_PRIORITY !== 'undefined' && typeof m1CommitStep === 'function') {
-    // 用 MutationObserver 监听 box 隐藏（视为通过）
-    const box = document.getElementById('m1PriorityBox');
-    if (box) {
-      const obs = new MutationObserver(() => {
-        if (box.style.display === 'none' && M1_PRIORITY.passed) {
-          markPassedToday();
-        }
-      });
-      obs.observe(box, { attributes: true, attributeFilter: ['style'] });
-    }
-  }
-
-  /* 兜底：如果 M1_PRIORITY 已经被设为 true（无论是原逻辑还是跳过），
-     也把标记写进去 */
-  const checkInterval = setInterval(() => {
-    if (typeof M1_PRIORITY !== 'undefined' && M1_PRIORITY.passed) {
-      markPassedToday();
-      clearInterval(checkInterval);
-    }
-  }, 500);
-  setTimeout(() => clearInterval(checkInterval), 30000);
-})();
 
 /* 提交答案 */
 function m1SubmitAnswer() {
