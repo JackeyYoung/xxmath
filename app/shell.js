@@ -744,23 +744,27 @@ function mountLesson(lessonId) {
   }
 
   document.getElementById('lessonHeader').innerHTML = `
-    <button class="lesson-back" id="lessonBack">←</button>
+    <button class="lesson-back" id="lessonBack" aria-label="返回首页">←</button>
     <div class="lesson-title">${meta.icon} ${meta.title}</div>
     <div class="lesson-path">${pathHtml}</div>
-    <button class="lesson-more" id="lessonMore">⋯</button>
+    <button class="lesson-more" id="lessonMore" aria-label="更多">⋯</button>
   `;
 
   // 顶部进度条（新增）
   const progressBar = document.getElementById('lessonProgress');
   if (progressBar && levels) {
-    const levelDone = levels.map(lv => 
+    const levelDone = levels.map(lv =>
       moduleRecords.some(r => lv.test(r) && r.isCorrect)
     );
     const litDots = levelDone.filter(Boolean).length;
     const currentLevel = levels[litDots - 1] || levels[0];
+    const pct = Math.round(litDots / levels.length * 100);
+    const rate = totalCount ? Math.round(correctCount / totalCount * 100) : 0;
+
     progressBar.innerHTML = `
-      <span>已练 <b>${totalCount}</b> 题 · 正确率 <b>${Math.round(correctCount / totalCount * 100)}%</b></span>
+      <span>已练 <b>${totalCount}</b> 题 · 正确率 <b>${rate}%</b></span>
       <span class="lesson-progress-level">当前层级：<b>${currentLevel.name}</b></span>
+      <div class="lesson-progress-bar"><span style="width:${pct}%"></span></div>
     `;
   }
 
@@ -813,6 +817,21 @@ function mountLesson(lessonId) {
         }
       });
     });
+
+    // ⭐ 判断是否需要显示"右侧还有"箭头
+    const updateScrollHint = () => {
+      const canScroll = levelSelectorWrap.scrollWidth > levelSelectorWrap.clientWidth + 4;
+      const atEnd = levelSelectorWrap.scrollLeft + levelSelectorWrap.clientWidth >= levelSelectorWrap.scrollWidth - 4;
+      levelSelectorWrap.classList.toggle('all-visible', !canScroll || atEnd);
+    };
+    // 首次挂载时更新（等 DOM 布局完成）
+    requestAnimationFrame(updateScrollHint);
+    // 滚动时更新
+    levelSelectorWrap.addEventListener('scroll', updateScrollHint, { passive: true });
+    // 窗口大小变化时更新
+    window.addEventListener('resize', updateScrollHint);
+    // 内容变化时更新
+    new MutationObserver(updateScrollHint).observe(levelSelectorWrap, { childList: true, subtree: true });
   }
 
   document.getElementById('lessonBack').addEventListener('click', () => navigate('home'));

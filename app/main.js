@@ -59,6 +59,12 @@ import { initSyncUI } from './sync-ui.js';
 
 // app/main.js 末尾追加
 import { initShell, showThumbBar, hideThumbBar, navigate } from './shell.js';
+// ========== 3.5. 拇指区浮球联动 ==========
+// 包装 showThumbBar / hideThumbBar，让浮球随之上移
+const _origShowThumbBar = showThumbBar;
+const _origHideThumbBar = hideThumbBar;
+// ⚠️ 但 ES module 的 import 是只读绑定，不能重新赋值
+// 所以改用：在挂到 window.__shell 时包装
 
 import { activityAdd, activityStatsByModule } from '../core/activity.js';
 
@@ -506,6 +512,13 @@ function m1ShowPriorityBox() {
   });
 
   box.style.display = 'block';
+
+  // ⭐ 弹出后滚到可见（移动端）
+  setTimeout(() => {
+    try {
+      box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } catch (e) {}
+  }, 60);
 }
 
 function m1HidePriorityBox() {
@@ -1727,7 +1740,8 @@ const M7 = {
   swRunning: false,
   swTarget: 60000,
   swLastFrame: 0,
-  swLastTickSec: -1
+  swLastTickSec: -1,
+  _lastDangerState: null,   // ⭐ 缓存
 };
 const CN_HOUR = ['十二','一','二','三','四','五','六','七','八','九','十','十一'];
 
@@ -2024,19 +2038,36 @@ function m7FmtStopwatch(ms) {
 
 function m7UpdateSwDisplay() {
   const el = $('#swDisplay');
-  el.classList.remove('warn','danger');
+  if (!el) return;
+
   if (M7.mode === 'up') {
+    el.classList.remove('warn','danger');
     const t = m7FmtStopwatch(M7.swElapsed);
     el.innerHTML = `${t.main}<small>${t.dec}</small>`;
-  } else if (M7.mode === 'down') {
+    return;
+  }
+
+  if (M7.mode === 'down') {
     const remain = M7.swTarget - M7.swElapsed;
     const t = m7FmtStopwatch(remain);
     el.innerHTML = `${t.main}<small>${t.dec}</small>`;
-    if (remain <= 10000) el.classList.add('danger');
-    else if (remain <= 30000) el.classList.add('warn');
-  } else {
-    el.innerHTML = `00:00<small>.0</small>`;
+
+    // ⭐ 用 _lastDangerState 缓存，避免每帧 DOM 操作
+    let newState = 'normal';
+    if (remain <= 10000) newState = 'danger';
+    else if (remain <= 30000) newState = 'warn';
+
+    if (M7._lastDangerState !== newState) {
+      M7._lastDangerState = newState;
+      el.classList.toggle('danger', newState === 'danger');
+      el.classList.toggle('warn', newState === 'warn');
+    }
+    return;
   }
+
+  // clock 模式
+  el.classList.remove('warn','danger');
+  el.innerHTML = `00:00<small>.0</small>`;
 }
 
 function m7SwFrame(now) {
@@ -6693,7 +6724,9 @@ function showExplainModal() {
 
 function hideExplainModal() {
   document.getElementById('explainModalMask').style.display = 'none';
-  document.getElementById('explainModalBody').innerHTML = '';
+  const body = document.getElementById('explainModalBody');
+  body.innerHTML = '';
+  body.classList.remove('scrollable');   // ⭐ 清掉渐隐
   if (_explainTimer) { clearInterval(_explainTimer); _explainTimer = null; }
 }
 
@@ -6808,6 +6841,12 @@ function renderExplainResult(result) {
 
   body.querySelectorAll('.std-fold-hd').forEach(hd => {
     hd.addEventListener('click', () => hd.parentElement.classList.toggle('open'));
+  });
+
+  // ⭐ 内容高度超出时，底部加渐隐提示
+  requestAnimationFrame(() => {
+    const isScrollable = body.scrollHeight > body.clientHeight + 20;
+    body.classList.toggle('scrollable', isScrollable);
   });
 }
 
@@ -7369,19 +7408,51 @@ setTimeout(() => {
    ============================================================ */
 
 /* ---------- 3. 全局输入框聚焦自动避让键盘 ---------- */
+const _KEY_INPUT_IDS = [
+  'm1Input', 'm9InlineInput', 'pAnswer', 'pTakeaway',
+  'm4answer', 'm4val', 'm12val', 'm5ChalInput',
+  'm7CalcAns', 'fracNum', 'fracDen', 'loginCode',
+];
+
 document.addEventListener('focusin', e => {
   const t = e.target;
   if (!t || !/INPUT|TEXTAREA/.test(t.tagName)) return;
+
+  // ⭐ 关键输入框：延迟 320ms（等键盘动画完成）后滚动
+  const isKey = _KEY_INPUT_IDS.includes(t.id);
+  const delay = isKey ? 320 : 260;
+
   setTimeout(() => {
     try {
       const rect = t.getBoundingClientRect();
-      const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-      if (rect.bottom > vh - 150 || rect.top < 100) {
+      const vv = window.visualViewport;
+      const vh = (vv && vv.height) || window.innerHeight;
+      // 底部进入键盘区 → 滚到中间
+      if (rect.bottom > vh - 100) {
         t.scrollIntoView({ block: 'center', behavior: 'smooth' });
       }
     } catch (err) {}
-  }, 260);
+  }, delay);
 });
+
+// ⭐ 键盘弹起时（visualViewport 变化）也补滚一次
+if (window.visualViewport) {
+  let _raf = null;
+  window.visualViewport.addEventListener('resize', () => {
+    if (_raf) cancelAnimationFrame(_raf);
+    _raf = requestAnimationFrame(() => {
+      const t = document.activeElement;
+      if (!t || !/INPUT|TEXTAREA/.test(t.tagName)) return;
+      try {
+        const rect = t.getBoundingClientRect();
+        const vh = window.visualViewport.height;
+        if (rect.bottom > vh - 40) {
+          t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      } catch (err) {}
+    });
+  }, { passive: true });
+}
 
 /* ---------- 5. 学习看板数字跳动 ---------- */
 (function patchDashboardBump() {
@@ -7657,20 +7728,25 @@ document.addEventListener('focusin', e => {
 /* ---------- 1b. 其他关键输入框 enterkeyhint ---------- */
 (function patchEnterHints() {
   const map = {
-    m1Input: 'done',
-    pAnswer: 'done',
-    m4val: 'done',
-    m4answer: 'done',
-    m12val: 'done',
-    pTakeaway: 'done'
+    m1Input:        { hint: 'done', mode: 'numeric' },
+    pAnswer:        { hint: 'done', mode: 'text' },      // ⭐ 中文答案
+    pTakeaway:      { hint: 'done', mode: 'text' },      // ⭐ 心得输入
+    m4val:          { hint: 'done', mode: 'decimal' },
+    m4answer:       { hint: 'done', mode: 'decimal' },
+    m12val:         { hint: 'done', mode: 'decimal' },
+    m5ChalInput:    { hint: 'done', mode: 'decimal' },
+    m7CalcAns:      { hint: 'done', mode: 'decimal' },
+    m7CalcH:        { hint: 'next', mode: 'numeric' },
+    m7CalcM:        { hint: 'done', mode: 'numeric' },
+    fracNum:        { hint: 'next', mode: 'numeric' },
+    fracDen:        { hint: 'done', mode: 'numeric' },
   };
   Object.keys(map).forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
-    el.setAttribute('enterkeyhint', map[id]);
-    if (/^\d/.test(id) || /val|answer/.test(id)) {
-      el.setAttribute('inputmode', 'decimal');
-    }
+    el.setAttribute('enterkeyhint', map[id].hint);
+    el.setAttribute('inputmode', map[id].mode);
+    el.setAttribute('autocomplete', 'off');
   });
 })();
 
@@ -8205,6 +8281,7 @@ function renderTakeawayGallery() {
   const card = document.createElement('div');
   card.className = 'daily-suggest';
   card.innerHTML = `
+    <button class="daily-suggest-close" id="dailySuggestClose" aria-label="关闭">×</button>
     <div class="daily-suggest-hd">📅 每日一练推荐</div>
     <div class="daily-suggest-body">
       最近你「<b>${topTag[0]}</b>」错了 <b>${topTag[1]}</b> 次。<br>
@@ -8216,6 +8293,10 @@ function renderTakeawayGallery() {
     </div>
   `;
   document.body.appendChild(card);
+  document.getElementById('dailySuggestClose').addEventListener('click', () => {
+    sessionStorage.setItem('grade3_daily_suggest_shown', '1');
+    card.remove();
+  });
 
   document.getElementById('dailySuggestLater').addEventListener('click', () => {
     sessionStorage.setItem('grade3_daily_suggest_shown', '1');
@@ -9347,8 +9428,33 @@ function onCorrect(x, y) {
   initSyncUI();   // ⭐ 这行必须有
 
   initShell();
-  hookFeedbackToThumbBar();   // ⭐ 新增这一行
-  showUnreadParentMsg();   // ⭐ 移到这里
+  // ⭐ 拇指区浮球联动：劫持全局 showThumbBar / hideThumbBar
+  (function hookThumbBarToFloats() {
+    const shell = window.__shell;
+    if (!shell) return;
+    const origShow = shell.showThumbBar;
+    const origHide = shell.hideThumbBar;
+
+    shell.showThumbBar = function (opts) {
+      document.body.classList.add('thumb-bar-open');
+      return origShow.call(this, opts);
+    };
+    shell.hideThumbBar = function () {
+      document.body.classList.remove('thumb-bar-open');
+      return origHide.call(this);
+    };
+
+    // 兜底：监听 thumbBar 的实际 class
+    const bar = document.getElementById('thumbBar');
+    if (bar) {
+      new MutationObserver(() => {
+        document.body.classList.toggle('thumb-bar-open', bar.classList.contains('show'));
+      }).observe(bar, { attributes: true, attributeFilter: ['class'] });
+    }
+  })();
+
+  hookFeedbackToThumbBar();
+  showUnreadParentMsg();
 
   console.log('[启动] ✅ core/ 已就绪, sync =', getSyncState());
 })();
@@ -9380,7 +9486,6 @@ window.__debug = {
 /* ============================================================
    P0：把模块的 .feedback 同步到拇指区反馈条
    ============================================================ */
-
 function hookFeedbackToThumbBar() {
   const TARGETS = [
     { fb: 'm1fb',      next: null,        retry: 'm1reset' },
@@ -9909,7 +10014,12 @@ function shareMasteryCard({ problemText, correctAnswer, takeaway }) {
   const text = `🏆 我掌握了这道题！\n\n📝 ${problemText}\n✅ ${correctAnswer}${takeaway ? `\n💡 ${takeaway}` : ''}\n\n—— 来自「老爸数学互动课堂」`;
 
   if (navigator.share) {
-    navigator.share({ title: '我掌握了这道题', text }).catch(() => {});
+    navigator.share({ title: '我掌握了这道题', text }).catch(err => {
+      // ⭐ 用户取消不算失败
+      if (err && err.name === 'AbortError') return;
+      // ⭐ 其它失败要有反馈
+      showToast('分享失败，试试截图保存', 'info');
+    });
   } else if (navigator.clipboard) {
     navigator.clipboard.writeText(text).then(() => {
       showToast('✅ 已复制到剪贴板，可以粘贴到微信', 'success');
