@@ -29,7 +29,26 @@ body {
   background:var(--bg); color:var(--text); padding-bottom:60px;
   -webkit-font-smoothing:antialiased;
 }
-.app-header { text-align:center; padding:32px 16px 20px; }
+/* 全局头部 */
+.app-header { 
+  text-align: center; 
+  padding: 32px 16px 20px; 
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 10;
+}
+
+/* ⭐ 核心修复：用绝对定位隐藏，不破坏文档流 */
+.app-header.hidden {
+  display: none !important; 
+  /* 直接 display: none 隐藏，不要用 top: -9999px */
+}
+/* 确保 lesson 页面容器能自动撑开高度 */
+#page-lesson {
+  min-height: 100vh;
+  display: block;
+}
+
 .app-header h1 {
   font-size:26px; font-weight:800; letter-spacing:1px;
   background:linear-gradient(120deg,#2563eb,#7c3aed);
@@ -4843,11 +4862,16 @@ html { scroll-padding-bottom: 300px; }
 
 /* ---- Lesson ---- */
 .lesson-header {
-  position: sticky; top: 0; z-index: 50;
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 16px;
-  background: rgba(255,255,255,.92);
-  backdrop-filter: blur(8px);
+  position: sticky; 
+  top: 0; 
+  z-index: 50; 
+  display: flex; 
+  align-items: center; 
+  gap: 12px;
+  padding: max(10px, env(safe-area-inset-top)) 16px 10px; /* ⭐ 适配 iOS 刘海屏安全区 */
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid #e5e7eb;
 }
 
@@ -6976,25 +7000,34 @@ body.input-focused .daily-suggest {
   padding: 16px !important;
 }
 
+/* ⭐ 终极隐藏：不留一丝空间 */
+.lesson-levels.is-hidden {
+  display: none !important;
+  height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: none !important;
+  overflow: hidden !important;
+}
+
 </style>
 </head>
 <body>
 
-<header class="app-header">
+<div class="app-header" id="globalHeader">
   <h1 id="appTitle">🎓 三年级数学互动课堂</h1>
   <p>动 手 操 作 · 即 时 反 馈 · 发 现 规 律</p>
-
+</div>
 <!-- 新增：三个 page 容器 -->
 <div id="page-home"   class="page active"></div>
   
 <div id="page-lesson" class="page">
   <div id="lessonHeader" class="lesson-header"></div>
   <div id="lessonProgress" class="lesson-progress"></div>   <!-- ⭐ 新增 -->
-  <div id="lessonLevels" class="lesson-levels"></div>   <!-- ⭐ 新增 等级选择-->
+  <div id="lessonLevels" class="lesson-levels is-hidden"></div> <!-- 默认加上 is-hidden -->
   <!-- ⭐ modulePool 就是 lesson 内容区，不再需要 lessonStage -->
   <div id="modulePool" class="lesson-stage">
     <main>
-
         <!-- ① 混合运算 -->
         <section class="module active" id="m1">
           <div class="card">

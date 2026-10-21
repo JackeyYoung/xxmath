@@ -73,6 +73,17 @@ export function navigate(route, opts = {}) {
   currentRoute = route;
   if (opts.lessonId) currentLessonId = opts.lessonId;
 
+  // ⭐ 核心新增：如果是进入 lesson 页面，隐藏全局 header
+  // 如果是 lesson 页面，隐藏全局 header
+  const globalHeader = document.getElementById('globalHeader');
+  if (globalHeader) {
+    if (route === 'lesson') {
+      globalHeader.style.display = 'none';
+    } else {
+      globalHeader.style.display = 'block';
+    }
+  }
+
   // ⭐ 只操作 class，display 交给 CSS 的 .page / .page.active 规则
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
 
@@ -690,10 +701,22 @@ function mountLesson(lessonId) {
     ],
   };
 
-  const levels = LEVELS[lessonId];
+  // ⭐ 1. 前置声明并给 null 值，防止任何作用域污染
+  let levels = null;
+  const currentLevels = LEVELS[lessonId];
+  if (currentLevels && Array.isArray(currentLevels) && currentLevels.length > 0) {
+    levels = currentLevels;
+  }
+
+  // ⭐ 3. 前置清空 DOM（防止没配置的模块残留上一页的 HTML）
+  const levelSelectorWrap = document.getElementById('lessonLevels');
+  if (levelSelectorWrap) {
+    levelSelectorWrap.innerHTML = '';
+    levelSelectorWrap.classList.add('is-hidden'); // 默认先隐藏
+  }
+
   let pathHtml;
 
-  // ⭐ 根据当前层级出题
   // ⭐ 根据当前层级出题
   if (levels) {
     const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || levels[0].id;
@@ -766,11 +789,15 @@ function mountLesson(lessonId) {
       <span class="lesson-progress-level">当前层级：<b>${currentLevel.name}</b></span>
       <div class="lesson-progress-bar"><span style="width:${pct}%"></span></div>
     `;
+  } else {
+      // ⭐ 没有层级的模块，彻底隐藏这个进度条
+      progressBar.style.display = 'none'; 
+      progressBar.innerHTML = '';
   }
 
   // ⭐ 层级选择器
-  const levelSelectorWrap = document.getElementById('lessonLevels');
-  if (levelSelectorWrap && levels) {
+  if (levelSelectorWrap && levels) {  
+    levelSelectorWrap.classList.remove('is-hidden');  
     const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || levels[0].id;
     
     // 计算每层是否已完成
@@ -836,7 +863,7 @@ function mountLesson(lessonId) {
 
   document.getElementById('lessonBack').addEventListener('click', () => navigate('home'));
   document.getElementById('lessonMore').addEventListener('click', () => {
-    document.getElementById('wrongBookBtn')?.click();
+  document.getElementById('wrongBookBtn')?.click();
   });
 
   ensureThumbBar();

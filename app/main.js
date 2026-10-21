@@ -10206,11 +10206,21 @@ function showUnreadParentMsg() {
     }
   }
 
+  // 用于记录用户是否操作了高亮工具
+  let hasUsedHighlight = false;
+  // 监听高亮工具的点击
+  section.querySelector('.hl-toolbar')?.addEventListener('click', (e) => {
+    if (e.target.closest('.hl-btn') && !e.target.closest('.hl-clear')) {
+      hasUsedHighlight = true;
+      updateAllSteps();
+    }
+  });
+
   function updateAllSteps() {
     const problemText = document.getElementById('problem-text')?.innerText.trim() || '';
 
-    // Step 1：有题目文本
-    setStatus(1, problemText ? 'done' : 'pending');
+    // ⭐ Step 1：必须是有题目，且用户点击过高亮画笔，才算完成
+    setStatus(1, (problemText && hasUsedHighlight) ? 'done' : 'pending');
 
     // Step 2：任一草稿 textarea 有内容
     const scratch = [...section.querySelectorAll('.scratch-cell textarea')];
@@ -10242,6 +10252,7 @@ function showUnreadParentMsg() {
 
   // ⭐ 首次渲染：展开第 1 步，其它折叠
   function resetSteps() {
+    hasUsedHighlight = false; // ⭐ 重置高亮标记
     STEPS.forEach((step, i) => {
       step.classList.toggle('expanded', i === 0);
       step.classList.remove('completed');
