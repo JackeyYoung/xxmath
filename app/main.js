@@ -4842,6 +4842,13 @@ $('#pCheck').addEventListener('click', async () => {
 
   const user = $('#pAnswer').value.trim();
   const badge = $('#pResult');
+
+  // ⭐ 新版 #pResult 用 .m13-result-badge
+  const setBadge = (type, text) => {
+    badge.className = 'm13-result-badge' + (type ? ' ' + type : '');
+    badge.textContent = text || '';
+  };
+  
   const problemText = $('#problem-text').innerText.trim();
 
   // ⭐ 判断依据改为 M13_ProblemSource，而不是下拉框当前值
@@ -4853,12 +4860,12 @@ $('#pCheck').addEventListener('click', async () => {
 
   // ---- 前置校验（不占用按钮状态）----
   if (!problemText) {
-    badge.className = 'result-badge no';
+    badge.className = 'm13-result-badge no';
     badge.textContent = '请先选择或输入题目';
     return;
   }
     if (!user) {
-      badge.className = 'result-badge no';
+      badge.className = 'm13-result-badge no';
       badge.textContent = '✏ 请先写出答案';
       return;
     }
@@ -4890,7 +4897,7 @@ $('#pCheck').addEventListener('click', async () => {
 
       // 展示结果
       if (allMatch) {
-        badge.className = 'result-badge ok';
+        badge.className = 'm13-result-badge ok';
         badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ` （历史缓存）参考答案：${fb.answer?.full || cachedRecord.correctAnswer || '—'}`;
         // ⭐ 跳一下
         badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
@@ -4909,7 +4916,7 @@ $('#pCheck').addEventListener('click', async () => {
           }, 800);
         }
       } else {
-        badge.className = 'result-badge no';
+        badge.className = 'm13-result-badge no';
         badge.textContent = `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`;
 
         masteryRecord(problemText, false);  // ⭐掌握度
@@ -4989,7 +4996,7 @@ $('#pCheck').addEventListener('click', async () => {
     });
 
     if (completeSteps.length === 0) {
-      badge.className = 'result-badge no';
+      badge.className = 'm13-result-badge no';
       // 给更具体的提示
       const anyRel = studentSteps.some(s => (s.rel || '').trim());
       const anySub = studentSteps.some(s => (s.sub || '').trim());
@@ -5010,7 +5017,7 @@ $('#pCheck').addEventListener('click', async () => {
     );
 
       if (allMatch) {
-      badge.className = 'result-badge ok';
+      badge.className = 'm13-result-badge ok';
       badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + stdFull;
       // ⭐ 跳一下
       badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
@@ -5057,7 +5064,7 @@ $('#pCheck').addEventListener('click', async () => {
         }, 800);
       }
     } else {
-      badge.className = 'result-badge no';
+      badge.className = 'm13-result-badge no';
       badge.textContent = `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`;
 
       // ⭐ 如果标准解法有，展开第一步"关系式"，让用户对比
@@ -5129,7 +5136,7 @@ $('#pCheck').addEventListener('click', async () => {
 
   // ========== ② 题库外的题：大模型批改（异步，进入加载态）==========
   if (!LLM_CONFIG.enabled) {
-    badge.className = 'result-badge info';
+    badge.className = 'm13-result-badge info';
     badge.textContent = '📝 自定义题目无标准答案，请对照题意自查（未启用大模型）';
     return;
   }
@@ -5149,7 +5156,7 @@ $('#pCheck').addEventListener('click', async () => {
   // 👇 进入加载态
   setCheckBtnLoading(true);
   showAiThinking('正在分析你的解题过程…');
-  badge.className = 'result-badge info';
+  badge.className = 'm13-result-badge info';
   badge.textContent = '';
 
   try {
@@ -5165,7 +5172,7 @@ $('#pCheck').addEventListener('click', async () => {
 
     const ok = result.judgement.answer_correct;
     // 先设基础样式
-    badge.className = 'result-badge ' + (ok ? 'ok' : 'no');
+    badge.className = 'm13-result-badge ' + (ok ? 'ok' : 'no');
  
     if (ok) {
       badge.textContent = '🎉 ' + getEncouragement('m13', getM13Streak()) + ' 参考答案：' + result.answer.full;
@@ -5231,7 +5238,7 @@ $('#pCheck').addEventListener('click', async () => {
 
   } catch (e) {
     console.error('[大模型] 调用失败', e);
-    badge.className = 'result-badge no';
+    badge.className = 'm13-result-badge no';
     const msg = e.message || '';
     if (msg.includes('超时')) {
       badge.textContent = '⏰ 网络有点慢（300 秒未响应），请检查网络后重试';
@@ -10138,3 +10145,147 @@ function showUnreadParentMsg() {
     if (reply) showToast('💬 已回复，家长下次打开会看到', 'success');
   });
 }
+
+/* ============================================================
+   M13 分步卡片 + 换题抽屉
+   ============================================================ */
+(function initM13Layout() {
+  const section = document.getElementById('m13');
+  if (!section) return;
+
+  const STEPS = [...section.querySelectorAll('.m13-step')];
+  const drawer = document.getElementById('problemPickerDrawer');
+  const changeBtn = document.getElementById('problemChangeBtn');
+  const pickerClose = document.getElementById('problemPickerClose');
+
+  /* ---------- 1. 展开/折叠 ---------- */
+  STEPS.forEach(step => {
+    const hd = step.querySelector('.m13-step-hd');
+    if (!hd) return;
+    hd.addEventListener('click', e => {
+      // 点标题时切换
+      step.classList.toggle('expanded');
+    });
+  });
+
+  /* ---------- 2. 完成状态判定 ---------- */
+  function setStatus(stepNum, status) {
+    const step = section.querySelector(`.m13-step[data-step="${stepNum}"]`);
+    if (!step) return;
+    const el = step.querySelector('.m13-step-status');
+    if (!el) return;
+
+    const prev = el.dataset.status;
+    el.dataset.status = status;
+    step.classList.toggle('completed', status === 'done');
+
+    // 从"未完成"变为"完成"时，折叠自己，自动展开下一步
+    if (status === 'done' && prev !== 'done') {
+      step.classList.remove('expanded');
+      const next = section.querySelector(`.m13-step[data-step="${stepNum + 1}"]`);
+      if (next && !next.classList.contains('expanded')) {
+        setTimeout(() => next.classList.add('expanded'), 200);
+      }
+    }
+  }
+
+  function updateAllSteps() {
+    const problemText = document.getElementById('problem-text')?.innerText.trim() || '';
+
+    // Step 1：有题目文本
+    setStatus(1, problemText ? 'done' : 'pending');
+
+    // Step 2：任一草稿 textarea 有内容
+    const scratch = [...section.querySelectorAll('.scratch-cell textarea')];
+    setStatus(2, scratch.some(t => t.value.trim()) ? 'done' : 'pending');
+
+    // Step 3：至少一步「关系式 + 代入」都填
+    const stepInputs = [...section.querySelectorAll('#formulaSteps input')];
+    const relInputs = stepInputs.filter(i => i.dataset.field === 'rel');
+    const subInputs = stepInputs.filter(i => i.dataset.field === 'sub');
+    const hasFormula = relInputs.some((r, i) =>
+      r.value.trim() && subInputs[i]?.value.trim()
+    );
+    setStatus(3, hasFormula ? 'done' : 'pending');
+
+    // Step 4：pAnswer 有内容
+    const pAnswer = document.getElementById('pAnswer');
+    setStatus(4, pAnswer?.value.trim() ? 'done' : 'pending');
+  }
+
+  // 全局监听输入变化
+  section.addEventListener('input', e => {
+    if (
+      e.target.closest('.m13-step') ||
+      e.target.id === 'problem-text'
+    ) {
+      updateAllSteps();
+    }
+  });
+
+  // ⭐ 首次渲染：展开第 1 步，其它折叠
+  function resetSteps() {
+    STEPS.forEach((step, i) => {
+      step.classList.toggle('expanded', i === 0);
+      step.classList.remove('completed');
+      const status = step.querySelector('.m13-step-status');
+      if (status) status.dataset.status = 'pending';
+    });
+    updateAllSteps();
+  }
+  resetSteps();
+
+  // ⭐ 换题后重置
+  // m13LoadProblem 是模块内函数，不改它；改用 MutationObserver 监听 problem-text
+  const problemEl = document.getElementById('problem-text');
+  if (problemEl) {
+    let lastText = problemEl.innerText;
+    new MutationObserver(() => {
+      const cur = problemEl.innerText;
+      if (cur !== lastText) {
+        lastText = cur;
+        if (cur.trim()) {
+          // 有新题目，重置分步
+          setTimeout(resetSteps, 80);
+        }
+      }
+    }).observe(problemEl, { childList: true, subtree: true, characterData: true });
+  }
+
+  /* ---------- 3. 换题抽屉 ---------- */
+  function openDrawer() {
+    if (!drawer) return;
+    drawer.style.display = 'flex';
+    document.body.classList.add('modal-open');
+  }
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.style.display = 'none';
+    document.body.classList.remove('modal-open');
+  }
+
+  changeBtn?.addEventListener('click', openDrawer);
+  pickerClose?.addEventListener('click', closeDrawer);
+  drawer?.addEventListener('click', e => {
+    if (e.target === drawer) closeDrawer();
+  });
+
+  // 载入/使用/清空后关闭抽屉
+  ['pLoad', 'pUseCustom', 'pClear'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', () => {
+      setTimeout(closeDrawer, 120);
+    });
+  });
+
+  /* ---------- 4. 检查按钮的前置校验：关系式/代入 ---------- */
+  // 复用原有 updateCheckBtnHint，但把它挂到 input 事件里
+  function refreshCheckBtn() {
+    if (typeof updateCheckBtnHint === 'function') {
+      try { updateCheckBtnHint(); } catch (e) {}
+    }
+  }
+  section.addEventListener('input', e => {
+    if (e.target.closest('#formulaSteps')) refreshCheckBtn();
+  });
+  refreshCheckBtn();
+})();

@@ -1733,7 +1733,92 @@ table.data-table th { background:#f8fafc; font-size:13px; color:var(--muted); fo
 .t-unit-row { display:flex; justify-content:space-between; align-items:center; width:100%; max-width:340px; padding:12px 20px; background:#f1f5f9; border-radius:10px; font-size:16px; font-weight:700; }
 
 /* 模块13 解题思维 */
-.problem-bar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; padding:14px 16px; background:#f8fafc; border-radius:12px; margin-bottom:18px; }
+.problem-bar {
+  position: sticky;
+  top: 56px;              /* lesson-header 高度 */
+  z-index: 40;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 12px 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: -16px -16px 16px;   /* 抵消 lesson-stage padding */
+  box-shadow: 0 2px 8px rgba(15,23,42,.04);
+}
+.problem-bar-current { flex: 1; min-width: 0; }
+.problem-bar-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+  display: block;
+}
+.problem-bar-current #problem-text {
+  min-height: 40px;
+  max-height: 30vh;
+  overflow-y: auto;
+  padding: 8px 12px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 15px;
+  line-height: 1.7;
+  background: #f8fafc;
+}
+.problem-bar-change {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 2px solid #2563eb;
+  border-radius: 10px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+/* 换题抽屉 */
+.problem-picker-drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.5);
+  z-index: 10000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.problem-picker-inner {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 20px;
+  animation: slideUp .28s cubic-bezier(.34,1.3,.64,1);
+}
+.problem-picker-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 16px;
+  font-weight: 800;
+  margin-bottom: 16px;
+}
+.problem-picker-hd button {
+  width: 36px; height: 36px;
+  border: none; background: #f1f5f9;
+  border-radius: 8px; font-size: 20px;
+  cursor: pointer;
+}
+.problem-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .problem-bar select, .problem-bar input[type=text] { padding:9px 12px; border:2px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; font-weight:600; outline:none; background:#fff; }
 .problem-bar select { min-width:200px; cursor:pointer; }
 .problem-bar input[type=text] { flex:1; min-width:180px; }
@@ -6039,6 +6124,541 @@ body.thumb-bar-open .koji-btn {
 }
 .level-btn-icon { font-size: 14px; }
 
+/*解题思维重构*/
+/* ============================================================
+   M13 解题思维 · Brilliant 式分步布局
+   ============================================================ */
+
+/* ---------- 顶部题目卡（sticky） ---------- */
+.problem-bar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0 12px;
+  margin-bottom: 12px;
+  background: linear-gradient(to bottom, #fff 70%, rgba(255,255,255,0));
+}
+.problem-bar-current {
+  flex: 1;
+  min-width: 0;
+}
+.problem-bar-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.problem-bar-icon { font-size: 14px; }
+.problem-bar-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #94a3b8;
+  letter-spacing: 1.5px;
+}
+.problem-bar-current #problem-text {
+  min-height: 44px;
+  max-height: 28vh;
+  overflow-y: auto;
+  padding: 10px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 12px;
+  font-size: 15px;
+  line-height: 1.7;
+  background: #f8fafc;
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  -webkit-touch-callout: none;
+}
+.problem-bar-current #problem-text:focus {
+  border-color: #2563eb;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+}
+.problem-bar-current #problem-text:empty::before {
+  content: attr(data-placeholder);
+  color: #cbd5e1;
+}
+.problem-bar-change {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border: 2px solid #2563eb;
+  border-radius: 12px;
+  background: #fff;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all .15s;
+}
+.problem-bar-change:hover {
+  background: #eff6ff;
+}
+.problem-bar-change:active {
+  transform: scale(.96);
+}
+.problem-bar-change-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* ---------- 换题抽屉 ---------- */
+.problem-picker-drawer {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,23,42,.5);
+  z-index: 10000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn .2s;
+}
+.problem-picker-inner {
+  background: #fff;
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  animation: slideUp .28s cubic-bezier(.34,1.3,.64,1);
+}
+.problem-picker-hd {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 17px;
+  font-weight: 800;
+  margin-bottom: 16px;
+  color: #1e293b;
+}
+.problem-picker-hd button {
+  width: 40px; height: 40px;
+  border: none;
+  background: #f1f5f9;
+  border-radius: 10px;
+  font-size: 22px;
+  line-height: 1;
+  color: #64748b;
+  cursor: pointer;
+  font-family: inherit;
+}
+.problem-picker-hd button:hover { background: #e2e8f0; }
+.problem-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.problem-picker-body select,
+.problem-picker-body input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #e5e7eb;
+  border-radius: 10px;
+  font-size: 15px;
+  font-family: inherit;
+  font-weight: 600;
+  outline: none;
+  background: #fff;
+}
+.problem-picker-body select:focus,
+.problem-picker-body input:focus {
+  border-color: #2563eb;
+}
+.problem-picker-body .btn,
+.problem-picker-body .btn-secondary,
+.problem-picker-body .file-btn {
+  padding: 12px;
+  text-align: center;
+  justify-content: center;
+  display: flex;
+}
+.problem-picker-divider {
+  text-align: center;
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 700;
+  position: relative;
+  padding: 4px 0;
+}
+.problem-picker-divider::before,
+.problem-picker-divider::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: calc(50% - 24px);
+  height: 1px;
+  background: #e2e8f0;
+}
+.problem-picker-divider::before { left: 0; }
+.problem-picker-divider::after { right: 0; }
+.problem-picker-divider span {
+  background: #fff;
+  padding: 0 12px;
+  position: relative;
+  z-index: 1;
+}
+.problem-picker-clear {
+  width: 100%;
+  margin-top: 16px;
+  padding: 10px;
+  border: 1.5px dashed #fca5a5;
+  background: #fff;
+  color: #b91c1c;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+.problem-picker-clear:hover {
+  background: #fef2f2;
+}
+
+/* ---------- 分步卡片 ---------- */
+.m13-step {
+  background: #fff;
+  border: 2px solid #e5e7eb;
+  border-radius: 14px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: border-color .2s, background .2s;
+}
+.m13-step.completed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.m13-step-hd {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1e293b;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  transition: background .2s;
+}
+.m13-step-hd:hover {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+}
+.m13-step.completed .m13-step-hd {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  color: #15803d;
+}
+.m13-step-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: #2563eb;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background .2s;
+}
+.m13-step.completed .m13-step-num {
+  background: #10b981;
+}
+.m13-step-title { flex: 1; min-width: 0; }
+.m13-step-status {
+  font-size: 12px;
+  font-weight: 700;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+.m13-step-status[data-status="done"]::before {
+  content: '✓ 完成';
+  color: #15803d;
+}
+.m13-step-status[data-status="pending"]::before {
+  content: '待完成';
+  color: #94a3b8;
+}
+.m13-step-arrow {
+  font-size: 12px;
+  color: #94a3b8;
+  transition: transform .25s;
+  flex-shrink: 0;
+}
+.m13-step.expanded .m13-step-arrow {
+  transform: rotate(90deg);
+  color: #2563eb;
+}
+.m13-step-bd {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .4s cubic-bezier(.4,0,.2,1), padding .3s;
+  padding: 0 18px;
+}
+.m13-step.expanded .m13-step-bd {
+  max-height: 3000px;
+  padding: 16px 18px 20px;
+  border-top: 1px dashed #e5e7eb;
+}
+.m13-step-hint {
+  background: #eff6ff;
+  border-left: 3px solid #3b82f6;
+  border-radius: 0 8px 8px 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #1e40af;
+  margin-bottom: 12px;
+}
+.m13-step-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.m13-step-actions .btn-secondary {
+  flex: 1;
+}
+
+/* ---------- 高亮工具栏（移动端横向滚动） ---------- */
+.hl-toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 10px;
+  background: #fff;
+  border-radius: 10px;
+  border: 2px solid #e5e7eb;
+}
+@media (max-width: 600px) {
+  .hl-toolbar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .hl-toolbar::-webkit-scrollbar { display: none; }
+  .hl-btn {
+    min-height: 36px;
+    min-width: 52px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    padding: 6px 12px;
+  }
+  .hl-sep { display: none; }
+  .hl-label {
+    font-size: 11px;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+/* ---------- 我的答案区域 ---------- */
+.check-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  background: #fffbeb;
+  border: 2px dashed #fcd34d;
+  border-radius: 12px;
+}
+.check-area label {
+  font-size: 14px;
+  font-weight: 800;
+  color: #b45309;
+}
+.check-area input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #fcd34d;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 700;
+  font-family: inherit;
+  outline: none;
+  background: #fff;
+}
+.check-area input:focus {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgba(245,158,11,.15);
+}
+
+/* ---------- 一题一得 ---------- */
+.takeaway {
+  margin-top: 14px;
+  padding: 16px 18px;
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+  border-radius: 12px;
+  border-left: 4px solid #0ea5e9;
+}
+.takeaway h4 {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0369a1;
+  margin-bottom: 10px;
+}
+.takeaway-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.takeaway-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 2px solid #bae6fd;
+  border-radius: 10px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  background: #fff;
+}
+.takeaway-row input:focus {
+  border-color: #0ea5e9;
+}
+.takeaway-row #pTakeawaySave {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0 14px;
+}
+.takeaway-hint {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  min-height: 16px;
+}
+
+/* ---------- 底部固定栏 ---------- */
+.m13-bottom-bar {
+  position: sticky;
+  bottom: 0;
+  margin: 20px -16px -16px;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: linear-gradient(to top, #fff 55%, rgba(255,255,255,0));
+  z-index: 50;
+  pointer-events: none;
+}
+.m13-bottom-bar > * { pointer-events: auto; }
+
+.m13-bottom-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.m13-result-badge {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: transparent;
+  color: #64748b;
+  transition: background .2s, color .2s;
+}
+.m13-result-badge.ok  { background: #dcfce7; color: #15803d; }
+.m13-result-badge.no  { background: #fee2e2; color: #b91c1c; }
+.m13-result-badge.info { background: #e0e7ff; color: #3730a3; }
+.m13-result-badge:empty { display: none; }
+
+.m13-check-btn {
+  flex-shrink: 0;
+  min-width: 140px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 4px 0 #1d4ed8, 0 8px 20px rgba(37,99,235,.25);
+  transition: all .12s;
+}
+.m13-check-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #1d4ed8;
+}
+.m13-check-btn:disabled,
+.m13-check-btn.need-input {
+  background: #cbd5e1;
+  color: #64748b;
+  box-shadow: 0 4px 0 #94a3b8;
+  cursor: not-allowed;
+}
+.m13-check-btn.need-input:active {
+  transform: none;
+}
+
+/* AI 加载态（底部固定栏上方） */
+.m13-bottom-bar .ai-thinking {
+  margin-bottom: 10px;
+  margin-top: 0;
+}
+
+/* ---------- 移动端适配 ---------- */
+@media (max-width: 600px) {
+  .problem-bar {
+    padding: 10px 0;
+    margin-bottom: 10px;
+  }
+  .problem-bar-current #problem-text {
+    font-size: 14.5px;
+    padding: 9px 12px;
+  }
+  .problem-bar-change {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+  .problem-bar-change-icon { font-size: 16px; }
+
+  .m13-step-hd {
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+  .m13-step-num {
+    width: 24px; height: 24px;
+    font-size: 12px;
+  }
+  .m13-step.expanded .m13-step-bd {
+    padding: 14px 14px 16px;
+  }
+  .m13-step-hint {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .m13-bottom-bar {
+    margin: 16px -16px -16px;
+    padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
+  }
+  .m13-bottom-row {
+    flex-direction: column-reverse;
+    gap: 8px;
+  }
+  .m13-result-badge {
+    width: 100%;
+    text-align: center;
+    font-size: 12.5px;
+  }
+  .m13-check-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -6461,93 +7081,163 @@ body.thumb-bar-open .koji-btn {
         <!-- ⑬ 解题思维训练 -->
         <section class="module" id="m13">
           <div class="card">
-            <h2>⑬ 解题思维训练 · 四步法</h2>
-            <details class="lesson-hint">
-              <summary>💡 不会做？点我看提示</summary>
-              <p>读题两遍圈一圈 → 草稿纸上分区写 → 一步公式一步带入 → 代回原题验一验。</p>
-            </details>
 
+            <!-- ⭐ 顶部：题目卡（sticky） -->
             <div class="problem-bar">
-              <select id="pSelect"></select>
-              <button class="btn" id="pLoad">📥 载入</button>
-              <input type="text" id="pCustom" placeholder="或手动输入题目…">
-              <button class="btn-secondary" id="pUseCustom">使用</button>
-              <label class="file-btn">📎 上传 txt<input type="file" id="pUpload" accept=".txt" hidden></label>
-              <button class="btn-secondary" id="pClear">🗑 清空</button>
+              <div class="problem-bar-current">
+                <div class="problem-bar-head">
+                  <span class="problem-bar-icon">📝</span>
+                  <span class="problem-bar-label">题目</span>
+                </div>
+                <div id="problem-text" contenteditable="true"
+                    data-placeholder="请点「换一题」选择题目，或直接在这里输入题目…"></div>
+              </div>
+              <button class="problem-bar-change" id="problemChangeBtn">
+                <span class="problem-bar-change-icon">🔄</span>
+                <span>换一题</span>
+              </button>
             </div>
 
-            <div class="step-card">
-              <div class="step-title"><span class="step-num">1</span>读题两遍 · 圈一圈<span class="step-tip">先选颜色，再划选中文字</span></div>
-              <div class="hl-toolbar">
-                <span class="hl-label">第一遍：</span>
-                <button class="hl-btn" data-color="#bfdbfe">数字</button>
-                <button class="hl-btn" data-color="#bbf7d0">条件</button>
-                <button class="hl-btn" data-color="#fed7aa">运算关系</button>
-                <button class="hl-btn" data-color="#e9d5ff">单位</button>
-                <span class="hl-sep"></span>
-                <span class="hl-label">第二遍：</span>
-                <button class="hl-btn" data-color="#a5f3fc">已知</button>
-                <button class="hl-btn" data-color="#fecaca">求什么</button>
-                <button class="hl-btn" data-color="#fef08a">缺什么</button>
-                <span class="hl-sep"></span>
-                <button class="hl-btn hl-clear" data-color="transparent">清除高亮</button>
+            <!-- ⭐ 换题抽屉（默认隐藏） -->
+            <div id="problemPickerDrawer" class="problem-picker-drawer" style="display:none;">
+              <div class="problem-picker-inner">
+                <div class="problem-picker-hd">
+                  <span>📚 选一道题</span>
+                  <button id="problemPickerClose" aria-label="关闭">×</button>
+                </div>
+                <div class="problem-picker-body">
+                  <select id="pSelect"></select>
+                  <button class="btn" id="pLoad">📥 载入</button>
+                  <div class="problem-picker-divider"><span>或</span></div>
+                  <input type="text" id="pCustom" placeholder="手动输入题目…">
+                  <button class="btn-secondary" id="pUseCustom">使用</button>
+                  <label class="file-btn">
+                    📎 上传 txt
+                    <input type="file" id="pUpload" accept=".txt" hidden>
+                  </label>
+                </div>
+                <button class="problem-picker-clear" id="pClear">🗑 清空当前题目</button>
               </div>
-              <div id="problem-text" contenteditable="true" data-placeholder="请在上方选择题目，或直接在这里输入题目…"></div>
             </div>
 
-            <div class="collapsible-section expanded">
-              <div class="collapsible-hd">
-                <span class="collapse-icon">▶</span>
-                <span class="collapse-title"><span class="step-num">2</span> 草稿纸 · 分区写</span>
-                <span class="collapse-hint">两步计算禁止心算</span>
+            <!-- ⭐ Step 1：读题圈一圈 -->
+            <div class="m13-step" data-step="1">
+              <div class="m13-step-hd">
+                <span class="m13-step-num">1</span>
+                <span class="m13-step-title">读题 · 圈一圈</span>
+                <span class="m13-step-status" data-status="pending"></span>
+                <span class="m13-step-arrow">▶</span>
               </div>
-              <div class="collapsible-bd">
+              <div class="m13-step-bd">
+                <div class="m13-step-hint">
+                  💡 第一遍圈数字、条件、运算；第二遍圈已知、求什么、缺什么
+                </div>
+                <div class="hl-toolbar">
+                  <span class="hl-label">第一遍：</span>
+                  <button class="hl-btn" data-color="#bfdbfe">数字</button>
+                  <button class="hl-btn" data-color="#bbf7d0">条件</button>
+                  <button class="hl-btn" data-color="#fed7aa">运算关系</button>
+                  <button class="hl-btn" data-color="#e9d5ff">单位</button>
+                  <span class="hl-sep"></span>
+                  <span class="hl-label">第二遍：</span>
+                  <button class="hl-btn" data-color="#a5f3fc">已知</button>
+                  <button class="hl-btn" data-color="#fecaca">求什么</button>
+                  <button class="hl-btn" data-color="#fef08a">缺什么</button>
+                  <span class="hl-sep"></span>
+                  <button class="hl-btn hl-clear" data-color="transparent">清除</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- ⭐ Step 2：草稿纸 -->
+            <div class="m13-step" data-step="2">
+              <div class="m13-step-hd">
+                <span class="m13-step-num">2</span>
+                <span class="m13-step-title">草稿纸 · 分区写</span>
+                <span class="m13-step-status" data-status="pending"></span>
+                <span class="m13-step-arrow">▶</span>
+              </div>
+              <div class="m13-step-bd">
+                <div class="m13-step-hint">
+                  💡 两步计算禁止心算，一步一步写下来
+                </div>
                 <div class="scratch-grid">
-                  <div class="scratch-cell"><span class="scratch-label">草稿 ①</span><textarea placeholder="第一步计算过程…"></textarea></div>
-                  <div class="scratch-cell"><span class="scratch-label">草稿 ②</span><textarea placeholder="第二步计算过程…"></textarea></div>
-                  <div class="scratch-cell"><span class="scratch-label">草稿 ③</span><textarea placeholder="验算 / 检查过程…"></textarea></div>
-                  <div class="scratch-cell"><span class="scratch-label">草稿 ④</span><textarea placeholder="备用…"></textarea></div>
+                  <div class="scratch-cell">
+                    <span class="scratch-label">草稿 ①</span>
+                    <textarea placeholder="第一步计算过程…"></textarea>
+                  </div>
+                  <div class="scratch-cell">
+                    <span class="scratch-label">草稿 ②</span>
+                    <textarea placeholder="第二步计算过程…"></textarea>
+                  </div>
+                  <div class="scratch-cell">
+                    <span class="scratch-label">草稿 ③</span>
+                    <textarea placeholder="验算 / 检查过程…"></textarea>
+                  </div>
+                  <div class="scratch-cell">
+                    <span class="scratch-label">草稿 ④</span>
+                    <textarea placeholder="备用…"></textarea>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div class="collapsible-section expanded">
-              <div class="collapsible-hd">
-                <span class="collapse-icon">▶</span>
-                <span class="collapse-title"><span class="step-num">3</span> 一步公式 · 一步带入 · 一步结果</span>
-                <span class="collapse-hint">几步都行，按你的思路写</span>
+            <!-- ⭐ Step 3：公式步骤 -->
+            <div class="m13-step" data-step="3">
+              <div class="m13-step-hd">
+                <span class="m13-step-num">3</span>
+                <span class="m13-step-title">关系式 · 代入 · 得数</span>
+                <span class="m13-step-status" data-status="pending"></span>
+                <span class="m13-step-arrow">▶</span>
               </div>
-              <div class="collapsible-bd">
-                <div id="formulaSteps">
-                  <!-- 动态生成 -->
+              <div class="m13-step-bd">
+                <div class="m13-step-hint">
+                  💡 一步公式、一步代入、一步结果，几步都行
                 </div>
-                <div style="display:flex;gap:10px;margin-top:12px;">
-                  <button class="btn-secondary" id="addStepBtn" style="flex:1;">＋ 添加一步</button>
-                  <button class="btn-secondary" id="removeStepBtn" style="flex:1;">－ 删除最后一步</button>
+                <div id="formulaSteps"></div>
+                <div class="m13-step-actions">
+                  <button class="btn-secondary" id="addStepBtn">＋ 添加一步</button>
+                  <button class="btn-secondary" id="removeStepBtn">－ 删除最后一步</button>
                 </div>
               </div>
             </div>
 
-        <!-- 标准解题过程（密码 + 逐步折叠） -->
-        <div id="m13StepsLocked" class="steps-locked" style="display:none;">
-          <button class="steps-locked-btn" id="m13UnlockBtn">
-            🔒 查看标准解题过程（需要密码）
-          </button>
-        </div>
-
-        <div id="m13StandardSteps" class="standard-steps" style="display:none;"></div>
-        <!-- ⭐ A. 错题画像面板 -->
-        <div id="errorProfilePanel" class="error-profile-panel" style="display:none;"></div>
-
-            <div class="step-card">
-              <div class="step-title"><span class="step-num">4</span>代回原题验一验<span class="step-tip">检查答案是否合理</span></div>
-              <div class="check-area">
-                <label>我的答案：</label>
-                <input type="text" id="pAnswer" placeholder="写出最终答案（含单位）">
-                <button class="btn" id="pCheck">✔ 检查</button>
-                <span id="pResult"></span>
+            <!-- ⭐ Step 4：我的答案 + 一题一得 -->
+            <div class="m13-step" data-step="4">
+              <div class="m13-step-hd">
+                <span class="m13-step-num">4</span>
+                <span class="m13-step-title">我的答案</span>
+                <span class="m13-step-status" data-status="pending"></span>
+                <span class="m13-step-arrow">▶</span>
               </div>
-              <!-- 新增：AI 加载状态容器 -->
+              <div class="m13-step-bd">
+                <div class="check-area">
+                  <label>我的答案</label>
+                  <input type="text" id="pAnswer" placeholder="写出最终答案（含单位）">
+                </div>
+
+                <div class="takeaway">
+                  <h4>💡 一题一得 · 这道题教会我什么？</h4>
+                  <div class="takeaway-row">
+                    <input type="text" id="pTakeaway"
+                          placeholder="例：遇到「还剩多少」，要用减法；先算一共用去多少，再减…">
+                    <button type="button" id="pTakeawaySave" class="btn-secondary">💾 保存</button>
+                  </div>
+                  <div id="pTakeawayHint" class="takeaway-hint"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ⭐ 标准解题过程（折叠在底部） -->
+            <div id="m13StepsLocked" class="steps-locked" style="display:none;">
+              <button class="steps-locked-btn" id="m13UnlockBtn">
+                🔒 查看标准解题过程（需要密码）
+              </button>
+            </div>
+            <div id="m13StandardSteps" class="standard-steps" style="display:none;"></div>
+
+            <!-- ⭐ 底部固定：检查按钮 + AI 加载态 -->
+            <div class="m13-bottom-bar">
               <div id="aiThinking" class="ai-thinking" style="display:none;">
                 <span class="dots"><span></span><span></span><span></span></span>
                 <div>
@@ -6556,23 +7246,10 @@ body.thumb-bar-open .koji-btn {
                 </div>
                 <span class="think-time" id="aiThinkingTime">0.0s</span>
               </div>
-
-              <div class="takeaway" style="margin-top:16px;">
-                <h4>💡 一题一得 · 这道题教会我什么？</h4>
-                <div style="display:flex;gap:10px;align-items:center;">
-                  <input type="text" id="pTakeaway"
-                         placeholder="例：遇到「还剩多少」，要用减法；先算一共用去多少，再减…"
-                         style="flex:1;">
-                  <button type="button" id="pTakeawaySave" class="btn-secondary"
-                          style="flex-shrink:0;min-width:110px;white-space:nowrap;">
-                    💾 保存
-                  </button>
-                </div>
-                <div id="pTakeawayHint"
-                     style="margin-top:8px;font-size:12.5px;color:#94a3b8;font-weight:600;min-height:18px;">
-                </div>
+              <div class="m13-bottom-row">
+                <span id="pResult" class="m13-result-badge"></span>
+                <button class="m13-check-btn" id="pCheck">✔ 检查</button>
               </div>
-
             </div>
 
           </div>
@@ -6781,6 +7458,8 @@ body.thumb-bar-open .koji-btn {
 
             <!-- ⭐ 展开后显示的 5 个内容面板（默认全部隐藏） -->
             <div id="growthDetailPanels">
+              <! 错题画像面板>
+              <div id="errorProfilePanel" class="error-profile-panel" style="display:none;"></div>
 
               <div class="collapsible-section" id="historySection">
                 <div class="collapsible-hd">
