@@ -678,8 +678,35 @@ button:not(.tab):not(:disabled) {
   border-radius: 6px;
   box-shadow: 0 0 0 2px var(--primary) inset;
 }
-.expr-box { background:linear-gradient(135deg,#f8fbff,#eef5ff); border:2px dashed #bfd7f5; border-radius:16px; padding:26px 20px; text-align:center; min-height:110px; display:flex; align-items:center; justify-content:center; }
-.expr { display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:center; }
+/* ============================================================
+   M1 混合运算 - 算式区域 (支持换行与居中)
+   ============================================================ */
+.expr-box {
+  background: linear-gradient(135deg, #f8fbff, #eef5ff);
+  border: 2px dashed #bfd7f5;
+  border-radius: 16px;
+  padding: 20px 16px;
+  min-height: 110px;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* 居中 */
+}
+
+.expr {
+  display: flex;
+  gap: 12px 8px; /* 上下间距 12px，左右间距 8px */
+  align-items: center;
+  flex-wrap: wrap; /* ⭐ 关键：允许换行 */
+  justify-content: center; /* ⭐ 关键：换行后依然居中对齐 */
+  width: 100%;
+}
+
+/* 移动端微调，让换行后的算式更紧凑 */
+@media (max-width: 600px) {
+  .expr-box { padding: 16px 12px; min-height: 90px; }
+  .expr { gap: 10px 6px; }
+}
+
 .token { display:inline-flex; align-items:center; justify-content:center; font-size:32px; font-weight:800; min-width:50px; height:58px; border-radius:12px; padding:0 10px; animation:pop .25s ease; }
 @keyframes pop { 0%{transform:scale(.6);opacity:0;} 100%{transform:scale(1);opacity:1;} }
 .token.num { background:#fff; color:var(--text); box-shadow:0 2px 8px rgba(15,23,42,.08); }
@@ -6158,8 +6185,13 @@ body.thumb-bar-open .koji-btn {
 .problem-bar-head {
   display: flex;
   align-items: center;
+  justify-content: space-between; /* 标题在左，按钮在右 */
+  margin-bottom: 8px;
+}
+.problem-bar-head-left {
+  display: flex;
+  align-items: center;
   gap: 6px;
-  margin-bottom: 6px;
 }
 .problem-bar-icon { font-size: 14px; }
 .problem-bar-label {
@@ -6192,32 +6224,26 @@ body.thumb-bar-open .koji-btn {
   color: #cbd5e1;
 }
 .problem-bar-change {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 8px 12px;
-  border: 2px solid #2563eb;
-  border-radius: 12px;
-  background: #fff;
-  color: #2563eb;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
   font-size: 12px;
-  font-weight: 800;
-  font-family: inherit;
+  font-weight: 700;
   cursor: pointer;
-  white-space: nowrap;
   transition: all .15s;
 }
 .problem-bar-change:hover {
+  border-color: #2563eb;
+  color: #2563eb;
   background: #eff6ff;
 }
-.problem-bar-change:active {
-  transform: scale(.96);
-}
 .problem-bar-change-icon {
-  font-size: 18px;
-  line-height: 1;
+  font-size: 14px;
 }
 
 /* ---------- 换题抽屉 ---------- */
@@ -7310,17 +7336,21 @@ body.input-focused .daily-suggest {
             <!-- ⭐ 顶部：题目卡（sticky） -->
             <div class="problem-bar">
               <div class="problem-bar-current">
+                
+                <!-- ⭐ 把换题按钮移到标题行 -->
                 <div class="problem-bar-head">
-                  <span class="problem-bar-icon">📝</span>
-                  <span class="problem-bar-label">题目</span>
+                  <div class="problem-bar-head-left">
+                    <span class="problem-bar-icon">📝</span>
+                    <span class="problem-bar-label">题目</span>
+                  </div>
+                  <button class="problem-bar-change" id="problemChangeBtn">
+                    <span class="problem-bar-change-icon">🔄</span> 换一题
+                  </button>
                 </div>
+
                 <div id="problem-text" contenteditable="true"
                     data-placeholder="请点「换一题」选择题目，或直接在这里输入题目…"></div>
               </div>
-              <button class="problem-bar-change" id="problemChangeBtn">
-                <span class="problem-bar-change-icon">🔄</span>
-                <span>换一题</span>
-              </button>
             </div>
 
             <!-- ⭐ 换题抽屉（默认隐藏） -->
