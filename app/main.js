@@ -3604,14 +3604,14 @@ function m13RenderSteps() {
         <label>关系式</label>
         <input type="text" data-idx="${i}" data-field="rel"
                value="${escapeHtmlStrict(s.rel)}"
-               placeholder="${i === 0 ? '例：还剩的钱 = 总钱数 − 用去的钱' : '例：总棵树 = 苹果树 + 梨树'}">
-                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+               placeholder="${i === 0 ? '例：还剩的钱 = 总钱数 − 用去的钱' : '例：总棵树 = 苹果树 + 梨树'}"
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="formula-line">
         <label>代入数字</label>
         <input type="text" data-idx="${i}" data-field="sub"
                value="${escapeHtmlStrict(s.sub)}"
-               placeholder="${i === 0 ? '例：15 − 8 − 3' : '例：32 + 5'}">
+               placeholder="${i === 0 ? '例：15 − 8 − 3' : '例：32 + 5'}"
                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="formula-line">
