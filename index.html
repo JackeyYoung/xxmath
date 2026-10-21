@@ -4705,6 +4705,12 @@ html { scroll-padding-bottom: 300px; }
 }
 @keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
+/* ⭐ 去掉各种可能导致 iOS 白屏的固定高度限制 */
+.page {
+  min-height: calc(100vh - 60px); /* 60px 是底部的安全距离估算 */
+  padding-bottom: 100px;          /* 给最底部留足滑动空间 */
+}
+
 /* ---- Home ---- */
 .home-wrap { max-width: 1200px; margin: 0 auto; padding: 16px; }
 
@@ -6742,12 +6748,6 @@ html, body {
   overscroll-behavior-y: none;
 }
 
-/* ⭐ 锁定视口高度，防止 iOS 键盘把整个页面顶飞 */
-html, body {
-  height: 100%;
-  overflow: hidden; /* 禁止 body 滚动，让内部容器滚动 */
-}
-
 /* 允许主容器滚动 */
 #modulePool {
   height: 100%;
@@ -6756,11 +6756,11 @@ html, body {
   padding-bottom: 120px; /* 给底部留空间 */
 }
 
-/* ⭐ 键盘弹起时（body 添加了 input-focused 类）*/
+/* ⭐ 仅当键盘弹出时，隐藏悬浮球和底部固定栏（防遮挡） */
 body.input-focused .koji-btn,
 body.input-focused .wrong-book-btn,
 body.input-focused .m13-bottom-bar {
-  display: none !important; /* 隐藏悬浮球和底部按钮栏 */
+  display: none !important;
 }
 
 /* 修复 Safari 键盘弹起时留下的白边 */
