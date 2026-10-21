@@ -6185,9 +6185,10 @@ body.thumb-bar-open .koji-btn {
 .problem-bar-head {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* 标题在左，按钮在右 */
+  justify-content: space-between; /* 标签在左，按钮在右 */
   margin-bottom: 8px;
 }
+
 .problem-bar-head-left {
   display: flex;
   align-items: center;
@@ -6223,29 +6224,34 @@ body.thumb-bar-open .koji-btn {
   content: attr(data-placeholder);
   color: #cbd5e1;
 }
+/* ⭐ 无边框“换一题”按钮 */
 .problem-bar-change {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
-  border: 1.5px solid #cbd5e1;
-  border-radius: 8px;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 12px;
+  /* 不给边框和背景 */
+  border: none;
+  background: transparent;
+  color: #2563eb; /* 蓝色文字，指引点击 */
+  font-size: 13px;
   font-weight: 700;
+  padding: 6px 8px; /* 保持足够的点击热区 */
+  margin-right: -8px; /* 视觉上向右侧靠齐输入框边缘 */
+  border-radius: 8px;
   cursor: pointer;
   transition: all .15s;
 }
-.problem-bar-change:hover {
-  border-color: #2563eb;
-  color: #2563eb;
+
+/* 点击时的轻微反馈 */
+.problem-bar-change:hover,
+.problem-bar-change:active {
   background: #eff6ff;
+  color: #1d4ed8;
 }
+
 .problem-bar-change-icon {
   font-size: 14px;
 }
-
 /* ---------- 换题抽屉 ---------- */
 .problem-picker-drawer {
   position: fixed;
