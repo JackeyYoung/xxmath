@@ -464,26 +464,27 @@ function m1ShowPriorityBox() {
   // 绑定
   opts.querySelectorAll('.priority-opt').forEach(btn => {
     btn.addEventListener('click', () => {
-      const level = window.__m9CurrentLevel || null;
-      let op;
-      if (level === 'add') op = '+';
-      else if (level === 'sub') op = '−';
-      else if (level === 'mul') op = '×';
-      else if (level === 'div') op = '÷';
-      else op = ['+', '−', '×', '÷'][Math.floor(Math.random() * 4)];
+      const key = btn.dataset.key;
+      const isCorrect = M1_PRIORITY.expectedOps.includes(key);
 
-      const { a, b } = randomProblemByOp(op);
-      aInput.value = a;
-      bInput.value = b;
-      opInput.value = op;
-      aInput.dispatchEvent(new Event('input', { bubbles: true }));
-      bInput.dispatchEvent(new Event('input', { bubbles: true }));
-      opInput.dispatchEvent(new Event('change', { bubbles: true }));
+      opts.querySelectorAll('.priority-opt').forEach(b => {
+        b.classList.remove('chosen', 'wrong', 'correct');
+      });
+      btn.classList.add('chosen');
+      btn.classList.add(isCorrect ? 'correct' : 'wrong');
 
-      const fb = document.getElementById('m9fb');
-      if (fb) {
-        fb.className = 'feedback ok';
-        fb.innerHTML = `🎲 已生成：${a} ${op} ${b}，点击「下一步」开始计算`;
+      if (isCorrect) {
+        fb.textContent = '✓ 对！先算乘除，再算加减。现在点击算式中的运算符。';
+        fb.className = 'priority-feedback ok';
+        M1_PRIORITY.passed = true;
+        setTimeout(() => {
+          box.style.display = 'none';
+          m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
+        }, 800);
+      } else {
+        fb.textContent = '❌ 再想想——有乘除时，要先算乘除哦！';
+        fb.className = 'priority-feedback error';
+        setTimeout(() => btn.classList.remove('chosen', 'wrong'), 800);
       }
     });
   });
