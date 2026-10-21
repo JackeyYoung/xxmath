@@ -7000,7 +7000,7 @@ body.input-focused .daily-suggest {
   padding: 16px !important;
 }
 
-/* ⭐ 终极隐藏：不留一丝空间 */
+/* 1. 彻底清理层级隐藏时的空白 */
 .lesson-levels.is-hidden {
   display: none !important;
   height: 0 !important;
@@ -7008,6 +7008,56 @@ body.input-focused .daily-suggest {
   margin: 0 !important;
   border: none !important;
   overflow: hidden !important;
+}
+
+/* 2. 解决隐藏层级后，progress 顶部的空白 */
+#page-lesson {
+  display: none;
+}
+#page-lesson.active {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.lesson-progress {
+  margin: 0 !important;
+  padding: 10px 16px !important;
+  border-bottom: none !important; /* 如果有层级，靠层级条来分割 */
+}
+.lesson-levels:not(.is-hidden) + .lesson-stage {
+  margin-top: 0;
+}
+
+/* 修复随机按钮的居中问题 */
+#pRandomBtn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 44px;
+}
+
+/* 给上传 txt 加上按键框和立体感 */
+.problem-picker-body .file-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 10px 16px !important;
+  border: 2px solid var(--border) !important;
+  border-radius: 14px !important;
+  background: #fff !important;
+  color: var(--muted) !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  transition: all .15s !important;
+  height: 44px;
+  margin-top: 4px; /* 稍微跟上方分开一点 */
+}
+
+.problem-picker-body .file-btn:hover {
+  border-color: #b8c6d8 !important;
+  color: var(--text) !important;
+  background: #f8fafc !important;
 }
 
 </style>
@@ -7463,16 +7513,46 @@ body.input-focused .daily-suggest {
                   <button id="problemPickerClose" aria-label="关闭">×</button>
                 </div>
                 <div class="problem-picker-body">
-                  <select id="pSelect"></select>
-                  <button class="btn" id="pLoad">📥 载入</button>
+  
+                  <!-- ⭐ 下拉框 + 随机按钮（使用 flex 并排） -->
+                  <div style="display: flex; gap: 8px;">
+                    <select id="pSelect" style="flex: 1; min-width: 0;">
+                      <!-- 下拉选项由 m13InitSelect 动态注入，这里不需要写死 -->
+                    </select>
+                    <button class="btn-secondary" id="pRandomBtn" style="flex-shrink: 0; padding: 0 16px; height: 44px;">🎲 随机</button>
+                  </div>
+
+                  <!-- 载入按钮 -->
+                  <button class="btn" id="pLoad" data-_orig-text="📥 载入" style="height: 44px;">📥 载入</button>
+                  
                   <div class="problem-picker-divider"><span>或</span></div>
+                  
+                  <!-- 自定义输入 -->
                   <input type="text" id="pCustom" placeholder="手动输入题目…">
                   <button class="btn-secondary" id="pUseCustom">使用</button>
+                  
+                  <!-- AI 生成按钮（放在这里最顺手） -->
+                  <button class="btn-secondary ai-btn" id="pickerAiBtn" style="border-color: #c4b5fd; background: #f5f3ff; color: #6d28d9;">
+                    🤖 让 AI 生成一道同类题
+                  </button>
+                  
                   <label class="file-btn">
                     📎 上传 txt
                     <input type="file" id="pUpload" accept=".txt" hidden>
                   </label>
                 </div>
+
+                <!-- AI 生成时的加载态（默认隐藏） -->
+                <div id="pickerAiLoading" style="display: none; padding: 40px 20px; text-align: center;">
+                  <div class="ai-thinking" style="justify-content: center;">
+                    <span class="dots"><span></span><span></span><span></span></span>
+                    <div style="text-align: left;">
+                      <div class="think-text">🤖 AI 正在为你出题…</div>
+                      <div class="think-sub" id="pickerAiSub">正在分析当前题目的知识点</div>
+                    </div>
+                  </div>
+                </div>
+
                 <button class="problem-picker-clear" id="pClear">🗑 清空当前题目</button>
               </div>
             </div>

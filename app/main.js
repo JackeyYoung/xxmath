@@ -4330,6 +4330,43 @@ $('#pLoad').addEventListener('click', () => {
   renderStandardSteps(p);
 });
 
+// （原有的 pLoad 代码保持不动）
+
+/* ⭐ 新增：随机抽题按钮逻辑 */
+$('#pRandomBtn')?.addEventListener('click', (e) => {
+  e.preventDefault();
+  const select = $('#pSelect');
+  
+  if (!select || select.options.length <= 1) {
+    showToast('题库暂不可用', 'error');
+    return;
+  }
+
+  // 过滤掉第一项（value为空的那个“选择一道题目”），获取所有真实的题目选项
+  const validOptions = Array.from(select.options).filter(opt => opt.value !== '');
+  
+  if (validOptions.length === 0) {
+    showToast('当前层级下没有题目', 'info');
+    return;
+  }
+
+  // 随机抽取一个选项
+  const randomOpt = validOptions[Math.floor(Math.random() * validOptions.length)];
+  
+  // 1. 设置下拉框的值
+  select.value = randomOpt.value;
+  
+  // 2. 直接触发原「载入」按钮的点击事件，完美复用原逻辑
+  $('#pLoad').click();
+  
+  // 3. 延迟一点关闭抽屉，让用户看到题目已选中
+  setTimeout(() => {
+    const drawer = document.getElementById('problemPickerDrawer');
+    if (drawer) drawer.style.display = 'none';
+    document.body.classList.remove('modal-open');
+  }, 100);
+});
+
 $('#pUseCustom').addEventListener('click', () => {
   const t = $('#pCustom').value.trim();
   if (!t) return;
@@ -10285,6 +10322,13 @@ function showUnreadParentMsg() {
     if (!drawer) return;
     drawer.style.display = 'flex';
     document.body.classList.add('modal-open');
+
+    // ⭐ 核心修复：把恢复逻辑放进这里
+    // 每次用户点击“换一题”打开抽屉时，强制恢复列表，隐藏 AI loading
+    const bodyEl = drawer.querySelector('.problem-picker-body');
+    const loadingEl = drawer.querySelector('#pickerAiLoading');
+    if (bodyEl) bodyEl.style.display = 'flex';
+    if (loadingEl) loadingEl.style.display = 'none';
   }
   function closeDrawer() {
     if (!drawer) return;
@@ -10369,3 +10413,114 @@ function showUnreadParentMsg() {
     }
   });
 })();
+
+/* ============================================================
+   M13 拓展：AI 生成同类题
+   ============================================================ */
+(function initM13SmartPicker() {
+  const drawer = document.getElementById('problemPickerDrawer');
+  const aiBtn = document.getElementById('pickerAiBtn');
+  if (!drawer || !aiBtn) return;
+
+  aiBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    
+    // 获取当前正在做的题目文本，作为 AI 的参考
+    const currentText = document.getElementById('problem-text')?.innerText.trim();
+    if (!currentText) {
+      showToast('请先载入或输入一道题目，AI 才能参考出题', 'info');
+      return;
+    }
+
+    const bodyEl = drawer.querySelector('.problem-picker-body');
+    const loadingEl = document.getElementById('pickerAiLoading');
+    const subText = document.getElementById('pickerAiSub');
+
+    // 切换到加载状态
+    if (bodyEl) bodyEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'block';
+    if (subText) subText.textContent = `正在参考「${currentText.slice(0, 10)}...」生成同类题`;
+
+    try {
+      // 调用 AI 核心函数
+      const newProblem = await aiGenerateSimilarProblem(currentText);
+      
+      // 生成成功：关闭抽屉
+      drawer.style.display = 'none';
+      document.body.classList.remove('modal-open');
+      
+      // 将 AI 生成的新题填入「自定义题目」输入框并触发载入
+      const customInput = document.getElementById('pCustom');
+      if (customInput) {
+        customInput.value = newProblem.text;
+        document.getElementById('pUseCustom')?.click();
+      }
+      
+      showToast('✅ AI 新题生成成功！', 'success');
+
+    } catch (err) {
+      console.error('AI 生成失败', err);
+      showToast('AI 生成失败：' + err.message, 'error');
+    } finally {
+      // 恢复 UI 状态
+      if (bodyEl) bodyEl.style.display = 'flex';
+      if (loadingEl) loadingEl.style.display = 'none';
+    }
+  });
+})();
+
+/* ---------- 调用大模型生成同类题的核心函数 ---------- */
+async function aiGenerateSimilarProblem(referenceText) {
+  if (!LLM_CONFIG.enabled) throw new Error('大模型未启用');
+
+  // 严格要求 AI 输出 JSON 格式
+  const systemPrompt = `你是一位三年级数学老师。
+请参考下面这道题的知识点和难度，出【一道】全新的同类题目。
+
+要求：
+1. 必须是三年级水平，数字合理，能用加减乘除解决。
+2. 题目描述要生活化、有趣。
+3. 必须严格按以下 JSON 格式输出，不要包含任何多余文字、不要 markdown 代码块：
+{
+  "text": "题目文本（带单位，适合直接展示给学生）",
+  "answer": "最终答案（带单位，如 40元）"
+}`;
+
+  const userPrompt = `原题：${referenceText}\n\n请出 1 道同类新题。`;
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (LLM_CONFIG.apiKey) headers['Authorization'] = `Bearer ${LLM_CONFIG.apiKey}`;
+
+  const body = {
+    model: LLM_CONFIG.model,
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ],
+    response_format: { type: 'json_object' },
+    temperature: 0.7, // 调高温度，增加题目的变化
+    max_tokens: 500
+  };
+
+  const res = await fetch(LLM_CONFIG.apiUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) throw new Error(`API 报错：${res.status}`);
+
+  const data = await res.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('模型未返回内容');
+
+  // 清洗并解析 JSON
+  const clean = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '');
+  const parsed = extractJson(clean); // 复用你现有的解析工具
+
+  if (!parsed || !parsed.text) {
+    throw new Error('模型返回格式异常');
+  }
+
+  return parsed;
+}
