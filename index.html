@@ -6768,6 +6768,16 @@ body.input-focused #modulePool {
   padding-bottom: 50vh; /* 强制留出键盘高度的空间 */
 }
 
+/* ⭐ 键盘弹起时，隐藏所有悬浮元素和底部反馈条 */
+body.input-focused .koji-btn,
+body.input-focused .wrong-book-btn,
+body.input-focused .m13-bottom-bar,
+body.input-focused .thumb-bar, 
+body.input-focused .daily-cheat,
+body.input-focused .daily-suggest {
+  display: none !important;
+}
+
 </style>
 </head>
 <body>

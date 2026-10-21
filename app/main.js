@@ -339,6 +339,23 @@ function m1RenderSteps() {
         if (e.key === 'Enter') { e.preventDefault(); m1SubmitAnswer(); }
         else if (e.key === 'Escape') { m1CancelInput(); }
       });
+
+      // ⭐ 失焦提交（点击屏幕空白处时触发）
+      let blurTimeout = null;
+      inp.addEventListener('blur', () => {
+        // 延迟一点点，防止点击确认按钮时先触发了 blur 导致重复提交
+        blurTimeout = setTimeout(() => {
+          if (inp.value.trim()) {
+            m1SubmitAnswer();
+          }
+        }, 150);
+      });
+
+      // 如果重新聚焦，取消刚才的 blur 提交
+      inp.addEventListener('focus', () => {
+        if (blurTimeout) clearTimeout(blurTimeout);
+      });
+
       // ⭐ 统一聚焦
       focusInputWhenReady('m1Input');
     }
@@ -3344,6 +3361,13 @@ m8Render();
 
   /* ---------- 重置 ---------- */
   function m9Reset() {
+    // ⭐ 新增：清除上一题的反馈条
+    if (window.__shell && typeof window.__shell.hideThumbBar === 'function') {
+      window.__shell.hideThumbBar();
+    }
+    // 兜底直接移除类名
+    document.getElementById('thumbBar')?.classList.remove('show', 'ok', 'err');
+
     let a = +aInput.value, b = +bInput.value;
 
     // ⭐ 洗数据：NaN → 0；小数 → 整数；超范围 → 裁剪
@@ -10288,12 +10312,18 @@ function showUnreadParentMsg() {
   document.addEventListener('focusin', (e) => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) {
       document.body.classList.add('input-focused');
+      
+      // ⭐ 阻止 iOS 因为聚焦而顶飞整个页面
+      setTimeout(() => {
+        // 滚动页面，让输入框居中
+        e.target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 300);
+
     }
   });
 
   document.addEventListener('focusout', (e) => {
     if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) {
-      // 延时检查，防止切换输入法（如从中文切符号）时误判失焦
       setTimeout(() => {
         const active = document.activeElement;
         if (!active || !/INPUT|TEXTAREA/.test(active.tagName)) {
