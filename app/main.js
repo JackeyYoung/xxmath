@@ -3605,12 +3605,14 @@ function m13RenderSteps() {
         <input type="text" data-idx="${i}" data-field="rel"
                value="${escapeHtmlStrict(s.rel)}"
                placeholder="${i === 0 ? '例：还剩的钱 = 总钱数 − 用去的钱' : '例：总棵树 = 苹果树 + 梨树'}">
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="formula-line">
         <label>代入数字</label>
         <input type="text" data-idx="${i}" data-field="sub"
                value="${escapeHtmlStrict(s.sub)}"
                placeholder="${i === 0 ? '例：15 − 8 − 3' : '例：32 + 5'}">
+               autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
       </div>
       <div class="formula-line">
         <label>得数</label>
@@ -3661,15 +3663,6 @@ function m13RenderSteps() {
       // ⭐ 新增：回车跳到下一个输入框
       if (nextInput) focusInput(nextInput);
     });
-  });
-
-  // ⭐ 自动聚焦第一个空输入框
-  requestAnimationFrame(() => {
-    const inputs = [...c.querySelectorAll('input[data-idx]')];
-    const firstEmpty = inputs.find(inp => !inp.value.trim());
-    if (firstEmpty) {
-      focusInput(firstEmpty);
-    }
   });
 }
 
@@ -7424,22 +7417,18 @@ const _KEY_INPUT_IDS = [
 document.addEventListener('focusin', e => {
   const t = e.target;
   if (!t || !/INPUT|TEXTAREA/.test(t.tagName)) return;
-
-  // ⭐ 关键输入框：延迟 320ms（等键盘动画完成）后滚动
-  const isKey = _KEY_INPUT_IDS.includes(t.id);
-  const delay = isKey ? 320 : 260;
-
+  
+  // 延迟到键盘完全弹起后
   setTimeout(() => {
     try {
       const rect = t.getBoundingClientRect();
-      const vv = window.visualViewport;
-      const vh = (vv && vv.height) || window.innerHeight;
-      // 底部进入键盘区 → 滚到中间
-      if (rect.bottom > vh - 100) {
-        t.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const vh = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      // 如果输入框被键盘遮挡了，才滚动（且只用 nearest，不居中）
+      if (rect.bottom > vh - 20) {
+        t.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
       }
     } catch (err) {}
-  }, delay);
+  }, 320);
 });
 
 // ⭐ 键盘弹起时（visualViewport 变化）也补滚一次
@@ -10288,4 +10277,25 @@ function showUnreadParentMsg() {
     if (e.target.closest('#formulaSteps')) refreshCheckBtn();
   });
   refreshCheckBtn();
+})();
+
+/* ⭐ 监听全局输入框聚焦，动态加 body class */
+(function patchInputFocusClass() {
+  document.addEventListener('focusin', (e) => {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) {
+      document.body.classList.add('input-focused');
+    }
+  });
+
+  document.addEventListener('focusout', (e) => {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) {
+      // 延时检查，防止切换输入法（如从中文切符号）时误判失焦
+      setTimeout(() => {
+        const active = document.activeElement;
+        if (!active || !/INPUT|TEXTAREA/.test(active.tagName)) {
+          document.body.classList.remove('input-focused');
+        }
+      }, 100);
+    }
+  });
 })();

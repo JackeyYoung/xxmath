@@ -6427,6 +6427,10 @@ body.thumb-bar-open .koji-btn {
   flex: 1;
 }
 
+.m13-step.expanded .m13-step-bd {
+  padding-bottom: 120px; /* 给软键盘和候选词留出空间 */
+}
+
 /* ---------- 高亮工具栏（移动端横向滚动） ---------- */
 .hl-toolbar {
   display: flex;
@@ -6657,6 +6661,15 @@ body.thumb-bar-open .koji-btn {
     width: 100%;
     min-width: 0;
   }
+}
+
+/* ⭐ 键盘弹起（输入框聚焦）时，隐藏底部操作栏，防止挡住输入框 */
+body.input-focused .m13-bottom-bar {
+  display: none !important;
+}
+/* 防止 iOS 输入法切换时页面上下抖动 */
+html, body {
+  overscroll-behavior-y: none;
 }
 
 </style>
