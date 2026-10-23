@@ -14,20 +14,43 @@ import {
 escapeHtmlStrict, escapeHtml,
 } from '../core/html.js';
 
-import { showToast } from '../core/toast.js';
-
 import { msgLoad, msgAdd, msgReply, msgGroupByTime, msgMarkAllRead } from '../core/parent-message.js';
 import { targetLoad, targetSave, targetReset, DEFAULT_TARGETS } from '../core/target.js';
 import { getStorageHealth, onStorageError } from '../core/storage.js';
 import { getSyncState, forceSync, onSyncStateChange } from '../core/sync/sync-manager.js';
 import { getErrorLog } from '../core/errors.js';
-import { lsGet, lsSet } from '../core/storage.js';
 
 import { openSyncSetupModal } from './sync-setup-ui.js';
 import {
   getCurrentUser,
   ensureAnonymousLogin,
 } from '../core/sync/auth.js';
+
+import { loadGrade } from '../grades/registry.js'; 
+
+import { lsGet, lsSet } from '../core/storage.js';
+import { showToast } from '../core/toast.js';
+import { focusInputWhenReady } from '../core/input-focus.js';
+import { historyAdd } from '../core/history.js';
+import { masteryRecord } from '../core/mastery.js';
+import { takeawayLoad } from '../core/takeaway.js';
+import { showMasteryCard } from '../core/ui/mastery-card.js';
+import { buildAiInsightHtml } from '../core/ui/ai-insight.js';
+import { activityAdd } from '../core/activity.js';
+
+import { historySave } from '../core/history.js';
+import { wbAdd } from '../core/wrongbook.js';
+
+// shell.js 顶部建立全局模块注册表（让模块自己报备重做）
+export const activeModules = {}; 
+export function registerActiveModule(id, api) {
+  activeModules[id] = api;
+}
+export function unregisterActiveModule(id) {
+  delete activeModules[id];
+}
+
+let _currentCleanup = null;
 
 /* ============================================================
    1. 年级配置（为多年级扩展做准备）
@@ -631,242 +654,95 @@ function retriggerModuleRender(lessonId) {
 
 function mountLesson(lessonId) {
   if (!lessonId) lessonId = 'm1';
+  const stage = document.getElementById('lesson-stage-main') || document.getElementById('modulePool');
+  if (!stage) return;
+
+  // ⭐ 核心防线：在挂载新内容前，强制清空容器内的所有 DOM！
+  stage.innerHTML = '';
+
+  // 1. 卸载旧模块（增加类型判断，防止异步加载未完成时报错）
+  if (_currentCleanup && typeof _currentCleanup === 'function') {
+    try { 
+      _currentCleanup(); 
+    } catch (e) { 
+      console.warn('卸载模块失败', e); 
+    }
+  }
+  _currentCleanup = null; // 无论是不是函数，都强制置空
+
+  // 2. 基础 UI 调整
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-lesson')?.classList.add('active');
+  document.getElementById('globalHeader').style.display = 'none';
+
   const meta = LESSON_META[lessonId] || LESSON_META.m1;
-  const pool = document.getElementById('modulePool');
-  if (!pool) return;
-
-  pool.querySelectorAll('.module').forEach(m => m.classList.remove('active'));
-  const section = document.getElementById(lessonId);
-  if (!section) return;
-  section.classList.add('active');
-  retriggerModuleRender(lessonId);
-
-  // ⭐ 动态路径点：根据本模块历史记录算进度
-  const history = historyLoad();
-  const moduleRecords = history.filter(r => r.moduleId === lessonId);
-  const totalCount = moduleRecords.length;
-  const correctCount = moduleRecords.filter(r => r.isCorrect).length;
-
-  // ⭐ 路径点对应"难度层级"，而不是"做题数量"
-  const LEVELS = {
-    m1: [
-      {
-        id: 'no-paren',
-        name: '无括号',
-        icon: '1️⃣',
-        desc: '先算乘除，后算加减',
-        unlockAt: 0,           // 0 = 一开始就解锁
-        test: (r) => !/[()（）]/.test(r.problemText),
-        generate: () => window.__M1_PRESETS.filter(p => !/[()（）]/.test(p.expr)),
-      },
-      {
-        id: 'with-paren',
-        name: '有括号',
-        icon: '2️⃣',
-        desc: '先算括号里的',
-        unlockAt: 1,           // 完成 1 个"无括号"才解锁
-        test: (r) => /[()（）]/.test(r.problemText),
-        generate: () => window.__M1_PRESETS.filter(p => /[()（）]/.test(p.expr)),
-      },
-      {
-        id: 'mul-div',
-        name: '乘除混合',
-        icon: '3️⃣',
-        desc: '乘除和加减一起出现',
-        unlockAt: 1,
-        test: (r) => /[×÷]/.test(r.problemText) && /[+\-]/.test(r.problemText),
-        generate: () => window.__M1_PRESETS.filter(p => /[×÷]/.test(p.expr) && /[+\-]/.test(p.expr)),
-      },
-      {
-        id: 'add-sub',
-        name: '加减混合',
-        icon: '4️⃣',
-        desc: '只有加减，但有多步',
-        unlockAt: 2,
-        test: (r) => /[+\-]/.test(r.problemText) && !/[×÷()（）]/.test(r.problemText),
-        generate: () => window.__M1_PRESETS.filter(p => /[+\-]/.test(p.expr) && !/[×÷()（）]/.test(p.expr)),
-      },
-    ],
-    m9: [
-      { id: 'add', name: '加法', icon: '➕', unlockAt: 0, test: (r) => r.problemText.includes('+') },
-      { id: 'sub', name: '减法', icon: '➖', unlockAt: 1, test: (r) => r.problemText.includes('−') },
-      { id: 'mul', name: '乘法', icon: '✖️', unlockAt: 1, test: (r) => r.problemText.includes('×') },
-      { id: 'div', name: '除法', icon: '➗', unlockAt: 2, test: (r) => r.problemText.includes('÷') },
-    ],
-    m13: [
-      { id: 'step-1', name: '一步', icon: '1️⃣', unlockAt: 0, test: (r) => (r.studentSteps?.length || 0) === 1 },
-      { id: 'step-2', name: '两步', icon: '2️⃣', unlockAt: 1, test: (r) => (r.studentSteps?.length || 0) === 2 },
-      { id: 'step-3', name: '三步', icon: '3️⃣', unlockAt: 2, test: (r) => (r.studentSteps?.length || 0) === 3 },
-      { id: 'step-4', name: '四步', icon: '4️⃣', unlockAt: 3, test: (r) => (r.studentSteps?.length || 0) >= 4 },
-    ],
-  };
-
-  // ⭐ 1. 前置声明并给 null 值，防止任何作用域污染
-  let levels = null;
-  const currentLevels = LEVELS[lessonId];
-  if (currentLevels && Array.isArray(currentLevels) && currentLevels.length > 0) {
-    levels = currentLevels;
-  }
-
-  // ⭐ 3. 前置清空 DOM（防止没配置的模块残留上一页的 HTML）
-  const levelSelectorWrap = document.getElementById('lessonLevels');
-  if (levelSelectorWrap) {
-    levelSelectorWrap.innerHTML = '';
-    levelSelectorWrap.classList.add('is-hidden'); // 默认先隐藏
-  }
-
-  let pathHtml;
-
-  // ⭐ 根据当前层级出题
-  if (levels) {
-    const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || levels[0].id;
-    const currentLevel = levels.find(lv => lv.id === currentLevelId);
-
-    // ⭐ M1：需要 generate 换题目池（M1 有 generate）
-    if (lessonId === 'm1' && currentLevel && currentLevel.generate) {
-      const presets = currentLevel.generate();
-      if (presets.length > 0 && window.__m1LoadPresets) {
-        window.__m1LoadPresets(presets);
-      }
-    }
-
-    // ⭐ M9：只需要 level id（不依赖 generate）
-    if (lessonId === 'm9' && window.__m9SetLevel) {
-      window.__m9SetLevel(currentLevelId);
-      setTimeout(() => document.getElementById('m9random')?.click(), 30);
-    }
-
-    // ⭐ M13：只需要 level id（不依赖 generate）
-    if (lessonId === 'm13' && window.__m13SetLevel) {
-      window.__m13SetLevel(currentLevelId);
-    }
-  }
-
-  if (levels) {
-    // 计算每个层级是否"已完成"
-    const levelDone = levels.map(lv => 
-      moduleRecords.some(r => lv.test(r) && r.isCorrect)
-    );
-    const litDots = levelDone.filter(Boolean).length;
-    pathHtml = levels.map((lv, i) => {
-      let cls = '';
-      if (i < litDots - 1) cls = 'done';
-      else if (i === litDots - 1) cls = 'current';
-      return `<span class="path-dot ${cls}" title="${lv.name}"></span>`;
-    }).join('');
-  } else {
-    // 兜底：原有规则
-    const totalDots = 4;
-    const litDots = Math.min(totalDots, Math.ceil(totalCount / 2));
-    pathHtml = Array.from({ length: totalDots }).map((_, i) => {
-      let cls = '';
-      if (i < litDots - 1) cls = 'done';
-      else if (i === litDots - 1) cls = 'current';
-      return `<span class="path-dot ${cls}"></span>`;
-    }).join('');
-  }
-
   document.getElementById('lessonHeader').innerHTML = `
-    <button class="lesson-back" id="lessonBack" aria-label="返回首页">←</button>
+    <button class="lesson-back" id="lessonBack">←</button>
     <div class="lesson-title">${meta.icon} ${meta.title}</div>
-    <div class="lesson-path">${pathHtml}</div>
-    <button class="lesson-more" id="lessonMore" aria-label="更多">⋯</button>
+    <button class="lesson-more" id="lessonMore">⋯</button>
   `;
+  document.getElementById('lessonBack')?.addEventListener('click', () => navigate('home'));
 
-  // 顶部进度条（新增）
-  const progressBar = document.getElementById('lessonProgress');
-  if (progressBar && levels) {
-    const levelDone = levels.map(lv =>
-      moduleRecords.some(r => lv.test(r) && r.isCorrect)
-    );
-    const litDots = levelDone.filter(Boolean).length;
-    const currentLevel = levels[litDots - 1] || levels[0];
-    const pct = Math.round(litDots / levels.length * 100);
-    const rate = totalCount ? Math.round(correctCount / totalCount * 100) : 0;
+  // 3. 动态加载并挂载模块
+  // 此处临时使用动态 import，后续可以通过 registry 统一管理
+  const loader = {
+    m1: () => import('../grades/grade3/modules/m1.js'),
+    m2: () => import('../grades/grade3/modules/m2.js'),
+    m3: () => import('../grades/grade3/modules/m3.js'),
+    m4: () => import('../grades/grade3/modules/m4.js'),
+    m5: () => import('../grades/grade3/modules/m5.js'),
+    m6: () => import('../grades/grade3/modules/m6.js'),
+    m7: () => import('../grades/grade3/modules/m7.js'),
+    m8: () => import('../grades/grade3/modules/m8.js'),
+    m9: () => import('../grades/grade3/modules/m9.js'),
+    m10: () => import('../grades/grade3/modules/m10.js'),
+    m11: () => import('../grades/grade3/modules/m11.js'),
+    m12: () => import('../grades/grade3/modules/m12.js'),
+    m13: () => import('../grades/grade3/modules/m13.js')
+  }[lessonId];
 
-    progressBar.innerHTML = `
-      <span>已练 <b>${totalCount}</b> 题 · 正确率 <b>${rate}%</b></span>
-      <span class="lesson-progress-level">当前层级：<b>${currentLevel.name}</b></span>
-      <div class="lesson-progress-bar"><span style="width:${pct}%"></span></div>
-    `;
-  } else {
-      // ⭐ 没有层级的模块，彻底隐藏这个进度条
-      progressBar.style.display = 'none'; 
-      progressBar.innerHTML = '';
+  if (!loader) {
+    stage.innerHTML = `<div style="padding:40px;text-align:center;color:#64748b;">模块 ${lessonId} 尚未拆分</div>`;
+    return;
   }
 
-  // ⭐ 层级选择器
-  if (levelSelectorWrap && levels) {  
-    levelSelectorWrap.classList.remove('is-hidden');  
-    const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || levels[0].id;
-    
-    // 计算每层是否已完成
-    const levelDone = levels.map(lv => 
-      moduleRecords.some(r => lv.test(r) && r.isCorrect)
-    );
-    
-    // 计算每层是否解锁
-    const levelUnlocked = levels.map((lv, i) => {
-      if (i === 0) return true;
-      const prevDone = levelDone.slice(0, i).filter(Boolean).length;
-      return prevDone >= lv.unlockAt;
-    });
+  loader().then(async mod => {
+    const mount = mod.default;
+    if (typeof mount !== 'function') {
+      console.log('❌ 导出的 default 不是函数');
+      return;
+    }
 
-    levelSelectorWrap.innerHTML = levels.map((lv, i) => {
-      const done = levelDone[i];
-      const unlocked = levelUnlocked[i];
-      const isCurrent = lv.id === currentLevelId;
-      return `
-        <button class="level-btn ${done ? 'done' : ''} ${isCurrent ? 'current' : ''} ${!unlocked ? 'locked' : ''}"
-                data-level-id="${lv.id}"
-                data-level-index="${i}"
-                ${!unlocked ? 'disabled' : ''}>
-          <span class="level-btn-icon">${done ? '✅' : unlocked ? lv.icon : '🔒'}</span>
-          <span class="level-btn-name">${lv.name}</span>
-        </button>
-      `;
-    }).join('');
-
-    // 绑定点击
-    levelSelectorWrap.querySelectorAll('.level-btn:not(.locked)').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const levelId = btn.dataset.levelId;
-        localStorage.setItem(`grade3_${lessonId}_level`, levelId);
-        mountLesson(lessonId);
-
-        // ⭐ 切层级后，M1 立刻随机出一题（更有"新关卡"的感觉）
-        if (lessonId === 'm1') {
-          setTimeout(() => document.getElementById('m1Random')?.click(), 50);
-        }
-        // M9 同理
-        if (lessonId === 'm9') {
-          setTimeout(() => document.getElementById('m9random')?.click(), 50);
-        }
-      });
-    });
-
-    // ⭐ 判断是否需要显示"右侧还有"箭头
-    const updateScrollHint = () => {
-      const canScroll = levelSelectorWrap.scrollWidth > levelSelectorWrap.clientWidth + 4;
-      const atEnd = levelSelectorWrap.scrollLeft + levelSelectorWrap.clientWidth >= levelSelectorWrap.scrollWidth - 4;
-      levelSelectorWrap.classList.toggle('all-visible', !canScroll || atEnd);
+    // ⭐ 构造注入模块的上下文（同步版）
+    const ctx = {
+      storage: { get: lsGet, set: lsSet },
+      toast: showToast,
+      focusWhenReady: focusInputWhenReady,
+      data: {
+        historyAdd: historyAdd,
+        historyLoad: historyLoad,     // ⭐ 补上这个，历史缓存才会生效
+        historySave: historySave,
+        masteryRecord: masteryRecord,
+        takeawayLoad: takeawayLoad,
+        activityAdd: activityAdd,
+        wbAdd: wbAdd,                 // ⭐ 补上这个，错题本才会加入
+        wbLoad: wbLoad,
+      },
+      showMasteryCard: showMasteryCard,
+      buildAiInsightHtml: buildAiInsightHtml,
+      registerLevelHandler: (id, fn) => { /* 预留 */ }
     };
-    // 首次挂载时更新（等 DOM 布局完成）
-    requestAnimationFrame(updateScrollHint);
-    // 滚动时更新
-    levelSelectorWrap.addEventListener('scroll', updateScrollHint, { passive: true });
-    // 窗口大小变化时更新
-    window.addEventListener('resize', updateScrollHint);
-    // 内容变化时更新
-    new MutationObserver(updateScrollHint).observe(levelSelectorWrap, { childList: true, subtree: true });
-  }
 
-  document.getElementById('lessonBack').addEventListener('click', () => navigate('home'));
-  document.getElementById('lessonMore').addEventListener('click', () => {
-  document.getElementById('wrongBookBtn')?.click();
+    _currentCleanup = mount(stage, ctx);
+
+        // 4. 执行挂载并保存清理函数
+    if (typeof mount === 'function') {
+      _currentCleanup = mount(stage, ctx); 
+    }
+  }).catch(err => {
+    console.error('模块加载失败', lessonId, err);
+    stage.innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444;">模块加载失败：${err.message}</div>`;
   });
-
-  ensureThumbBar();
 }
 
 /* ============================================================
@@ -1220,31 +1096,43 @@ function renderGrowth() {
 /* ============================================================
    7. 初始化
    ============================================================ */
-export function initShell() {
-  // ⭐ 事件委托：绑在 #page-home 上，永不丢失
-  const homeEl = document.getElementById('page-home');
-  if (homeEl && !homeEl.dataset._delegated) {
-    homeEl.dataset._delegated = '1';
-    homeEl.addEventListener('click', (e) => {
+export function initShell() {  
+  // ⭐ 终极方案：把事件委托直接绑在 body 上，永远不会丢
+  if (!document.body.dataset._delegated) {
+    document.body.dataset._delegated = '1';
+    
+    document.body.addEventListener('click', (e) => {
+      // 处理所有带有 data-goto 的点击
       const target = e.target.closest('[data-goto]');
-      if (!target) return;
-      e.preventDefault();
-      e.stopPropagation();
-      const route = target.dataset.goto;
-      if (route === 'lesson') navigate('lesson', { lessonId: target.dataset.lesson });
-      else navigate(route);
+      if (target) {
+        e.preventDefault();
+        const route = target.dataset.goto;
+        if (route === 'lesson') {
+          navigate('lesson', { lessonId: target.dataset.lesson });
+        } else {
+          navigate(route);
+        }
+        return; // 处理完就退出
+      }
+      
+      // 处理错题本按钮
+      if (e.target.closest('#wrongBookBtn')) {
+        const drawer = document.getElementById('wrongBookDrawer');
+        if (drawer) drawer.classList.add('open');
+        return;
+      }
+
+      // 处理错题本关闭
+      if (e.target.closest('#wrongBookClose') || e.target.closest('#wrongBookMask')) {
+        const drawer = document.getElementById('wrongBookDrawer');
+        if (drawer) drawer.classList.remove('open');
+        return;
+      }
     });
+    console.log('✅ 全局点击事件已绑定到 document.body');
   }
-  on(EVT.DATA_CHANGED, () => { if (currentRoute === 'home') renderHome(); });
-  on(EVT.GRADE_CHANGED, () => { renderHome(); });
 
-  // ⭐ 暴露给 Console 调试
-  window.__shell = {
-    navigate, renderHome, refreshHomeTasks, mountLesson, renderGrowth,
-    renderMessages, renderSettings,
-    showThumbBar, hideThumbBar,
-  };
-
+  // 下面保留你原来的 navigate 初始化和 hash 路由
   requestAnimationFrame(() => {
     const hash = location.hash.replace('#', '');
     if (hash.startsWith('lesson/')) {

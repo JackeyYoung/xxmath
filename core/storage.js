@@ -149,7 +149,6 @@ export function lsRemove(key, opts = {}) {
   if (shouldSync) schedulePush(key, value);
 }
 
-// 新增：应用云端数据到本地（跳过同步回推）
 /* 新增：应用云端数据到本地（跳过同步回推） */
 export function applyCloudValue(key, value, cloudUpdatedAt) {
   // 如果有云端时间，同步到本地时间戳里

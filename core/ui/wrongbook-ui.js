@@ -1,0 +1,222 @@
+/* core/ui/wrongbook-ui.js */
+import { wbLoad, wbRemove, wbClear } from '../wrongbook.js';
+import { findCachedFeedback } from '../feedback-resolver.js';
+import { activeModules } from '../../app/shell.js';
+import { showToast } from './toast.js';
+import { buildAiInsightHtml } from './ai-insight.js';
+import { callLLM, normalizeAiFeedback } from '../llm.js';
+import { escapeHtmlStrict } from '../html.js';
+import { takeawayLoad } from '../takeaway.js';
+
+let _ctx = {};
+
+export function initWrongBookUI(ctx) {
+  _ctx = ctx;
+  const btn    = document.getElementById('wrongBookBtn');
+  const drawer = document.getElementById('wrongBookDrawer');
+  const mask   = document.getElementById('wrongBookMask');
+  const close  = document.getElementById('wrongBookClose');
+  if (!btn || !drawer) return;
+
+  btn.addEventListener('click', () => {
+    const willOpen = !drawer.classList.contains('open');
+    drawer.classList.toggle('open');
+    mask.classList.toggle('open');
+    if (typeof ctx.lockBodyScroll === 'function') ctx.lockBodyScroll(willOpen);
+  });
+  
+  close.addEventListener('click', () => closeDrawer());
+  mask.addEventListener('click', () => closeDrawer());
+
+  // ⭐ 核心：事件委托统一处理
+  const listEl = document.getElementById('wrongBookList');
+  if (listEl) {
+    listEl.addEventListener('click', async e => {
+      // 1. 删除
+      const removeBtn = e.target.closest('.wrong-item-remove');
+      if (removeBtn) {
+        const text = decodeURIComponent(removeBtn.dataset.text);
+        wbRemove(text);
+        return;
+      }
+
+      // 2. 讲解（核心修复点）
+      const explainBtn = e.target.closest('.wrong-item-explain');
+      if (explainBtn) {
+        const text = decodeURIComponent(explainBtn.dataset.text);
+        await showExplainModal(text);
+        return;
+      }
+
+      // 3. 重做
+      const redoBtn = e.target.closest('.wrong-item-redo');
+      if (redoBtn) {
+        const text = decodeURIComponent(redoBtn.dataset.text);
+        handleRedo(text);
+        return;
+      }
+    });
+  }
+}
+
+function closeDrawer() {
+  document.getElementById('wrongBookDrawer').classList.remove('open');
+  document.getElementById('wrongBookMask').classList.remove('open');
+  if (typeof _ctx.lockBodyScroll === 'function') _ctx.lockBodyScroll(false);
+}
+
+// ==========================================
+// 核心：讲解弹窗逻辑（题库 -> 缓存 -> AI）
+// ==========================================
+export async function showExplainModal(text) {
+  const modalMask = document.getElementById('explainModalMask');
+  const modalBody = document.getElementById('explainModalBody');
+  if (!modalMask || !modalBody) return;
+  
+  // 复原右上角的关闭按钮绑定（防止被解绑）
+  document.getElementById('explainModalClose').onclick = () => {
+    modalMask.style.display = 'none';
+  };
+
+  modalMask.style.display = 'flex';
+  
+  const bank = window.M13_PROBLEMS_BANK || [];
+  const cached = findCachedFeedback(text, bank);
+
+  if (cached) {
+    const fb = JSON.parse(JSON.stringify(cached.aiFeedback));
+    fb._problemText = text;
+    renderExplainContent(fb);
+    return;
+  }
+
+  // 无缓存：AI 现算
+  modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在思考…</div></div></div>`;
+  
+  try {
+    const raw = await callLLM({ problem: text, studentAnswer: '', steps: [] });
+    const result = normalizeAiFeedback(raw, null);
+    result._problemText = text;
+    renderExplainContent(result);
+
+    // 回写缓存
+    try {
+      const list = wbLoad();
+      const idx = list.findIndex(r => r.text === text);
+      if (idx >= 0) { list[idx].aiFeedback = result; wbSave(list); }
+    } catch(e) {}
+    
+  } catch (e) {
+    modalBody.innerHTML = `<div style="color:red;text-align:center;padding:20px;">AI 讲解获取失败：${e.message}</div>`;
+  }
+}
+
+function renderExplainContent(result) {
+  const modalBody = document.getElementById('explainModalBody');
+  const insight = buildAiInsightHtml(result, { open: true });
+  
+  const stepsHtml = (result.steps || []).map(s => `
+    <div class="std-fold">
+      <div class="std-fold-hd"><span>第 ${s.step} 步</span><span class="arrow">▶</span></div>
+      <div class="std-fold-bd">
+        <div class="std-line"><b>关系式：</b>${escapeHtmlStrict(s.relation)}</div>
+        <div class="std-line"><b>代入：</b>${escapeHtmlStrict(s.substitution)}</div>
+        <div class="std-line"><b>得数：</b>${escapeHtmlStrict(s.result)}</div>
+      </div>
+    </div>
+  `).join('');
+
+  // 还原原版：展示“一题一得”
+  const takeaway = takeawayLoad(result._problemText);
+  const takeawayHtml = takeaway ? `
+    <div style="margin-top:12px;padding:12px 16px;background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:8px;font-size:13px;line-height:1.7;color:#0369a1;">
+      <b>💡 一题一得：</b>${escapeHtmlStrict(takeaway)}
+    </div>
+  ` : '';
+
+  modalBody.innerHTML = `
+    <div class="koji-intro">
+      <span class="koji-intro-emoji">🤖</span>
+      <span>💡 Koji 想跟你说：${result.problem_understanding ? '先想想——' + escapeHtmlStrict(result.problem_understanding) : '我们一步一步来看看这道题。'}</span>
+    </div>
+    <div style="margin-bottom:16px;">
+      <div style="font-size:13px;color:#64748b;margin-bottom:8px;">题目：</div>
+      <div style="font-size:15px;line-height:1.7;color:#334155;background:#f8fafc;padding:12px 16px;border-radius:10px;">${escapeHtmlStrict(result._problemText)}</div>
+    </div>
+    
+    ${insight.strengthsHtml}
+    ${insight.gapsHtml}
+    ${insight.judgementHtml}
+    ${insight.walkHtml}
+    ${stepsHtml}
+    
+    <div class="std-fold">
+      <div class="std-fold-hd"><span>✅ 最终答案</span><span class="arrow">▶</span></div>
+      <div class="std-fold-bd"><div class="std-answer">${escapeHtmlStrict(result.answer?.full || '—')}</div></div>
+    </div>
+    ${takeawayHtml}
+    
+    <div class="koji-more-wrap" style="margin-top:16px;padding:14px 16px;background:#f5f3ff;border-radius:12px;border-left:4px solid #8b5cf6;">
+      <div style="font-size:13px;color:#6d28d9;font-weight:700;margin-bottom:10px;">💡 这是之前保存的讲解。还想让 AI 换个角度再讲一遍吗？</div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn-secondary" id="kojiMoreBtn" style="flex:1;background:#fff;border:2px solid #8b5cf6;color:#6d28d9;font-weight:700;">🤖 让 AI 再讲一遍</button>
+        <button class="btn-secondary" id="kojiCloseBtn" style="flex:1;background:#fff;border:2px solid #cbd5e1;color:#64748b;">够了，谢谢</button>
+      </div>
+    </div>
+  `;
+
+  modalBody.querySelectorAll('.std-fold-hd').forEach(hd => {
+    hd.addEventListener('click', () => hd.parentElement.classList.toggle('open'));
+  });
+
+  // 重新绑定弹窗底部按钮
+  document.getElementById('kojiCloseBtn')?.addEventListener('click', () => {
+    document.getElementById('explainModalMask').style.display = 'none';
+  });
+  
+  document.getElementById('kojiMoreBtn')?.addEventListener('click', () => {
+    document.querySelector('.koji-more-wrap')?.remove();
+    modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在思考…</div></div></div>`;
+    callLLM({ problem: result._problemText, studentAnswer: '', steps: [] }).then(raw => {
+      const newResult = normalizeAiFeedback(raw, null);
+      newResult._problemText = result._problemText;
+      renderExplainContent(newResult);
+    }).catch(e => {
+      modalBody.innerHTML = `<div style="color:red;text-align:center;padding:20px;">AI 讲解获取失败：${e.message}</div>`;
+    });
+  });
+}
+
+// ==========================================
+// 重做逻辑
+// ==========================================
+function handleRedo(text) {
+  const mid = (wbLoad().find(r => r.text === text)?.moduleId) || 'm13';
+  closeDrawer();
+
+  if (_ctx.navigate) _ctx.navigate('lesson', { lessonId: mid });
+
+  setTimeout(() => {
+    if (mid === 'm1') {
+      const custom = document.getElementById('m1Custom');
+      if (custom) { custom.value = text; document.getElementById('m1UseCustom')?.click(); }
+    } else if (mid === 'm9') {
+      const m = text.match(/^(\d+)\s*([+\-−×÷])\s*(\d+)$/);
+      if (m) {
+        document.getElementById('m9a').value = m[1];
+        document.getElementById('m9op').value = m[2];
+        document.getElementById('m9b').value = m[3];
+        document.getElementById('m9reset')?.click();
+      }
+    } else {
+      if (activeModules[mid] && activeModules[mid].redo) activeModules[mid].redo(text);
+    }
+    // 重做横幅
+    document.getElementById('redoBanner')?.remove();
+    const banner = document.createElement('div');
+    banner.id = 'redoBanner';
+    banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;`;
+    banner.innerHTML = `🔁 正在重做错题，做对将累计掌握进度 <button onclick="this.parentElement.remove()" style="margin-left:10px;background:transparent;border:none;color:#fff;cursor:pointer;">×</button>`;
+    document.body.appendChild(banner);
+  }, 300);
+}
