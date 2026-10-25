@@ -4634,6 +4634,66 @@ html { scroll-padding-bottom: 300px; }
   content: '';
 }
 
+/* ==========================================
+   ⭐ 成长页布局对齐修正
+   ========================================== */
+
+/* 1. 强制约束所有卡片宽度，确保边框对齐 */
+#growthStage {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+#growthStage .card {
+  padding: 24px 26px 28px !important;
+  border-radius: 16px !important;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+#weeklySummaryWrap {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+#weeklySummaryWrap .weekly-summary {
+  border-radius: 16px !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* 2. 折叠面板和卡片的圆角统一 */
+#growthDetailPanels .collapsible-section {
+  border-radius: 16px !important;
+  border: 2px solid var(--border);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+/* 3. 修正“成长卡片”两列/三列的栅格对齐 */
+.growth-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.growth-card {
+  border-radius: 16px !important;
+  box-sizing: border-box;
+}
+
+/* 4. 修正内部子模块的统计卡片 */
+.growth-card-stats {
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  padding: 10px 0;
+  margin-bottom: 12px;
+}
+
 /*错题本"弹跳"动画*/
 @keyframes wrongBookBounce {
   0%, 100% { transform: scale(1); }
@@ -7685,274 +7745,274 @@ body.input-focused .daily-suggest {
     </template>
 
         <!-- ⑭ 我的成长 -->
-        <section class="module" id="m14">
-          <div class="card">
-            <h2>📊 我的成长</h2>
-            <p class="sub">这里记录你做过的每一道题、每一条心得、每一周的变化。</p>
+    <template id="tpl-m14">
+      <div class="card">
+        <h2>📊 我的成长</h2>
+        <p class="sub">这里记录你做过的每一道题、每一条心得、每一周的变化。</p>
 
-            <!-- ⭐ 学习看板（单行折叠 + 展开） -->
-            <div id="dashboard" class="dashboard-bar">
-              <div class="range-tabs" id="rangeTabs">
-                <button class="range-tab active" data-range="today">今日</button>
-                <button class="range-tab" data-range="week">本周</button>
-                <button class="range-tab" data-range="all">累计</button>
-              </div>
-              <!-- 折叠头部（默认可见，横向滚动） -->
-              <div class="dash-collapsed" id="dashCollapsed">
-                <div class="dash-chip" id="dashStudent" title="点此设置名字">
-                  <span class="chip-icon">👦</span>
-                  <span class="chip-label">学生</span>
-                  <span class="chip-value" id="dashStudentName">—</span>
-                </div>
-                <!-- ⭐ 年级 -->
-                <div class="dash-chip" id="dashGrade" title="点此切换年级">
-                  <span class="chip-icon">📚</span>
-                  <span class="chip-label">年级</span>
-                  <span class="chip-value" id="dashGradeName">三年级</span>
-                </div>
-                <div class="dash-chip">
-                  <span class="chip-icon">📝</span>
-                  <span class="chip-label">今日</span>
-                  <span class="chip-value" id="dashToday">0<small>道</small></span>
-                </div>
-                <div class="dash-chip">
-                  <span class="chip-icon">✅</span>
-                  <span class="chip-label">对</span>
-                  <span class="chip-value" id="dashCorrect">0<small>道</small></span>
-                </div>
-                <div class="dash-chip">
-                  <span class="chip-icon">🎯</span>
-                  <span class="chip-label">率</span>
-                  <span class="chip-value" id="dashRate">—<small>%</small></span>
-                </div>
-                <div class="dash-chip">
-                  <span class="chip-icon">🔥</span>
-                  <span class="chip-label">连续</span>
-                  <span class="chip-value" id="dashStreak">0<small>天</small></span>
-                </div>
-                <div class="dash-chip">
-                  <span class="chip-icon">📕</span>
-                  <span class="chip-label">错题</span>
-                  <span class="chip-value" id="dashWrong">0<small>道</small></span>
-                </div>
-                <div class="dash-chevron" id="dashChevron">▼</div>
-              </div>
-
-              <!-- 展开面板 -->
-              <div class="dash-expanded">
-                <div class="dash-expanded-inner">
-                  <div class="dash-item">
-                    <div class="dash-icon">📝</div>
-                    <div class="dash-info">
-                      <div class="dash-label">今日做题</div>
-                      <div class="dash-value" id="dashToday2">0 <small>道</small></div>
-                    </div>
-                  </div>
-                  <div class="dash-item">
-                    <div class="dash-icon">✅</div>
-                    <div class="dash-info">
-                      <div class="dash-label">今日正确</div>
-                      <div class="dash-value" id="dashCorrect2">0 <small>道</small></div>
-                    </div>
-                  </div>
-                  <div class="dash-item">
-                    <div class="dash-icon">🎯</div>
-                    <div class="dash-info">
-                      <div class="dash-label">正确率</div>
-                      <div class="dash-value" id="dashRate2">— <small>%</small></div>
-                    </div>
-                  </div>
-                  <div class="dash-item">
-                    <div class="dash-icon">🔥</div>
-                    <div class="dash-info">
-                      <div class="dash-label">连续学习</div>
-                      <div class="dash-value" id="dashStreak2">0 <small>天</small></div>
-                    </div>
-                  </div>
-                  <div class="dash-item">
-                    <div class="dash-icon">📕</div>
-                    <div class="dash-info">
-                      <div class="dash-label">错题本</div>
-                      <div class="dash-value" id="dashWrong2">0 <small>道</small></div>
-                    </div>
-                  </div>
-
-                  <!-- 成长曲线（横跨整行） -->
-                  <div class="growth-wrap">
-                    <div class="growth-wrap-hd">
-                      <span>📈 最近 7 天成长曲线</span>
-                      <small>🟩 正确 · 🟥 错</small>
-                    </div>
-                    <div class="growth-bars" id="growthBarsBox"></div>
-                  </div>
-
-                  <!-- 打卡树（横跨整行） -->
-                  <div class="streak-wrap">
-                    <div class="streak-wrap-hd">
-                      <span>🌱 打卡树</span>
-                      <small id="streakDaysLabel">已连续 0 天</small>
-                    </div>
-                    <div class="streak-dots" id="streakDotsBox"></div>
-                  </div>
-                </div>
-              </div>
+        <!-- ⭐ 学习看板（单行折叠 + 展开） -->
+        <div id="dashboard" class="dashboard-bar">
+          <div class="range-tabs" id="rangeTabs">
+            <button class="range-tab active" data-range="today">今日</button>
+            <button class="range-tab" data-range="week">本周</button>
+            <button class="range-tab" data-range="all">累计</button>
+          </div>
+          <!-- 折叠头部（默认可见，横向滚动） -->
+          <div class="dash-collapsed" id="dashCollapsed">
+            <div class="dash-chip" id="dashStudent" title="点此设置名字">
+              <span class="chip-icon">👦</span>
+              <span class="chip-label">学生</span>
+              <span class="chip-value" id="dashStudentName">—</span>
             </div>
-
-            <!-- ⭐ 5 张成长卡片（静态 HTML） -->
-            <div id="growthPanelContainer" class="growth-card-grid">
-
-              <!-- ① 做题记录 -->
-              <div class="growth-card c-blue" data-goto="historySection">
-                <div class="growth-card-hd">
-                  <div class="growth-card-icon">📚</div>
-                  <div class="growth-card-title">
-                    做题记录
-                    <small>每一道题的足迹</small>
-                  </div>
-                </div>
-                <div class="growth-card-stats" id="historyStats">
-                  <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">题目</div></div>
-                  <div class="growth-card-stat"><div class="num">0<small>次</small></div><div class="lbl">练习</div></div>
-                  <div class="growth-card-stat"><div class="num">0<small>%</small></div><div class="lbl">正确率</div></div>
-                </div>
-                <div class="growth-card-cta">点击展开 ▾</div>
-              </div>
-
-              <!-- ② 一题一得 -->
-              <div class="growth-card c-amber" data-goto="takeawaySection">
-                <div class="growth-card-hd">
-                  <div class="growth-card-icon">💡</div>
-                  <div class="growth-card-title">
-                    一题一得
-                    <small>每道题的心得</small>
-                  </div>
-                </div>
-                <div class="growth-card-stats" id="takeawayStats">
-                  <div class="growth-card-stat"><div class="num">0<small>条</small></div><div class="lbl">心得</div></div>
-                </div>
-                <div class="growth-card-cta">点击展开 ▾</div>
-              </div>
-
-              <!-- ③ 成长曲线 -->
-              <div class="growth-card c-green" data-goto="growthChartSection">
-                <div class="growth-card-hd">
-                  <div class="growth-card-icon">📈</div>
-                  <div class="growth-card-title">
-                    成长曲线
-                    <small>最近 7 天的变化</small>
-                  </div>
-                </div>
-                <div class="growth-card-stats" id="growthChartStats">
-                  <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">本周做题</div></div>
-                  <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">做对</div></div>
-                  <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">学习天数</div></div>
-                </div>
-                <div class="growth-card-cta">点击展开 ▾</div>
-              </div>
-
-              <!-- ④ 打卡树 -->
-              <div class="growth-card c-teal" data-goto="streakTreeSection">
-                <div class="growth-card-hd">
-                  <div class="growth-card-icon">🌱</div>
-                  <div class="growth-card-title">
-                    打卡树
-                    <small>每天进步一点点</small>
-                  </div>
-                </div>
-                <div class="growth-card-stats" id="streakTreeStats">
-                  <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">连续打卡</div></div>
-                  <div class="growth-card-stat"><div class="num">0<small>轮</small></div><div class="lbl">7天周期</div></div>
-                </div>
-                <div class="growth-card-cta">点击展开 ▾</div>
-              </div>
-
-              <!-- ⑤ 周报 -->
-              <div class="growth-card c-violet" data-goto="weeklyReportSection">
-                <div class="growth-card-hd">
-                  <div class="growth-card-icon">📊</div>
-                  <div class="growth-card-title">
-                    本周学习周报
-                    <small>一周的表现</small>
-                  </div>
-                </div>
-                <div class="growth-card-stats" id="weeklyReportStats">
-                  <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">本周做题</div></div>
-                  <div class="growth-card-stat"><div class="num">0<small>%</small></div><div class="lbl">正确率</div></div>
-                  <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">学习天数</div></div>
-                </div>
-                <div class="growth-card-cta">点击展开 ▾</div>
-              </div>
-
+            <!-- ⭐ 年级 -->
+            <div class="dash-chip" id="dashGrade" title="点此切换年级">
+              <span class="chip-icon">📚</span>
+              <span class="chip-label">年级</span>
+              <span class="chip-value" id="dashGradeName">三年级</span>
             </div>
+            <div class="dash-chip">
+              <span class="chip-icon">📝</span>
+              <span class="chip-label">今日</span>
+              <span class="chip-value" id="dashToday">0<small>道</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">✅</span>
+              <span class="chip-label">对</span>
+              <span class="chip-value" id="dashCorrect">0<small>道</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">🎯</span>
+              <span class="chip-label">率</span>
+              <span class="chip-value" id="dashRate">—<small>%</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">🔥</span>
+              <span class="chip-label">连续</span>
+              <span class="chip-value" id="dashStreak">0<small>天</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">📕</span>
+              <span class="chip-label">错题</span>
+              <span class="chip-value" id="dashWrong">0<small>道</small></span>
+            </div>
+            <div class="dash-chevron" id="dashChevron">▼</div>
+          </div>
 
-            <!-- ⭐ 展开后显示的 5 个内容面板（默认全部隐藏） -->
-            <div id="growthDetailPanels">
-              <! 错题画像面板>
-              <div id="errorProfilePanel" class="error-profile-panel" style="display:none;"></div>
-
-              <div class="collapsible-section" id="historySection">
-                <div class="collapsible-hd">
-                  <span class="collapse-icon">▶</span>
-                  <span class="collapse-title">📚 做题记录</span>
-                  <span class="collapse-count" id="historyCount">共 0 道</span>
+          <!-- 展开面板 -->
+          <div class="dash-expanded">
+            <div class="dash-expanded-inner">
+              <div class="dash-item">
+                <div class="dash-icon">📝</div>
+                <div class="dash-info">
+                  <div class="dash-label">今日做题</div>
+                  <div class="dash-value" id="dashToday2">0 <small>道</small></div>
                 </div>
-                <div class="collapsible-bd">
-                  <div id="historyList" class="history-list">
-                    <div class="history-empty">还没有做题记录哦</div>
-                  </div>
-                  <div class="btn-row" style="justify-content:flex-end;margin-top:12px;">
-                    <button class="btn-secondary" id="historyExport">📤 导出记录</button>
-                    <button class="btn-secondary" id="historyClear">🗑 清空记录</button>
-                  </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">✅</div>
+                <div class="dash-info">
+                  <div class="dash-label">今日正确</div>
+                  <div class="dash-value" id="dashCorrect2">0 <small>道</small></div>
+                </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">🎯</div>
+                <div class="dash-info">
+                  <div class="dash-label">正确率</div>
+                  <div class="dash-value" id="dashRate2">— <small>%</small></div>
+                </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">🔥</div>
+                <div class="dash-info">
+                  <div class="dash-label">连续学习</div>
+                  <div class="dash-value" id="dashStreak2">0 <small>天</small></div>
+                </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">📕</div>
+                <div class="dash-info">
+                  <div class="dash-label">错题本</div>
+                  <div class="dash-value" id="dashWrong2">0 <small>道</small></div>
                 </div>
               </div>
 
-              <div class="collapsible-section" id="takeawaySection">
-                <div class="collapsible-hd">
-                  <span class="collapse-icon">▶</span>
-                  <span class="collapse-title">💡 一题一得 · 汇总</span>
-                  <span class="collapse-count" id="takeawayCount">0 条</span>
+              <!-- 成长曲线（横跨整行） -->
+              <div class="growth-wrap">
+                <div class="growth-wrap-hd">
+                  <span>📈 最近 7 天成长曲线</span>
+                  <small>🟩 正确 · 🟥 错</small>
                 </div>
-                <div class="collapsible-bd">
-                  <div id="takeawayGalleryBox"></div>
-                </div>
+                <div class="growth-bars" id="growthBarsBox"></div>
               </div>
 
-              <div class="collapsible-section" id="growthChartSection">
-                <div class="collapsible-hd">
-                  <span class="collapse-icon">▶</span>
-                  <span class="collapse-title">📈 最近 7 天成长曲线</span>
+              <!-- 打卡树（横跨整行） -->
+              <div class="streak-wrap">
+                <div class="streak-wrap-hd">
+                  <span>🌱 打卡树</span>
+                  <small id="streakDaysLabel">已连续 0 天</small>
                 </div>
-                <div class="collapsible-bd">
-                  <div class="growth-bars" id="growthChartInline"></div>
-                </div>
+                <div class="streak-dots" id="streakDotsBox"></div>
               </div>
-
-              <div class="collapsible-section" id="streakTreeSection">
-                <div class="collapsible-hd">
-                  <span class="collapse-icon">▶</span>
-                  <span class="collapse-title">🌱 打卡树</span>
-                  <span class="collapse-hint" id="streakTreeInlineLabel">已连续 0 天</span>
-                </div>
-                <div class="collapsible-bd">
-                  <div class="streak-dots" id="streakTreeInline"></div>
-                </div>
-              </div>
-
-              <div class="collapsible-section" id="weeklyReportSection">
-                <div class="collapsible-hd">
-                  <span class="collapse-icon">▶</span>
-                  <span class="collapse-title">📊 本周学习周报</span>
-                </div>
-                <div class="collapsible-bd">
-                  <div id="weeklyReportBox"></div>
-                </div>
-              </div>
-
             </div>
           </div>
-        </section>
-      </main>
+        </div>
+
+        <!-- ⭐ 5 张成长卡片（静态 HTML） -->
+        <div id="growthPanelContainer" class="growth-card-grid">
+
+          <!-- ① 做题记录 -->
+          <div class="growth-card c-blue" data-goto="historySection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">📚</div>
+              <div class="growth-card-title">
+                做题记录
+                <small>每一道题的足迹</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="historyStats">
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">题目</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>次</small></div><div class="lbl">练习</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>%</small></div><div class="lbl">正确率</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ② 一题一得 -->
+          <div class="growth-card c-amber" data-goto="takeawaySection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">💡</div>
+              <div class="growth-card-title">
+                一题一得
+                <small>每道题的心得</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="takeawayStats">
+              <div class="growth-card-stat"><div class="num">0<small>条</small></div><div class="lbl">心得</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ③ 成长曲线 -->
+          <div class="growth-card c-green" data-goto="growthChartSection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">📈</div>
+              <div class="growth-card-title">
+                成长曲线
+                <small>最近 7 天的变化</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="growthChartStats">
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">本周做题</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">做对</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">学习天数</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ④ 打卡树 -->
+          <div class="growth-card c-teal" data-goto="streakTreeSection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">🌱</div>
+              <div class="growth-card-title">
+                打卡树
+                <small>每天进步一点点</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="streakTreeStats">
+              <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">连续打卡</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>轮</small></div><div class="lbl">7天周期</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ⑤ 周报 -->
+          <div class="growth-card c-violet" data-goto="weeklyReportSection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">📊</div>
+              <div class="growth-card-title">
+                本周学习周报
+                <small>一周的表现</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="weeklyReportStats">
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">本周做题</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>%</small></div><div class="lbl">正确率</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">学习天数</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+        </div>
+
+        <!-- ⭐ 展开后显示的 5 个内容面板（默认全部隐藏） -->
+        <div id="growthDetailPanels">
+          <! 错题画像面板>
+          <div id="errorProfilePanel" class="error-profile-panel" style="display:none;"></div>
+
+          <div class="collapsible-section" id="historySection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">📚 做题记录</span>
+              <span class="collapse-count" id="historyCount">共 0 道</span>
+            </div>
+            <div class="collapsible-bd">
+              <div id="historyList" class="history-list">
+                <div class="history-empty">还没有做题记录哦</div>
+              </div>
+              <div class="btn-row" style="justify-content:flex-end;margin-top:12px;">
+                <button class="btn-secondary" id="historyExport">📤 导出记录</button>
+                <button class="btn-secondary" id="historyClear">🗑 清空记录</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="takeawaySection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">💡 一题一得 · 汇总</span>
+              <span class="collapse-count" id="takeawayCount">0 条</span>
+            </div>
+            <div class="collapsible-bd">
+              <div id="takeawayGalleryBox"></div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="growthChartSection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">📈 最近 7 天成长曲线</span>
+            </div>
+            <div class="collapsible-bd">
+              <div class="growth-bars" id="growthChartInline"></div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="streakTreeSection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">🌱 打卡树</span>
+              <span class="collapse-hint" id="streakTreeInlineLabel">已连续 0 天</span>
+            </div>
+            <div class="collapsible-bd">
+              <div class="streak-dots" id="streakTreeInline"></div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="weeklyReportSection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">📊 本周学习周报</span>
+            </div>
+            <div class="collapsible-bd">
+              <div id="weeklyReportBox"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </template>
+  </main>
   </div>
 </div>
 

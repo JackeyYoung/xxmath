@@ -6,7 +6,16 @@ import { takeawayLoad } from '../../../core/takeaway.js';
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 
-export const meta = { title: '竖式运算', icon: '🔢' };
+export const meta = { 
+  title: '竖式运算', 
+  icon: '🔢',
+  levels: [
+    { id: 'add', name: '加法', icon: '➕' },
+    { id: 'sub', name: '减法', icon: '➖' },
+    { id: 'mul', name: '乘法', icon: '✖️' },
+    { id: 'div', name: '除法', icon: '➗' },
+  ]
+};
 
 export default async function mount(container, ctx) {
   const tpl = document.getElementById('tpl-m9');
@@ -81,6 +90,23 @@ export default async function mount(container, ctx) {
     if (!fbEl) return;
     fbEl.innerHTML = html;
     fbEl.className = 'feedback' + (type ? ' ' + type : '');
+    
+    // ⭐ 核心修复：唤醒拇指条
+    if (type === 'ok' || type === 'error') {
+      const isOk = type === 'ok';
+      ctx.showThumbBar({
+        text: html.replace(/<[^>]+>/g, '').replace(/^[✓❌🎉]\s*/, ''), // 去标签和符号
+        ok: isOk,
+        onNext: () => {
+          // 如果算完了，继续下一题
+          if (M9.step >= m9GetMaxSteps()) {
+            $('#m9random')?.click();
+          } else {
+            $('#m9step')?.click();
+          }
+        }
+      });
+    }
   }
 
   /* ---------- 渲染（完整保留） ---------- */
@@ -477,9 +503,14 @@ export default async function mount(container, ctx) {
         M9.step--;
         setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
         ctx.data.historyAdd({
-            problemText: `${M9.a} ${M9.op} ${M9.b}`, problemSource: 'm9', moduleId: 'm9',
-            studentSteps: Object.keys(M9.filled).map(k => ({ rel: k, sub: '', res: M9.filled[k] })),
-            studentAnswer: String(calcFinalResult()), isCorrect: true, correctAnswer: String(calcFinalResult()), aiFeedback: null,
+          problemText: `${M9.a} ${M9.op} ${M9.b}`,
+          problemSource: 'm9',
+          moduleId: 'm9',
+          studentSteps: Object.keys(M9.filled).map(k => ({ rel: k, sub: '', res: M9.filled[k] })),
+          studentAnswer: String(final),
+          isCorrect: true,
+          correctAnswer: String(final),
+          aiFeedback: null
         });
         const mrec = ctx.data.masteryRecord(`${M9.a} ${M9.op} ${M9.b}`, true);
         if (mrec && mrec.state === 'mastered') {
@@ -564,7 +595,19 @@ export default async function mount(container, ctx) {
     }
 
     if (String(raw) === String(expected)) {
-      input.classList.remove('wrong'); input.classList.add('correct');
+      input.classList.remove('wrong'); 
+      input.classList.add('correct');
+      // ⭐ 加入打勾动画
+      const parent = input.closest('.vc-cell.input-cell') || input.parentElement;
+      if (parent) {
+        parent.querySelectorAll('.m9-tick').forEach(x => x.remove());
+        const tick = document.createElement('span');
+        tick.className = 'm9-tick';
+        tick.textContent = '✓';
+        parent.appendChild(tick);
+        setTimeout(() => tick.remove(), 800);
+      }
+
       input.style.transition = 'transform .15s cubic-bezier(.34,1.5,.64,1)';
       input.style.transform = 'scale(1.15)';
       setTimeout(() => { input.style.transform = 'scale(1)'; }, 150);
@@ -691,26 +734,33 @@ export default async function mount(container, ctx) {
   m9Reset();
   console.log('[模块9] ✅ 初始化完成（全互动版）');
 
+  // ⭐ 核心修复：确保所有变量和函数就绪后再注册层级切换
+  ctx.registerLevelHandler('m9', (levelId) => {
+    if (!aInput || !bInput || !opInput) return;
+    
+    let op = '+';
+    if (levelId === 'sub') op = '−';
+    else if (levelId === 'mul') op = '×';
+    else if (levelId === 'div') op = '÷';
+    
+    // 随机生成题目并填入
+    const { a, b } = randomProblemByOp(op);
+    aInput.value = a;
+    bInput.value = b;
+    opInput.value = op;
+    
+    // 触发重置，页面直接刷新
+    m9Reset();
+  });
+
   // 错题本注册重做
   registerActiveModule('m9', {
     redo: (text) => {
       const m = text.match(/^(\d+)\s*([+\-−×÷])\s*(\d+)$/);
       if (m) {
         aInput.value = m[1]; opInput.value = m[2]; bInput.value = m[3];
-        aInput.dispatchEvent(new Event('input', { bubbles: true }));
-        bInput.dispatchEvent(new Event('input', { bubbles: true }));
-        opInput.dispatchEvent(new Event('change', { bubbles: true }));
+        m9Reset();
       }
     }
   });
-
-  return () => {
-    unregisterActiveModule('m9');
-    display.removeEventListener('keydown', onKeyDown);
-    display.removeEventListener('blur', onBlur, true);
-    display.removeEventListener('input', onInput);
-    display.removeEventListener('click', onDisplayClick);
-    $('#m9random')?.removeEventListener('click', handleM9Random);
-    container.innerHTML = '';
-  };
 }

@@ -67,11 +67,47 @@ export default async function mount(container, ctx) {
   // 3. 工具函数
   const fmtNum = n => Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100);
 
+  // ⭐ 注册层级切换处理器
+  ctx.registerLevelHandler('m1', (levelId) => {
+    // 1. 找到当前层级配置
+    const lv = meta.levels.find(x => x.id === levelId) || meta.levels[0];
+    
+    // 2. 根据 filter 过滤预设题目池
+    const filteredPresets = M1_PRESETS.filter(lv.filter);
+    const finalPresets = filteredPresets.length > 0 ? filteredPresets : M1_PRESETS;
+    
+    // 3. 更新下拉框和当前池子
+    presets = finalPresets; 
+    m1InitSelect(presets);
+
+    // 4. 自动随机抽一题（原版切层级后会自动出一题）
+    const randomIdx = Math.floor(Math.random() * presets.length);
+    m1LoadExpression(presets[randomIdx].expr);
+  });
+
   function m1SetFeedback(msg, type) {
     const fb = $('#m1fb');
-    if (!fb) return;
     fb.textContent = msg;
     fb.className = 'feedback' + (type ? ' ' + type : '');
+    
+    // ⭐ 核心修复：唤醒底部拇指条
+    if (type === 'ok' || type === 'error') {
+      const isOk = type === 'ok';
+      ctx.showThumbBar({
+        text: msg.replace(/^[✓❌🎉]\s*/, ''),
+        ok: isOk,
+        onNext: () => {
+          // 如果整题做完了，点继续出随机题
+          if (M1.done) {
+            $('#m1Random')?.click();
+          } else {
+            // 没做完，聚焦下一步
+            const nextInp = $('#m1Input');
+            if (nextInp) nextInp.focus();
+          }
+        }
+      });
+    }
   }
 
   // 4. 渲染逻辑
@@ -396,6 +432,37 @@ export default async function mount(container, ctx) {
       M1.pendingOp = null;
 
       m1Render();
+      // 在 commitStep 的 setTimeout 末尾：
+      
+      // ⭐ 提示下一个可点运算符
+      setTimeout(() => {
+        if (M1.done || M1.waitingOpIdx >= 0 || !M1_PRIORITY.passed) return;
+        const toks = M1.tokens;
+        const hasMulDiv = toks.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
+        let targetIdx = -1;
+        for (let i = 0; i < toks.length; i++) {
+          const t = toks[i];
+          if (t.type !== 'op') continue;
+          if ((t.val === '+' || t.val === '-') && hasMulDiv) continue;
+          targetIdx = i;
+          break;
+        }
+        if (targetIdx < 0) return;
+        
+        let opCount = 0, domIdx = -1;
+        for (let i = 0; i < toks.length; i++) {
+          if (toks[i].type === 'op') {
+            if (i === targetIdx) { domIdx = opCount; break; }
+            opCount++;
+          }
+        }
+        const opEls = container.querySelectorAll('.token.op');
+        const el = opEls[domIdx];
+        if (el) {
+          el.classList.add('hint-pulse');
+          setTimeout(() => el.classList.remove('hint-pulse'), 1600);
+        }
+      }, 620);
 
       if (M1.done) {
         const finalVal = M1.tokens[0].val;

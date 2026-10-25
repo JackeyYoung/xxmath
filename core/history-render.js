@@ -1,24 +1,34 @@
-/* core/history-render.js
-   合并原 historyRender + patchHistoryCount + patchHistoryPagination + 导出相关
-*/
-import { historyLoad, historyRemove, historySave } from './history.js';
+/* core/history-render.js */
+import { historyLoad, historyRemove } from './history.js';
 import { escapeHtmlStrict } from './html.js';
-import { buildAiInsightHtml } from './ui/ai-insight.js';
-import { getStudentName } from './student.js';
+import { showToast } from './toast.js';
 
-const HISTORY_PAGE = 20;
-let _visibleCount = HISTORY_PAGE;
-
-export function historyRender() {
-  const listEl = document.getElementById('historyList');
-  const countEl = document.getElementById('historyCount');
+export function historyRender(parentNode = document) {
+  const listEl = parentNode === document 
+    ? document.getElementById('historyList') 
+    : parentNode.querySelector('#historyList');
+  
   if (!listEl) return;
 
+  // ⭐ 防抖：防止短时间内重复渲染覆盖 DOM 节点
+  const now = Date.now();
+  if (listEl.dataset.lastRender && now - parseInt(listEl.dataset.lastRender) < 100) {
+    return;
+  }
+  listEl.dataset.lastRender = now.toString();
+
   const list = historyLoad();
+  if (!list.length) {
+    listEl.innerHTML = '<div class="history-empty">还没有做题记录哦 📝</div>';
+    return;
+  }
+
+  // 分组逻辑
   const groups = {};
   list.forEach(r => {
-    if (!groups[r.problemText]) groups[r.problemText] = [];
-    groups[r.problemText].push(r);
+    const key = r.problemText || '未知题目';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(r);
   });
 
   const groupArr = Object.keys(groups).map(text => {
@@ -32,120 +42,73 @@ export function historyRender() {
     };
   }).sort((a, b) => b.latestTime - a.latestTime);
 
+  const countEl = document.getElementById('historyCount');
   if (countEl) countEl.textContent = `共 ${groupArr.length} 道 / ${list.length} 次`;
 
-  if (!groupArr.length) {
-    listEl.innerHTML = '<div class="history-empty">还没有做题记录，做完一道题会自动保存 📝</div>';
-    return;
-  }
-
+  // 渲染 HTML
   listEl.innerHTML = groupArr.map((g, gIdx) => {
-    const dLatest = new Date(g.latestTime);
-    const latestTimeStr = `${dLatest.getMonth() + 1}/${dLatest.getDate()} ${String(dLatest.getHours()).padStart(2, '0')}:${String(dLatest.getMinutes()).padStart(2, '0')}`;
-
-    let statusIcon, statusCls;
-    if (g.correctCount === 0) { statusIcon = '✗'; statusCls = 'wrong'; }
-    else if (g.wrongCount === 0) { statusIcon = '✓'; statusCls = 'correct'; }
-    else { statusIcon = '◐'; statusCls = 'mixed'; }
-
-    const statsHtml = `
-      <span style="display:inline-block;padding:1px 8px;background:#dcfce7;color:#15803d;border-radius:5px;font-size:11px;font-weight:700;margin-right:4px;">对 ${g.correctCount} 次</span>
-      <span style="display:inline-block;padding:1px 8px;background:#fee2e2;color:#b91c1c;border-radius:5px;font-size:11px;font-weight:700;">错 ${g.wrongCount} 次</span>
-    `;
-
+    
+    // 每条记录
     const recordsHtml = g.records.map((r, rIdx) => {
       const d = new Date(r.timestamp);
       const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-
+      
       const stepsHtml = (r.studentSteps || []).length
-        ? r.studentSteps.map((s, i) => `
-            <div class="history-step">
-              <span class="history-step-num">第 ${i + 1} 步</span>
-              <span class="history-step-content">
-                ${s.rel ? `<span class="field"><b>关系式：</b>${escapeHtmlStrict(s.rel)}</span>` : ''}
-                ${s.sub ? `<span class="field"><b>代入：</b>${escapeHtmlStrict(s.sub)}</span>` : ''}
-                ${s.res ? `<span class="field"><b>得数：</b>${escapeHtmlStrict(s.res)}</span>` : ''}
-              </span>
-            </div>
-          `).join('')
+        ? r.studentSteps.map((s, i) => {
+            const cleanSub = (s.sub || '').replace(/<[^>]+>/g, '');
+            const cleanRes = (s.res || '').replace(/<[^>]+>/g, '');
+            let rel = s.rel || '';
+            const stepLabel = rel.startsWith('第') ? rel : `第 ${i + 1} 步`;
+            if (cleanSub && cleanRes) {
+               return `
+                <div class="history-step" style="margin-bottom: 8px; padding-left: 12px; border-left: 2px solid #e2e8f0;">
+                  <div style="font-weight:700; color:#475569; font-size:12px; margin-bottom:4px;">${stepLabel}</div>
+                  <div style="color:#334155;">算式：${escapeHtmlStrict(cleanSub)}</div>
+                  <div style="color:#334155;">得数：${escapeHtmlStrict(cleanRes)}</div>
+                </div>`;
+            }
+            return '';
+          }).join('')
         : '<div style="color:#94a3b8;font-size:13px;font-style:italic;">未填写步骤</div>';
 
-      const fb = r.aiFeedback;
-      let explainHtml = '';
-      if (fb) {
-        const stdStepsHtml = (fb.steps || []).map(s => `
-          <div class="history-explain-step">
-            <b>第 ${s.step} 步：</b>
-            ${s.relation ? `<div><b>关系式：</b>${escapeHtmlStrict(s.relation)}</div>` : ''}
-            ${s.substitution ? `<div><b>代入：</b>${escapeHtmlStrict(s.substitution)}</div>` : ''}
-            ${s.result ? `<div><b>得数：</b>${escapeHtmlStrict(s.result)}</div>` : ''}
-          </div>
-        `).join('');
-
-        const insight = buildAiInsightHtml(fb, { open: false });
-
-        const commentHtml = (fb.judgement && fb.judgement.step_count_comment)
-          ? `<div class="history-explain-comment"><b>📐 步数评价：</b>${escapeHtmlStrict(fb.judgement.step_count_comment)}</div>`
-          : '';
-        const hintHtml = fb.hint
-          ? `<div class="history-explain-hint"><b>💡 提示：</b>${escapeHtmlStrict(fb.hint)}</div>` : '';
-
-        explainHtml = `
-          <div class="history-explain-fold">
-            <div class="history-explain-hd"><span>📖 答案讲解（点击展开）</span><span class="arrow">▶</span></div>
-            <div class="history-explain-bd">
-              ${commentHtml}
-              ${insight.strengthsHtml}
-              ${insight.gapsHtml}
-              ${insight.judgementHtml}
-              ${insight.walkHtml}
-              ${stdStepsHtml || '<div style="color:#94a3b8;font-size:13px;">暂无标准步骤</div>'}
-              <div class="history-explain-answer">✅ ${escapeHtmlStrict(fb.answer?.full || r.correctAnswer || '—')}</div>
-              ${hintHtml}
-            </div>
-          </div>
-        `;
-      } else {
-        explainHtml = `
-          <div class="history-explain-fold">
-            <div class="history-explain-hd"><span>📖 答案讲解（点击展开）</span><span class="arrow">▶</span></div>
-            <div class="history-explain-bd">
-              <div class="history-explain-answer">✅ ${escapeHtmlStrict(r.correctAnswer || '—')}</div>
-            </div>
-          </div>
-        `;
-      }
-
-      const rStatusIcon = r.isCorrect ? '✓' : '✗';
-      const rStatusCls = r.isCorrect ? 'correct' : 'wrong';
-
       return `
-        <div class="history-item ${rStatusCls}" data-id="${r.id}" style="margin-left:16px;margin-top:10px;">
-          <div class="history-hd">
-            <span class="history-status">${rStatusIcon}</span>
-            <div class="history-problem" style="font-size:13px;color:#64748b;font-weight:600;">第 ${g.records.length - rIdx} 次 · ${timeStr}</div>
-            <div class="history-meta">${r.problemSource || ''}</div>
-            <span class="history-arrow">▶</span>
-          </div>
-          <div class="history-bd">
-            <div class="history-section">
-              <div class="history-section-title">✏️ 我的解题过程</div>
-              <div class="history-steps">${stepsHtml}</div>
-              <div class="history-answer-line">我的答案：${escapeHtmlStrict(r.studentAnswer || '（空）')}</div>
+        <div class="history-item ${r.isCorrect ? 'correct' : 'wrong'}" style="margin-left:16px;margin-top:10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; overflow: hidden;">
+          
+          <!-- 头部：加上 data-toggle-item 标记 -->
+          <div class="history-hd" data-toggle-item="true" style="padding: 10px 12px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; background: #f8fafc;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="width: 20px; height: 20px; border-radius: 50%; background: ${r.isCorrect ? '#10b981' : '#ef4444'}; color: #fff; font-size: 12px; display: flex; align-items: center; justify-content: center;">${r.isCorrect ? '✓' : '✗'}</span>
+              <span style="font-size:13px; color:#64748b; font-weight:600;">第 ${g.records.length - rIdx} 次 · ${timeStr}</span>
             </div>
-            ${explainHtml}
-            <button class="history-remove" data-remove-id="${r.id}">🗑 删除这条记录</button>
+            <span class="history-arrow" style="font-size: 12px; color: #94a3b8; transition: transform 0.2s;">▶</span>
+          </div>
+          
+          <!-- 内容：默认隐藏 -->
+          <div class="history-bd" style="display: none; padding: 12px; border-top: 1px solid #e2e8f0;">
+            <div style="margin-bottom: 12px;">
+              <div style="font-size:12px; font-weight:700; color:#3b82f6; margin-bottom:8px;">✏️ 我的解题过程</div>
+              ${stepsHtml}
+            </div>
+            <div style="background: #fef3c7; color: #b45309; padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; margin-bottom: 12px;">
+              我的答案：${escapeHtmlStrict(r.studentAnswer || '（空）')}
+            </div>
+            
+            <div style="text-align: right;">
+              <button class="history-remove" data-remove-id="${r.id}" style="background: #fef2f2; color: #ef4444; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;">🗑 删除这条记录</button>
+            </div>
           </div>
         </div>
       `;
     }).join('');
 
+    // 题目分组头部
     return `
-      <div class="history-group" data-group-idx="${gIdx}" style="${gIdx >= _visibleCount ? 'display:none;' : ''}">
-        <div class="history-group-hd" style="
+      <div class="history-group" data-group-idx="${gIdx}">
+        <!-- 分组头部：加上 data-toggle-group 标记 -->
+        <div class="history-group-hd" data-toggle-group="true" style="
           background: #f8fafc;
           border: 2px solid var(--border);
-          border-left: 4px solid ${statusIcon === '✓' ? 'var(--green)' : statusIcon === '✗' ? 'var(--red)' : '#f59e0b'};
+          border-left: 4px solid ${g.correctCount > 0 ? 'var(--green)' : 'var(--red)'};
           border-radius: 12px;
           padding: 12px 16px;
           margin-bottom: 4px;
@@ -154,110 +117,80 @@ export function historyRender() {
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
             <span style="
               width:24px;height:24px;border-radius:50%;
-              background:${statusIcon === '✓' ? 'var(--green)' : statusIcon === '✗' ? 'var(--red)' : '#f59e0b'};
+              background:${g.correctCount > 0 ? 'var(--green)' : 'var(--red)'};
               color:#fff;font-size:13px;font-weight:800;
               display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
-            ">${statusIcon}</span>
+            ">${g.correctCount > 0 ? '✓' : '✗'}</span>
             <div style="flex:1;font-size:14.5px;line-height:1.6;color:#334155;font-weight:700;">
               ${escapeHtmlStrict(g.text)}
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-left:34px;">
             <span style="background:#e0e7ff;color:#3730a3;padding:2px 10px;border-radius:6px;font-size:11.5px;font-weight:700;">共 ${g.total} 次</span>
-            ${statsHtml}
-            <span style="font-size:11.5px;color:#94a3b8;margin-left:auto;">最近：${latestTimeStr}</span>
+            <span style="font-size:11.5px;color:#94a3b8;margin-left:auto;">最近：${new Date(g.latestTime).toLocaleDateString('zh-CN')}</span>
             <span class="history-group-arrow" style="font-size:12px;color:#94a3b8;transition:transform .22s;">▶</span>
           </div>
         </div>
+        
+        <!-- 分组内容：默认隐藏 -->
         <div class="history-group-bd" style="display:none;padding:0 4px 12px;">
           ${recordsHtml}
         </div>
       </div>
     `;
   }).join('');
-
-  // ⭐ 分页加载（原 patchHistoryPagination）
-  document.getElementById('historyLoadMore')?.remove();
-  if (groupArr.length > _visibleCount) {
-    const btn = document.createElement('button');
-    btn.id = 'historyLoadMore';
-    btn.className = 'load-more-btn';
-    btn.textContent = `📥 加载更多（还有 ${groupArr.length - _visibleCount} 道）`;
-    btn.addEventListener('click', () => {
-      _visibleCount += HISTORY_PAGE;
-      historyRender();
-    });
-    listEl.parentElement.appendChild(btn);
-  }
-
-  if (typeof window._refreshGrowthCards === 'function') {
-    setTimeout(window._refreshGrowthCards, 50);
-  }
 }
 
-/* ============ 事件委托（一次性绑定） ============ */
-export function initHistoryDelegation() {
-  const listEl = document.getElementById('historyList');
-  if (!listEl || listEl.dataset._delegated) return;
-  listEl.dataset._delegated = '1';
+/* ============ ⭐ 唯一的全局事件监听（只绑一次） ============ */
+if (!window.__historyBound) {
+  window.__historyBound = true;
 
-  listEl.addEventListener('click', e => {
+  document.addEventListener('click', e => {
+    // 1. 删除按钮
     const removeBtn = e.target.closest('.history-remove');
     if (removeBtn) {
       e.stopPropagation();
       const id = removeBtn.dataset.removeId;
-      if (id) historyRemove(id);
-      return;
-    }
-
-    const stdFoldHd = e.target.closest('.std-fold-hd');
-    if (stdFoldHd && listEl.contains(stdFoldHd)) {
-      e.stopPropagation();
-      stdFoldHd.parentElement.classList.toggle('open');
-      return;
-    }
-
-    const explainHd = e.target.closest('.history-explain-hd');
-    if (explainHd) {
-      e.stopPropagation();
-      const fold = explainHd.parentElement;
-      const willOpen = !fold.classList.contains('open');
-      fold.classList.toggle('open');
-      if (willOpen) {
-        requestAnimationFrame(() => setTimeout(() => {
-          fold.querySelector('.history-explain-answer')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }, 50));
+      if (id && confirm('确定要删除这条记录吗？')) {
+        historyRemove(id);
+        // 删除后，找到当前最底层的 historyList 重绘
+        const listEl = document.getElementById('historyList');
+        if (listEl && listEl.dataset.lastRender) {
+          listEl.dataset.lastRender = '0'; // 强制清除防抖
+          historyRender();
+        }
+        showToast('✅ 已删除该记录', 'success');
       }
       return;
     }
 
-    const groupHd = e.target.closest('.history-group-hd');
-    if (groupHd) {
-      const group = groupHd.parentElement;
-      const bd = group.querySelector('.history-group-bd');
-      const arrow = groupHd.querySelector('.history-group-arrow');
+    // 2. 展开单次记录
+    const itemHd = e.target.closest('[data-toggle-item="true"]');
+    if (itemHd) {
+      e.stopPropagation();
+      const bd = itemHd.nextElementSibling;
+      const arrow = itemHd.querySelector('.history-arrow');
       const willOpen = bd.style.display === 'none';
       bd.style.display = willOpen ? 'block' : 'none';
       if (arrow) arrow.style.transform = willOpen ? 'rotate(90deg)' : '';
       return;
     }
 
-    const hd = e.target.closest('.history-hd');
-    if (hd) {
-      const item = hd.parentElement;
-      const willOpen = !item.classList.contains('open');
-      item.classList.toggle('open');
-      if (willOpen) {
-        requestAnimationFrame(() => setTimeout(() => item.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50));
-      }
+    // 3. 展开题目分组
+    const groupHd = e.target.closest('[data-toggle-group="true"]');
+    if (groupHd) {
+      e.stopPropagation();
+      const bd = groupHd.nextElementSibling;
+      const arrow = groupHd.querySelector('.history-group-arrow');
+      const willOpen = bd.style.display === 'none';
+      bd.style.display = willOpen ? 'block' : 'none';
+      if (arrow) arrow.style.transform = willOpen ? 'rotate(90deg)' : '';
       return;
     }
   });
+}
 
-  document.getElementById('historyClear')?.addEventListener('click', () => {
-    import('./history.js').then(({ historyClear }) => historyClear());
-  });
-  document.getElementById('historyExport')?.addEventListener('click', () => {
-    import('./history-export.js').then(({ historyExport }) => historyExport());
-  });
+/* ============ 保留此函数为空，兼容 main.js 的调用 ============ */
+export function initHistoryDelegation() {
+  // ⭐ 因为上面的全局监听已经包揽了所有事情，这里留空即可，防止重复绑定
 }

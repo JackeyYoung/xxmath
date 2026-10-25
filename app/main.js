@@ -267,23 +267,27 @@ function showUnreadParentMsg() {
         const { pushBatch } = await import('../core/sync/cloudbase-adapter.js');
         pushBatch(toPush).catch(e => console.warn('[Sync] 回推失败', e));
       }
-      try { wbRender(); historyRender(); renderDashboard(); } catch (e) {}
+      // ⭐ 删掉 historyRender，保留其他的
+      try { wbRender(); renderDashboard(); } catch (e) {}
     }
   }
 
   // 年级切换与数据变化监听
   on(EVT.GRADE_CHANGED, () => {
-    try { wbRender(); historyRender(); renderDashboard(); renderStudentCard(); window._refreshGrowthCards?.(); } catch (e) {}
+    // ⭐ 删掉 historyRender
+    try { wbRender(); renderDashboard(); renderStudentCard(); window._refreshGrowthCards?.(); } catch (e) {}
   });
+  
   on(EVT.DATA_CHANGED, (payload) => {
-    if (payload.source === 'history') try { historyRender(); } catch (e) {}
-    else if (payload.source === 'wrongbook') try { wbRender(); } catch (e) {}
-    else if (payload.source === 'takeaway') try { window._refreshGrowthCards?.(); } catch (e) {}
+    // ⭐ 彻底删掉这里触发 historyRender 的逻辑，因为它已经由 m14 内部处理
+    if (payload.source === 'wrongbook') try { wbRender(); } catch (e) {}
+    if (payload.source === 'takeaway') try { window._refreshGrowthCards?.(); } catch (e) {}
     try { renderDashboard(); } catch (e) {}
+    try { window._refreshGrowthCards?.(); } catch (e) {} 
   });
 
+  // 初始渲染
   wbRender();
-  historyRender();
   renderDashboard();
   renderErrorProfile();
 
@@ -301,7 +305,6 @@ function showUnreadParentMsg() {
   initHistoryDelegation();
   bindRangeTabs();
 
-  // 初始化错题本 (单例)
   initWrongBookUI({
     lockBodyScroll,
     navigate,
@@ -309,7 +312,6 @@ function showUnreadParentMsg() {
     handleRedoSuccess: window.__handleRedoSuccess,
     explainBusy: false,
     onExplainWrongItem: async (text) => {
-      // 错题本内部的点击直接交给弹窗
       showExplainModal(text);
     }
   });

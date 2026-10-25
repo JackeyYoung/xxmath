@@ -59,6 +59,56 @@ export default async function mount(container, ctx) {
   let window_llmPwdOK = false;
   let hasUsedHighlight = false;
 
+  // ⭐ 快捷提示词
+  const takeawayWrap = $('#pTakeaway')?.closest('.takeaway');
+  if (takeawayWrap && !takeawayWrap.querySelector('.takeaway-quick')) {
+    const hints = [
+      { label: '还剩多少 → 减法', text: '遇到「还剩多少」用减法，先算一共用去多少，再减。' },
+      { label: '一共 → 加法', text: '遇到「一共」用加法，把各部分加起来。' },
+      { label: '平均分 → 除法', text: '遇到「平均分」用除法，总数 ÷ 份数 = 每份数。' },
+      { label: '几倍 → 乘法', text: '遇到「是……的几倍」用乘法，一份数 × 倍数 = 总数。' },
+      { label: '先算乘除后加减', text: '遇到混合运算，先算乘除，后算加减。' }
+    ];
+    const quick = document.createElement('div');
+    quick.className = 'takeaway-quick';
+    quick.innerHTML = hints.map(h => `<button type="button" class="takeaway-quick-btn">${h.label}</button>`).join('');
+    takeawayWrap.appendChild(quick);
+    
+    quick.querySelectorAll('.takeaway-quick-btn').forEach((btn, i) => {
+      btn.addEventListener('click', () => {
+        const input = $('#pTakeaway');
+        const cur = input.value.trim();
+        input.value = cur ? cur + '；' + hints[i].text : hints[i].text;
+        input.focus();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    });
+  }
+
+  // ⭐ 注册层级切换处理器
+  ctx.registerLevelHandler('m13', (levelId) => {
+    // 假设 levelId 是 'step-1', 'step-2' 等
+    const stepCount = parseInt(levelId.replace('step-', ''), 10);
+    // 过滤题库中符合步数的题目
+    let bank = window.PROBLEMS_BANK || M13_PROBLEMS;
+    if (levelId) {
+      bank = bank.filter(p => {
+        const steps = p.stepsCount || (p.steps ? p.steps.length : 2);
+        return steps === stepCount || (levelId === 'step-4' && steps >= 4);
+      });
+    }
+    // 更新下拉框
+    M13_BANK = bank.length ? bank : M13_PROBLEMS;
+    m13InitSelect();
+    
+    // 自动选第一道题
+    const sel = $('#pSelect');
+    if (sel && sel.options.length > 1) {
+      sel.selectedIndex = 1;
+      $('#pLoad')?.click();
+    }
+  });
+
   /* ================= 工具函数 ================= */
   function m13ClearStepMarks() {
     $$('#formulaSteps input').forEach(inp => {
@@ -435,6 +485,10 @@ export default async function mount(container, ctx) {
         setTimeout(() => { badge.style.animation = ''; }, 500);
         if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
         ctx.data.masteryRecord(problemText, true);
+
+        // ⭐ 核心修复：调用全局重做成功逻辑
+        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
+        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
         ctx.data.masteryRecord(problemText, false);
@@ -494,6 +548,11 @@ export default async function mount(container, ctx) {
           aiFeedback: p && p.steps ? { answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: true, student_answer_issue: '无', step_issues: [], step_count_comment: '' }, _source: 'bank' } : null
         });
         ctx.data.masteryRecord(problemText, true);
+
+        // ⭐ 核心修复：调用全局重做成功逻辑
+        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
+        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
+
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
         const stdSteps = $$('#m13StandardSteps .std-fold');
@@ -534,7 +593,12 @@ export default async function mount(container, ctx) {
       const ok = result.judgement.answer_correct;
 
       setBadge(ok ? 'ok' : 'no', ok ? `🎉 ${getEncouragement('m13', 1)} 参考答案：${result.answer.full}` : `❌ ${result.judgement.student_answer_issue || '再检查一下'}`);
-      if (ok) { badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)'; setTimeout(() => { badge.style.animation = ''; }, 500); }
+      if (ok) { badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)'; 
+        setTimeout(() => { badge.style.animation = ''; }, 500); 
+        // ⭐ 核心修复：调用全局重做成功逻辑
+        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
+        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
+      }
 
       // 渲染 AI 反馈
       // 由于原版这里有 renderLLMFeedback(result)，模块化后请确保有类似展示，如果没有可以直接调用你原来的。

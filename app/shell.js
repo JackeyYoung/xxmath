@@ -1,8 +1,6 @@
 /* app/shell.js —— 地图 + 课页 + 成长 三层壳
    不碰 core/，不碰 m1~m14 内部逻辑
 */
-
-import { historyLoad } from '../core/history.js';
 import { wbLoad } from '../core/wrongbook.js';
 import { on, EVT } from '../core/events.js';
 
@@ -31,14 +29,12 @@ import { loadGrade } from '../grades/registry.js';
 import { lsGet, lsSet } from '../core/storage.js';
 import { showToast } from '../core/toast.js';
 import { focusInputWhenReady } from '../core/input-focus.js';
-import { historyAdd } from '../core/history.js';
 import { masteryRecord } from '../core/mastery.js';
 import { takeawayLoad } from '../core/takeaway.js';
 import { showMasteryCard } from '../core/ui/mastery-card.js';
 import { buildAiInsightHtml } from '../core/ui/ai-insight.js';
 import { activityAdd } from '../core/activity.js';
-
-import { historySave } from '../core/history.js';
+import { historyAdd, historyLoad, historySave } from '../core/history.js';
 import { wbAdd } from '../core/wrongbook.js';
 
 // shell.js 顶部建立全局模块注册表（让模块自己报备重做）
@@ -652,25 +648,21 @@ function retriggerModuleRender(lessonId) {
   }
 }
 
+const _levelHandlers = new Map(); // ⭐ 保存各模块的层级切换函数
+
 function mountLesson(lessonId) {
   if (!lessonId) lessonId = 'm1';
   const stage = document.getElementById('lesson-stage-main') || document.getElementById('modulePool');
   if (!stage) return;
 
-  // ⭐ 核心防线：在挂载新内容前，强制清空容器内的所有 DOM！
   stage.innerHTML = '';
 
-  // 1. 卸载旧模块（增加类型判断，防止异步加载未完成时报错）
   if (_currentCleanup && typeof _currentCleanup === 'function') {
-    try { 
-      _currentCleanup(); 
-    } catch (e) { 
-      console.warn('卸载模块失败', e); 
-    }
+    try { _currentCleanup(); } catch (e) { console.warn('卸载模块失败', e); }
   }
-  _currentCleanup = null; // 无论是不是函数，都强制置空
+  _currentCleanup = null;
+  _levelHandlers.clear(); // 清理上一模块的 handler
 
-  // 2. 基础 UI 调整
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-lesson')?.classList.add('active');
   document.getElementById('globalHeader').style.display = 'none';
@@ -683,8 +675,6 @@ function mountLesson(lessonId) {
   `;
   document.getElementById('lessonBack')?.addEventListener('click', () => navigate('home'));
 
-  // 3. 动态加载并挂载模块
-  // 此处临时使用动态 import，后续可以通过 registry 统一管理
   const loader = {
     m1: () => import('../grades/grade3/modules/m1.js'),
     m2: () => import('../grades/grade3/modules/m2.js'),
@@ -706,38 +696,83 @@ function mountLesson(lessonId) {
     return;
   }
 
-  loader().then(async mod => {
+  // ⭐ 必须在这里包裹 Promise，否则拿不到 mod 和 mount
+  loader().then(mod => {
     const mount = mod.default;
     if (typeof mount !== 'function') {
-      console.log('❌ 导出的 default 不是函数');
+      console.error(`模块 ${lessonId} 没有 default 导出`);
       return;
     }
 
-    // ⭐ 构造注入模块的上下文（同步版）
+    // 构造注入模块的上下文
     const ctx = {
       storage: { get: lsGet, set: lsSet },
       toast: showToast,
       focusWhenReady: focusInputWhenReady,
       data: {
-        historyAdd: historyAdd,
-        historyLoad: historyLoad,     // ⭐ 补上这个，历史缓存才会生效
-        historySave: historySave,
-        masteryRecord: masteryRecord,
-        takeawayLoad: takeawayLoad,
-        activityAdd: activityAdd,
-        wbAdd: wbAdd,                 // ⭐ 补上这个，错题本才会加入
-        wbLoad: wbLoad,
+        historyAdd, historyLoad, historySave,
+        masteryRecord, takeawayLoad, activityAdd,
+        wbAdd, wbLoad,
       },
       showMasteryCard: showMasteryCard,
       buildAiInsightHtml: buildAiInsightHtml,
-      registerLevelHandler: (id, fn) => { /* 预留 */ }
+      showThumbBar: (opts) => {
+        if (window.__shell && window.__shell.showThumbBar) window.__shell.showThumbBar(opts);
+      },
+      registerLevelHandler: (id, fn) => {
+        _levelHandlers.set(id, fn);
+      }
     };
 
+    // 1. 只挂载一次！
     _currentCleanup = mount(stage, ctx);
 
-        // 4. 执行挂载并保存清理函数
-    if (typeof mount === 'function') {
-      _currentCleanup = mount(stage, ctx); 
+    // 2. 渲染层级切换按钮
+    const levelWrap = document.getElementById('lessonLevels');
+    console.log('模块 meta:', mod.meta);
+    
+    if (mod.meta && mod.meta.levels && mod.meta.levels.length > 0) {
+      if (levelWrap) {
+        levelWrap.classList.remove('is-hidden');
+        const currentLevelId = localStorage.getItem(`grade3_${lessonId}_level`) || mod.meta.levels[0].id;
+
+        levelWrap.innerHTML = mod.meta.levels.map(lv => {
+          const isCurrent = lv.id === currentLevelId;
+          return `
+            <button class="level-btn ${isCurrent ? 'current' : ''}" data-level-id="${lv.id}">
+              <span class="level-btn-icon">${lv.icon || ''}</span>
+              <span class="level-btn-name">${lv.name}</span>
+            </button>
+          `;
+        }).join('');
+
+        // 绑定点击
+        levelWrap.querySelectorAll('.level-btn:not(.locked)').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const levelId = btn.dataset.levelId;
+            localStorage.setItem(`grade3_${lessonId}_level`, levelId);
+            levelWrap.querySelectorAll('.level-btn').forEach(b => b.classList.remove('current'));
+            btn.classList.add('current');
+
+            if (_levelHandlers.has(lessonId)) {
+              _levelHandlers.get(lessonId)(levelId);
+            }
+          });
+        });
+
+        // ⭐ 延时 50ms 触发一次初始层级
+        setTimeout(() => {
+          if (_levelHandlers.has(lessonId)) {
+            _levelHandlers.get(lessonId)(currentLevelId);
+          }
+        }, 50);
+      }
+    } else {
+      // 如果没有层级配置，隐藏
+      if (levelWrap) {
+        levelWrap.classList.add('is-hidden');
+        levelWrap.innerHTML = '';
+      }
     }
   }).catch(err => {
     console.error('模块加载失败', lessonId, err);
@@ -1040,37 +1075,82 @@ function renderWeeklySummary() {
    ============================================================ */
 function renderGrowth() {
   const stage = document.getElementById('growthStage');
-  if (stage.dataset.mounted === '1') {
-    // ⭐ 已挂载，只刷新总结卡
-    renderWeeklySummary();
-    return;
-  }
+  if (!stage) return;
 
-  const section = document.getElementById('m14');
-  if (section) {
-    section.parentNode.removeChild(section);
-    stage.appendChild(section);
-    section.style.display = 'block';
-    section.classList.add('active');
-  }
-  stage.dataset.mounted = '1';
+  // ⭐ 必须加上这句
+  stage.innerHTML = ''; 
 
-  // ⭐ 顶部插入本周总结卡
+  // 1. 卸载旧模块
+  if (_currentCleanup && typeof _currentCleanup === 'function') {
+    try { _currentCleanup(); } catch (e) { console.warn('[Growth] 卸载失败', e); }
+  }
+  _currentCleanup = null;
+
+  // 2. 基础 UI 重置
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById('page-growth')?.classList.add('active');
+  document.getElementById('globalHeader').style.display = 'none';
+  stage.innerHTML = ''; // 清空旧内容
+
+  // 3. 渲染 Header
   const hd = document.getElementById('growthHeader');
-  hd.innerHTML = `
-    <button class="lesson-back" id="growthBack">←</button>
-    <div class="lesson-title">📊 我的成长</div>
-    <div style="width:36px"></div>
-  `;
-  document.getElementById('growthBack').addEventListener('click', () => navigate('home'));
+  if (hd) {
+    hd.innerHTML = `
+      <button class="lesson-back" id="growthBack">←</button>
+      <div class="lesson-title">📊 我的成长</div>
+      <div style="width:36px"></div>
+    `;
+    document.getElementById('growthBack')?.addEventListener('click', () => navigate('home'));
+  }
 
-  // ⭐ 在 m14 前面插入总结卡容器
-  const summaryWrap = document.createElement('div');
-  summaryWrap.id = 'weeklySummaryWrap';
-  summaryWrap.className = 'weekly-summary-wrap';
-  stage.insertBefore(summaryWrap, stage.firstChild);
+  // 4. 动态加载并挂载 m14 模块
+  import('../grades/grade3/modules/m14.js').then(mod => {
+    const mount = mod.default;
+    if (typeof mount !== 'function') return;
 
-  renderWeeklySummary();
+    // ⭐ 构造注入的上下文
+    const ctx = {
+      storage: { get: lsGet, set: lsSet },
+      toast: showToast,
+      focusWhenReady: focusInputWhenReady,
+      data: {
+        historyAdd: historyAdd,
+        historyLoad: historyLoad,
+        historySave: historySave,
+        masteryRecord: masteryRecord,
+        takeawayLoad: takeawayLoad,
+        activityAdd: activityAdd,
+        wbAdd: wbAdd,
+        wbLoad: wbLoad,
+      },
+      showMasteryCard: showMasteryCard,
+      buildAiInsightHtml: buildAiInsightHtml,
+    };
+
+    // 执行模块挂载（m14 内部会自动渲染所有数据）
+    _currentCleanup = mount(stage, ctx);
+
+    // ==========================================
+    // 5. 挂载完成后，处理“本周学习总结”的插入逻辑
+    // ==========================================
+    const card = stage.querySelector('.card');
+    if (card && !document.getElementById('weeklySummaryWrap')) {
+      const summaryWrap = document.createElement('div');
+      summaryWrap.id = 'weeklySummaryWrap';
+      summaryWrap.className = 'weekly-summary-wrap';
+      
+      // 插到 card 的第一个子元素前面
+      card.insertBefore(summaryWrap, card.firstChild);
+      
+      // 如果外部还有 renderWeeklySummary 可以调用
+      if (typeof renderWeeklySummary === 'function') {
+        renderWeeklySummary();
+      }
+    }
+  }).catch(err => {
+    console.error('加载成长页失败', err);
+    stage.innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444;">加载失败：${err.message}</div>`;
+  });
 
    // ⭐ 本周周报提示
   const now = new Date();
