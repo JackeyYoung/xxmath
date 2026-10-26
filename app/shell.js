@@ -743,7 +743,7 @@ function mountLesson(lessonId) {
 
     // 2. 渲染层级切换按钮
     const levelWrap = document.getElementById('lessonLevels');
-    console.log('模块 meta:', mod.meta);
+    //console.log('模块 meta:', mod.meta);
     
     if (mod.meta && mod.meta.levels && mod.meta.levels.length > 0) {
       if (levelWrap) {

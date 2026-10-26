@@ -59,6 +59,8 @@ export default async function mount(container, ctx) {
   let window_llmPwdOK = false;
   let hasUsedHighlight = false;
 
+  let isBankReady = false;
+
   // ⭐ 快捷提示词
   const takeawayWrap = $('#pTakeaway')?.closest('.takeaway');
   if (takeawayWrap && !takeawayWrap.querySelector('.takeaway-quick')) {
@@ -85,35 +87,93 @@ export default async function mount(container, ctx) {
     });
   }
 
-  // ⭐ 修复：切换层级后，自动过滤题库并随机选一道题
-  ctx.registerLevelHandler('m13', (levelId) => {
-    // 1. 解析当前层级是几步（比如 'step-2' 提取出 2）
-    const stepCount = parseInt(levelId.replace('step-', ''), 10);
+  // ⭐ 修复：切换层级后，自动过滤题库、随机选题，并判断按钮文案
+  // ================= 抽取层级切换逻辑 =================
+  let _lastLevelLoadTime = 0;
+  function handleLevelChange(levelId) {
+    if (!isBankReady) return;
 
-    // 2. 从原始全量题库中过滤出符合步数的题目
-    // 注意：请把 window.PROBLEMS_BANK 替换为你实际存放原始题库的变量名
-    const fullBank = window.PROBLEMS_BANK || M13_PROBLEMS; 
+    const now = Date.now();
+    if (now - _lastLevelLoadTime < 100) return;
+    _lastLevelLoadTime = now;
+
+    // 解析层级，如 step-3 提取出 3
+    const stepCount = parseInt(levelId.replace('step-', ''), 10);
     
-    const filtered = fullBank.filter(p => {
-      const steps = p.stepsCount || (p.steps ? p.steps.length : 2);
-      return steps === stepCount || (levelId === 'step-4' && steps >= 4);
+    // ⭐ 核心修复：从 FULL_BANK（全量题库）里过滤，绝对不丢步骤
+    const filtered = FULL_BANK.filter(p => {
+      let stepsNum = 2; // 默认两步
+      if (p.steps && p.steps.length > 0) {
+        stepsNum = p.steps.length;
+      } else if (p.title && p.title.includes('一步')) {
+        stepsNum = 1;
+      } else if (p.title && p.title.includes('四步')) {
+        stepsNum = 4;
+      }
+      
+      if (levelId === 'step-4') return stepsNum >= 4;
+      return stepsNum === stepCount;
     });
 
-    // 3. 更新当前模块的题库池
-    M13_BANK = filtered.length ? filtered : fullBank;
+    // ⭐ 把过滤后的题库赋给 M13_BANK，用来渲染下拉框
+    M13_BANK = filtered.length ? filtered : [...FULL_BANK];
     
-    // 4. 重新渲染下拉框
     m13InitSelect();
 
-    // 5. 自动从过滤后的题库中随机抽一题并载入
     const sel = $('#pSelect');
     if (sel && sel.options.length > 1) {
-      // 随机选择一个真实选项（排除第0个"选择一道题目"）
-      const randomIndex = 1 + Math.floor(Math.random() * (sel.options.length - 1));
-      sel.selectedIndex = randomIndex;
+      sel.selectedIndex = 1; // 默认选第一道
       
-      // 触发载入按钮的点击
-      $('#pLoad')?.click();
+      const p = M13_BANK[1];
+      if (p) {
+        // 兼容性补齐 steps
+        if (!p.steps || p.steps.length === 0) {
+          const ansFull = typeof p.answer === 'string' ? p.answer : p.answer?.full;
+          p.steps = [{ step: 1, relation: '根据题意计算得出结果', substitution: '——', result: ansFull || '见最终答案' }];
+        }
+
+        M13_ProblemSource = 'bank';
+        M13_CurrentProblem = p;
+        
+        const ansFull = p.answer ? (typeof p.answer === 'string' ? p.answer : p.answer.full) : null;
+        m13LoadProblem(p.text, ansFull, 'bank', p);
+        m13InitSteps(p.steps.length);
+        
+        $('#m13StepsLocked').style.display = 'block';
+        $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
+        $('#m13StandardSteps').style.display = 'none';
+      }
+    }
+  }
+
+  // 注册给 shell.js
+  ctx.registerLevelHandler('m13', handleLevelChange);
+
+  // ================= 启动 =================
+  m13InitSteps();
+  resetAllSteps();
+  
+  // ⭐ 取消注释，执行加载题库！
+  loadBank(); 
+
+  window.M13_PROBLEMS_BANK = M13_BANK;
+
+  registerActiveModule('m13', {
+    redo: (text) => {
+      m13LoadProblem(text, null, 'custom', null);
+      m13InitSteps();
+      $('#m13StandardSteps').style.display = 'none';
+      $('#m13StepsLocked').style.display = 'block';
+    },
+    showSolution: (text) => {
+      const cached = findCachedFeedback(text, M13_BANK);
+      if (cached) {
+        renderStandardSolution(cached.aiFeedback);
+        $('#m13StepsLocked').style.display = 'none';
+        $('#m13StandardSteps').style.display = 'block';
+      } else {
+        m13FetchStandardSolution();
+      }
     }
   });
 
@@ -279,6 +339,8 @@ export default async function mount(container, ctx) {
   }
 
   /* ================= 题库与加载 ================= */
+  let FULL_BANK = []; // ⭐ 核心修复：引入一个全量题库变量，绝不污染
+
   function loadBank() {
     const loadBtn = $('#pLoad');
     if (loadBtn) {
@@ -289,30 +351,45 @@ export default async function mount(container, ctx) {
 
     const done = () => {
       if (loadBtn) { loadBtn.disabled = false; loadBtn.textContent = loadBtn.dataset._origText || '📥 载入'; }
+      isBankReady = true;
+      // 如果 shell.js 提前触发了层级切换，这里补执行一次
+      const savedLevel = localStorage.getItem('grade3_m13_level');
+      if (savedLevel) {
+        handleLevelChange(savedLevel);
+      }
     };
 
     if (Array.isArray(window.PROBLEMS_BANK) && window.PROBLEMS_BANK.length > 0) {
-      M13_BANK = window.PROBLEMS_BANK;
+      FULL_BANK = window.PROBLEMS_BANK;
+      M13_BANK = [...FULL_BANK];
       m13InitSelect(); done(); return Promise.resolve();
     }
     if (location.protocol === 'file:') {
-      M13_BANK = M13_PROBLEMS.map((p, i) => ({ id: i + 1, type: '内置', text: p.text, answer: { full: p.answer } }));
+      FULL_BANK = M13_PROBLEMS.map((p, i) => ({ id: i + 1, type: '内置', text: p.text, answer: { full: p.answer } }));
+      M13_BANK = [...FULL_BANK];
       m13InitSelect(); done(); return Promise.resolve();
     }
     return fetch('./data/problems.json')
       .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })
-      .then(data => { M13_BANK = data; m13InitSelect(); done(); })
+      .then(data => { 
+        FULL_BANK = data; 
+        M13_BANK = [...FULL_BANK];
+        m13InitSelect(); done(); 
+      })
       .catch(e => {
-        M13_BANK = M13_PROBLEMS.map((p, i) => ({ id: i + 1, type: '内置', text: p.text, answer: { full: p.answer } }));
+        FULL_BANK = M13_PROBLEMS.map((p, i) => ({ id: i + 1, type: '内置', text: p.text, answer: { full: p.answer } }));
+        M13_BANK = [...FULL_BANK];
         m13InitSelect(); done();
       });
   }
 
   function m13InitSelect() {
-    let bank = M13_BANK;
+    // ⭐ 核心修复：不再重新去全局找题库，直接用传进来的 M13_BANK！
+    const bank = M13_BANK;
     const groups = {};
+    
     bank.forEach((p) => {
-      const type = p.type || '其他';
+      const type = p.type || '内置题库';                 
       const origIdx = M13_BANK.indexOf(p);
       if (!groups[type]) groups[type] = [];
       groups[type].push({ p, i: origIdx });
@@ -327,6 +404,7 @@ export default async function mount(container, ctx) {
       });
       html += '</optgroup>';
     });
+    
     const sel = $('#pSelect');
     if (sel) sel.innerHTML = html;
   }
@@ -351,6 +429,8 @@ export default async function mount(container, ctx) {
       takeawayEl.value = savedTakeaway;
       takeawayEl.dispatchEvent(new Event('input', { bubbles: true }));
     }
+
+    // ⭐ 打印当前执行后的真实状态
   }
 
   /* ================= 密码与 AI 求解 ================= */
@@ -529,10 +609,6 @@ export default async function mount(container, ctx) {
       return (s.rel || '').trim().length > 0 && (s.sub || '').trim().length > 0 && m13IsValidSubstitution(s.sub, problemNums);
     });
 
-    console.log('🔥🔥 提取的 studentSteps:', studentSteps);
-    console.log('🔥🔥 题目里的数字 problemNums:', problemNums);
-    console.log('🔥🔥 过滤后的 completeSteps:', completeSteps);
-
     if (completeSteps.length === 0) {
       const anyRel = studentSteps.some(s => (s.rel || '').trim());
       const anySub = studentSteps.some(s => (s.sub || '').trim());
@@ -641,16 +717,33 @@ export default async function mount(container, ctx) {
   $('#pLoad')?.addEventListener('click', () => {
     if (!checkTakeawayBeforeChange()) return;
     if (!M13_BANK.length) return ctx.toast('题库还在加载中', 'info');
+    
     const idx = $('#pSelect').value;
     if (idx === '') return ctx.toast('请先从下拉框选择一道题目', 'info');
+    
     const p = M13_BANK[+idx];
     if (!p) return;
+    
+    // 1. 解析答案
     const ansFull = p.answer ? (typeof p.answer === 'string' ? p.answer : p.answer.full) : null;
+
+    // 2. 加载题目并重置步骤
     m13LoadProblem(p.text, ansFull, 'bank', p);
     m13InitSteps(p.stepsCount || (p.steps ? p.steps.length : 2));
+    
+    // 3. ⭐ 核心修复：精准控制按钮的文字和状态
     $('#m13StepsLocked').style.display = 'block';
-    $('#m13UnlockBtn').textContent = p.steps && p.steps.length ? '📖 查看标准解题过程' : '🤖 让 AI 现算标准解法（需密码）';
+    
+    if (p.steps && p.steps.length > 0) {
+      $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
+    } else {
+      $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
+    }
+    
+    // 4. 隐藏上一次的标准解法面板
     $('#m13StandardSteps').style.display = 'none';
+    
+    // 5. 关闭抽屉
     closeDrawer();
   });
 
@@ -791,12 +884,22 @@ export default async function mount(container, ctx) {
   });
   takeawayBtn?.addEventListener('click', () => { clearTimeout(saveTimer); doSaveTakeaway(false); });
 
-  // 查看标准解法（直接复用错题本的统一查缓存+AI弹窗逻辑！）
+  // ⭐ 查看标准解法（真正的降级链路：题库自带 -> 本地缓存 -> AI）
   $('#m13UnlockBtn')?.addEventListener('click', async () => {
     const problemText = $('#problem-text')?.innerText.trim();
     if (!problemText) return ctx.toast('请先输入题目', 'info');
-    
-    // ⭐ 直接弹窗，弹窗内部会统一走降级链路（题库->缓存->AI）
+
+    // 降级 1：如果是题库题，且自带 steps，直接渲染在下方（免密秒出）
+    if (M13_ProblemSource === 'bank' && M13_CurrentProblem?.steps?.length) {
+      renderStandardSolution({
+        steps: M13_CurrentProblem.steps,
+        answer: { full: M13_CurrentProblem.answer?.full || M13_CurrentProblem.answer }
+      });
+      $('#m13StepsLocked').style.display = 'none';
+      return;
+    }
+
+    // 降级 2 & 3：如果没有自带答案，走错题本的统一弹窗（查历史缓存或调 AI）
     try {
       const { showExplainModal } = await import('../../../core/ui/wrongbook-ui.js');
       showExplainModal(problemText);
@@ -846,6 +949,7 @@ export default async function mount(container, ctx) {
   /* ================= 启动 ================= */
   m13InitSteps();
   resetAllSteps();
+  /*
   loadBank().then(() => {
     const sel = $('#pSelect');
     if (sel && sel.options.length > 1) {
@@ -853,6 +957,7 @@ export default async function mount(container, ctx) {
       $('#pLoad')?.click();
     }
   });
+  */
 
   // 加载完题库后，挂到全局供错题本查询
   window.M13_PROBLEMS_BANK = M13_BANK;
