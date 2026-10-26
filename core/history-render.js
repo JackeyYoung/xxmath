@@ -155,6 +155,80 @@ export function historyRender(parentNode = document) {
       </div>
     `;
   }).join('');
+
+  // ================= 时间轴视图切换逻辑 =================
+  const historySection = document.getElementById('historySection');
+  if (historySection && !historySection.querySelector('.timeline-toggle')) {
+    const hd = historySection.querySelector('.collapsible-hd');
+    if (hd) {
+      const btn = document.createElement('button');
+      btn.className = 'timeline-toggle';
+      btn.style.cssText = 'margin-left:8px;padding:4px 12px;border:1.5px solid var(--primary);border-radius:8px;background:#fff;color:var(--primary-d);font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;';
+      btn.textContent = '🕐 时间轴';
+      hd.appendChild(btn);
+
+      let isTimeline = false;
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        isTimeline = !isTimeline;
+        btn.textContent = isTimeline ? '📋 列表' : '🕐 时间轴';
+        renderTimeline(isTimeline);
+      });
+
+      function renderTimeline(on) {
+        if (!on) {
+          // 恢复列表：直接重新调用一次 historyRender
+          historyRender(parentNode);
+          return;
+        }
+        // 渲染时间轴
+        const list = historyLoad();
+        if (!list.length) {
+          listEl.innerHTML = '<div class="history-empty">还没有做题记录 📝</div>';
+          return;
+        }
+        const groups = {};
+        list.forEach(r => {
+          const d = new Date(r.timestamp);
+          const day = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          if (!groups[day]) groups[day] = [];
+          groups[day].push(r);
+        });
+        const days = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+        const today = new Date(); today.setHours(0,0,0,0);
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+        const yest = new Date(today.getTime() - 86400000);
+        const yestStr = `${yest.getFullYear()}-${String(yest.getMonth()+1).padStart(2,'0')}-${String(yest.getDate()).padStart(2,'0')}`;
+
+        listEl.innerHTML = days.map(day => {
+          const items = groups[day].sort((a, b) => b.timestamp - a.timestamp);
+          let label = day;
+          if (day === todayStr) label = '今天';
+          else if (day === yestStr) label = '昨天';
+          return `
+            <div class="timeline-day">
+              <div class="timeline-day-hd">
+                ${label}
+                <span class="day-count">· ${items.length} 次</span>
+              </div>
+              ${items.map(r => {
+                const d = new Date(r.timestamp);
+                const t = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+                return `
+                  <div class="timeline-item ${r.isCorrect ? 'correct' : 'wrong'}">
+                    <div class="timeline-time">${t}</div>
+                    <div class="timeline-content">${escapeHtmlStrict(r.problemText)}</div>
+                    <div class="timeline-status">${r.isCorrect ? '✓' : '✗'}</div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `;
+        }).join('');
+      }
+    }
+  }
+
 }
 
 /* ============ ⭐ 唯一的全局事件监听（只绑一次） ============ */

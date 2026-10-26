@@ -1240,6 +1240,17 @@ export function initShell() {
       navigate('home');
     }
   });
+
+  // ⭐ 核心修复：初始化拇指条，并挂载到 window 上供模块调用
+  ensureThumbBar();
+  window.__shell = {
+    navigate,
+    showThumbBar,
+    hideThumbBar,
+    refreshHomeTasks,
+    renderHome
+  };
+  console.log('✅ 拇指条已初始化并挂载到全局');
 }
 
 /* ⭐ 孩子写"本周一句话"的弹窗 */
