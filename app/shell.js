@@ -704,6 +704,18 @@ function mountLesson(lessonId) {
       return;
     }
 
+    // 在 mountLesson 函数的内部，定义一个防抖器
+    const _actTimers = {};
+    const _actPending = {};
+    function recordActivity(moduleId, label, detail, delay = 2000) {
+      clearTimeout(_actTimers[moduleId]);
+      _actPending[moduleId] = { label, detail };
+      _actTimers[moduleId] = setTimeout(() => {
+        activityAdd(moduleId, _actPending[moduleId]);
+        delete _actPending[moduleId];
+      }, delay);
+    }
+
     // 构造注入模块的上下文
     const ctx = {
       storage: { get: lsGet, set: lsSet },
@@ -711,7 +723,9 @@ function mountLesson(lessonId) {
       focusWhenReady: focusInputWhenReady,
       data: {
         historyAdd, historyLoad, historySave,
-        masteryRecord, takeawayLoad, activityAdd,
+        masteryRecord, takeawayLoad, 
+        activityAdd,// 保留原来的
+        recordActivity, // ⭐ 新增防抖版本
         wbAdd, wbLoad,
       },
       showMasteryCard: showMasteryCard,

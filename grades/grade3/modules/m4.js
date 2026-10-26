@@ -20,7 +20,7 @@ export default async function mount(container, ctx) {
   // TODO: 拷贝 main.js 里的 m4Update 和 m4NewQuiz 函数到这里
   // m4Update 里的 recordActivity 改为 ctx.data.activityAdd
 
-  function m4Update() {
+  function m4Update(isUserAction = false) {
     const val = parseFloat($('#m4val').value), unit = $('#m4unit').value;
     const wrap = $('#m4results');
     if (isNaN(val)) { wrap.innerHTML = '<div class="result-item"><span class="k">请输入一个数字</span></div>'; return; }
@@ -31,8 +31,10 @@ export default async function mount(container, ctx) {
       const hl = x.key === unit ? ' hl' : '';
       return `<div class="result-item${hl}"><span class="k">${x.name} ${x.key}</span><span class="v">${fmt(v)}</span></div>`;
     }).join('');
-    // ⭐ 新增：体验记录（防抖 2 秒）
-    ctx.data.activityAdd('m4', `${val} ${u.name}`, '');
+    if (isUserAction) {
+      // ⭐ 新增：体验记录（防抖 2 秒）
+      ctx.data.recordActivity('m4', `${val} ${u.name}`, '');
+    }
   }
 
   function m4NewQuiz() {
@@ -58,7 +60,7 @@ export default async function mount(container, ctx) {
     if (Math.abs(user - m4Quiz.ans) < 1e-9) {
       fb.className = 'feedback ok';
       fb.textContent = `🎉 完全正确！${m4Quiz.val} ${m4Quiz.from.name} = ${fmt(m4Quiz.ans)} ${m4Quiz.to.name}`;
-      ctx.data.activityAdd('m4', `小测：${m4Quiz.val} ${m4Quiz.from.name}`, '答对');
+      ctx.data.recordActivity('m4', `小测：${m4Quiz.val} ${m4Quiz.from.name}`, '答对');
     } else {
       fb.className = 'feedback error';
       fb.textContent = `再想想～ 提示：${m4Quiz.from.name}换成${m4Quiz.to.name}要 ${fmt(m4Quiz.from.toM / m4Quiz.to.toM)} 倍`;

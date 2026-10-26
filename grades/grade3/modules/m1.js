@@ -397,6 +397,9 @@ export default async function mount(container, ctx) {
   }
 
   function m1CommitStep() {
+    // ⭐ 核心修复：防止 keydown 和 blur 同时触发导致重复 push
+    if (M1.waitingOpIdx < 0) return;
+
     const i = M1.waitingOpIdx;
     const val = M1.pendingResult;
     const toks = M1.tokens;
@@ -419,6 +422,9 @@ export default async function mount(container, ctx) {
     }
 
     setTimeout(() => {
+      // ⭐ 核心修复：由于 setTimeout 有延迟，再次检查状态，防止已被其他事件清理
+      if (M1.waitingOpIdx !== i) return;
+
       let newTokens = [...toks.slice(0, i - 1), { type: 'num', val }, ...toks.slice(i + 2)];
       newTokens = cleanParens(newTokens);
       const resultStr = tokensToString(newTokens);
@@ -432,27 +438,26 @@ export default async function mount(container, ctx) {
       M1.pendingOp = null;
 
       m1Render();
-      // 在 commitStep 的 setTimeout 末尾：
       
       // ⭐ 提示下一个可点运算符
       setTimeout(() => {
         if (M1.done || M1.waitingOpIdx >= 0 || !M1_PRIORITY.passed) return;
-        const toks = M1.tokens;
-        const hasMulDiv = toks.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
+        const toks2 = M1.tokens;
+        const hasMulDiv = toks2.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
         let targetIdx = -1;
-        for (let i = 0; i < toks.length; i++) {
-          const t = toks[i];
+        for (let j = 0; j < toks2.length; j++) {
+          const t = toks2[j];
           if (t.type !== 'op') continue;
           if ((t.val === '+' || t.val === '-') && hasMulDiv) continue;
-          targetIdx = i;
+          targetIdx = j;
           break;
         }
         if (targetIdx < 0) return;
         
         let opCount = 0, domIdx = -1;
-        for (let i = 0; i < toks.length; i++) {
-          if (toks[i].type === 'op') {
-            if (i === targetIdx) { domIdx = opCount; break; }
+        for (let j = 0; j < toks2.length; j++) {
+          if (toks2[j].type === 'op') {
+            if (j === targetIdx) { domIdx = opCount; break; }
             opCount++;
           }
         }
@@ -471,15 +476,15 @@ export default async function mount(container, ctx) {
         if (ctx.data && ctx.data.historyAdd) {
           ctx.data.historyAdd({
             problemText: M1.original, problemSource: 'm1', moduleId: 'm1',
-            studentSteps: M1.steps.map((s, i) => ({ rel: `第 ${i + 1} 步`, sub: s.markedHtml, res: s.resultStr })),
+            studentSteps: M1.steps.map((s, idx) => ({ rel: `第 ${idx + 1} 步`, sub: s.markedHtml, res: s.resultStr })),
             studentAnswer: fmtNum(finalVal), isCorrect: true, correctAnswer: fmtNum(finalVal), aiFeedback: null,
           });
         }
         if (ctx.data && ctx.data.masteryRecord) ctx.data.masteryRecord(M1.original, true);
       } else {
-        const toks2 = M1.tokens;
-        const hasMulDiv = toks2.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
-        const hasAddSub = toks2.some(t => t.type === 'op' && (t.val === '+' || t.val === '-'));
+        const toks3 = M1.tokens;
+        const hasMulDiv = toks3.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
+        const hasAddSub = toks3.some(t => t.type === 'op' && (t.val === '+' || t.val === '-'));
         if (hasMulDiv && hasAddSub) {
           M1_PRIORITY.passed = false;
           m1ShowPriorityBox();

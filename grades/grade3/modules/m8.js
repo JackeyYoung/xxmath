@@ -11,11 +11,13 @@ export default async function mount(container, ctx) {
   const M8 = { base: 3, times: 3, maxBase: 5, maxTimes: 20 };
 
   // TODO: 拷贝 main.js 中的 m8Render
-  function m8Render() {
+  function m8Render(isUserAction = false) {
     const { base, times } = M8;
     const total = base * times;
-    // M8：滑块变化
-    ctx.data.activityAdd('m8', `${base} 的 ${times} 倍`, `共 ${base*times} 个`);
+    if (isUserAction) {
+      // M8：滑块变化
+      ctx.data.recordActivity('m8', `${base} 的 ${times} 倍`, `共 ${base*times} 个`);
+    }
 
 
     // 第一行

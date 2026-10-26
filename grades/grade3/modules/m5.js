@@ -123,9 +123,9 @@ export default async function mount(container, ctx) {
   ];
 
   // TODO: 复制 main.js 里的 m5Render, m5NewChallenge 函数过来
-  // 把 recordActivity 改为 ctx.data.activityAdd
+  // 把 recordActivity 改为 ctx.data.recordActivity
 
-  function m5Render() {
+  function m5Render(isUserAction = false) {
     const w = +$('#m5w').value, h = +$('#m5h').value;
     $('#m5wval').textContent = w; $('#m5hval').textContent = h;
     let html = '';
@@ -138,8 +138,10 @@ export default async function mount(container, ctx) {
     $('#m5area').textContent = w * h;
     $('#m5perim').textContent = (w + h) * 2;
 
-    // ⭐ 新增：拖滑块也算体验
-    ctx.data.activityAdd('m5', `长方形 ${w}×${h}`, `面积 ${w*h}`);
+    if (isUserAction) {
+      // ⭐ 新增：拖滑块也算体验
+      ctx.data.recordActivity('m5', `长方形 ${w}×${h}`, `面积 ${w*h}`);
+    }
   }
 
   function m5NewChallenge() {
@@ -200,7 +202,7 @@ export default async function mount(container, ctx) {
           fb.innerHTML = `✓ 对！答案是 ${q.answer} ${q.unit}`;
           fb.className = 'm5-chal-fb ok';
           // ⭐ 新增
-          ctx.data.activityAdd('m5', `逆向挑战`, `答对 ${q.answer} ${q.unit}`, 0);
+          ctx.data.recordActivity('m5', `逆向挑战`, `答对 ${q.answer} ${q.unit}`, 0);
         } else {
           input.classList.add('wrong');
           fb.innerHTML = '❌ 再想想～ ' + q.hint;
@@ -224,7 +226,7 @@ export default async function mount(container, ctx) {
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${m5RecordIdx}</td><td>${w}</td><td>${h}</td><td>${w} × ${h} = <b style="color:#2563eb">${w*h}</b></td><td>(${w} + ${h}) × 2 = <b style="color:#d97706">${(w+h)*2}</b></td>`;
     $('#m5table tbody').appendChild(tr);
-    ctx.data.activityAdd('m5', `长方形 ${w}×${h}`, `面积 ${w*h}`);
+    ctx.data.recordActivity('m5', `长方形 ${w}×${h}`, `面积 ${w*h}`);
   });
   $('#m5cleartable')?.addEventListener('click', () => {
     $('#m5table tbody').innerHTML = '';
