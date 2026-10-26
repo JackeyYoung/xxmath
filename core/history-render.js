@@ -53,23 +53,39 @@ export function historyRender(parentNode = document) {
       const d = new Date(r.timestamp);
       const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
       
-      const stepsHtml = (r.studentSteps || []).length
-        ? r.studentSteps.map((s, i) => {
-            const cleanSub = (s.sub || '').replace(/<[^>]+>/g, '');
-            const cleanRes = (s.res || '').replace(/<[^>]+>/g, '');
-            let rel = s.rel || '';
-            const stepLabel = rel.startsWith('第') ? rel : `第 ${i + 1} 步`;
-            if (cleanSub && cleanRes) {
-               return `
-                <div class="history-step" style="margin-bottom: 8px; padding-left: 12px; border-left: 2px solid #e2e8f0;">
-                  <div style="font-weight:700; color:#475569; font-size:12px; margin-bottom:4px;">${stepLabel}</div>
-                  <div style="color:#334155;">算式：${escapeHtmlStrict(cleanSub)}</div>
-                  <div style="color:#334155;">得数：${escapeHtmlStrict(cleanRes)}</div>
-                </div>`;
-            }
-            return '';
-          }).join('')
-        : '<div style="color:#94a3b8;font-size:13px;font-style:italic;">未填写步骤</div>';
+      // ⭐ 兼容 M13 和 M1 的展示
+      // ⭐ 兼容 M13 和 M1 的展示，只要填了任意一项就渲染
+      let stepsHtml = '';
+      if (Array.isArray(r.studentSteps) && r.studentSteps.length > 0) {
+        stepsHtml = r.studentSteps.map((s, i) => {
+          // 1. 清理所有 HTML 标签
+          const cleanRel = String(s.rel || s.relation || '').replace(/<[^>]+>/g, '').trim();
+          const cleanSub = String(s.sub || s.substitution || '').replace(/<[^>]+>/g, '').trim();
+          const cleanRes = String(s.res || s.result || '').replace(/<[^>]+>/g, '').trim();
+          
+          // 2. 判断步骤名（如果是 M1 的"第X步"，直接用，否则加前缀）
+          const stepLabel = cleanRel.startsWith('第') ? cleanRel : `第 ${i + 1} 步`;
+          
+          // 3. 只要有任何一个数据（哪怕是空的空格），就渲染出来
+          if (!cleanRel && !cleanSub && !cleanRes) {
+            return ''; // 真的全空才跳过
+          }
+
+          return `
+            <div class="history-step" style="margin-bottom: 8px; padding-left: 12px; border-left: 2px solid #e2e8f0;">
+              <div style="font-weight:700; color:#475569; font-size:12px; margin-bottom:4px;">${stepLabel}</div>
+              ${(cleanRel && !cleanRel.startsWith('第')) ? `<div style="color:#334155; margin-bottom:2px;">关系式：${escapeHtmlStrict(cleanRel)}</div>` : ''}
+              ${cleanSub ? `<div style="color:#334155; margin-bottom:2px;">代入：${escapeHtmlStrict(cleanSub)}</div>` : ''}
+              ${cleanRes ? `<div style="color:#15803d; font-weight:700;">得数：${escapeHtmlStrict(cleanRes)}</div>` : ''}
+            </div>
+          `;
+        }).join('');
+      }
+
+      // 兜底：如果真的啥也没提取出来
+      if (!stepsHtml) {
+        stepsHtml = '<div style="color:#94a3b8;font-size:13px;font-style:italic;">未填写步骤</div>';
+      }
 
       return `
         <div class="history-item ${r.isCorrect ? 'correct' : 'wrong'}" style="margin-left:16px;margin-top:10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; overflow: hidden;">

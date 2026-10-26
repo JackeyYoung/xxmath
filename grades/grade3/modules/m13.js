@@ -521,6 +521,10 @@ export default async function mount(container, ctx) {
       return (s.rel || '').trim().length > 0 && (s.sub || '').trim().length > 0 && m13IsValidSubstitution(s.sub, problemNums);
     });
 
+    console.log('🔥🔥 提取的 studentSteps:', studentSteps);
+    console.log('🔥🔥 题目里的数字 problemNums:', problemNums);
+    console.log('🔥🔥 过滤后的 completeSteps:', completeSteps);
+
     if (completeSteps.length === 0) {
       const anyRel = studentSteps.some(s => (s.rel || '').trim());
       const anySub = studentSteps.some(s => (s.sub || '').trim());
@@ -544,7 +548,7 @@ export default async function mount(container, ctx) {
         if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
         
         ctx.data.historyAdd({
-          problemText, problemSource: '题库', moduleId: 'm13', studentSteps, studentAnswer: user, isCorrect: true, correctAnswer: stdFull,
+          problemText, problemSource: '题库', moduleId: 'm13', studentSteps: studentSteps, studentAnswer: user, isCorrect: true, correctAnswer: stdFull,
           aiFeedback: p && p.steps ? { answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: true, student_answer_issue: '无', step_issues: [], step_count_comment: '' }, _source: 'bank' } : null
         });
         ctx.data.masteryRecord(problemText, true);
@@ -559,7 +563,7 @@ export default async function mount(container, ctx) {
         if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
         
         ctx.data.historyAdd({
-          problemText, problemSource: '题库', moduleId: 'm13', studentSteps, studentAnswer: user, isCorrect: false, correctAnswer: stdFull,
+          problemText, problemSource: '题库', moduleId: 'm13', studentSteps: studentSteps, studentAnswer: user, isCorrect: false, correctAnswer: stdFull,
           aiFeedback: p && p.steps ? { answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: false, student_answer_issue: '答案有误', step_issues: [], step_count_comment: '' }, _source: 'bank' } : null
         });
         ctx.data.masteryRecord(problemText, false);

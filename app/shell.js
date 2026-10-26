@@ -1159,6 +1159,9 @@ function renderGrowth() {
   const weekAgo = now.getTime() - 7 * 86400000;
   const weekRecords = historyLoad().filter(r => r.timestamp >= weekAgo);
 
+  // ⭐ 核心修复：每次生成前，先把页面上旧的提示条删掉！
+  document.querySelectorAll('.growth-weekly-tip').forEach(el => el.remove());
+
   if (weekRecords.length > 0) {
     const tip = document.createElement('div');
     tip.className = 'growth-weekly-tip';
