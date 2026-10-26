@@ -85,26 +85,34 @@ export default async function mount(container, ctx) {
     });
   }
 
-  // ⭐ 注册层级切换处理器
+  // ⭐ 修复：切换层级后，自动过滤题库并随机选一道题
   ctx.registerLevelHandler('m13', (levelId) => {
-    // 假设 levelId 是 'step-1', 'step-2' 等
+    // 1. 解析当前层级是几步（比如 'step-2' 提取出 2）
     const stepCount = parseInt(levelId.replace('step-', ''), 10);
-    // 过滤题库中符合步数的题目
-    let bank = window.PROBLEMS_BANK || M13_PROBLEMS;
-    if (levelId) {
-      bank = bank.filter(p => {
-        const steps = p.stepsCount || (p.steps ? p.steps.length : 2);
-        return steps === stepCount || (levelId === 'step-4' && steps >= 4);
-      });
-    }
-    // 更新下拉框
-    M13_BANK = bank.length ? bank : M13_PROBLEMS;
-    m13InitSelect();
+
+    // 2. 从原始全量题库中过滤出符合步数的题目
+    // 注意：请把 window.PROBLEMS_BANK 替换为你实际存放原始题库的变量名
+    const fullBank = window.PROBLEMS_BANK || M13_PROBLEMS; 
     
-    // 自动选第一道题
+    const filtered = fullBank.filter(p => {
+      const steps = p.stepsCount || (p.steps ? p.steps.length : 2);
+      return steps === stepCount || (levelId === 'step-4' && steps >= 4);
+    });
+
+    // 3. 更新当前模块的题库池
+    M13_BANK = filtered.length ? filtered : fullBank;
+    
+    // 4. 重新渲染下拉框
+    m13InitSelect();
+
+    // 5. 自动从过滤后的题库中随机抽一题并载入
     const sel = $('#pSelect');
     if (sel && sel.options.length > 1) {
-      sel.selectedIndex = 1;
+      // 随机选择一个真实选项（排除第0个"选择一道题目"）
+      const randomIndex = 1 + Math.floor(Math.random() * (sel.options.length - 1));
+      sel.selectedIndex = randomIndex;
+      
+      // 触发载入按钮的点击
       $('#pLoad')?.click();
     }
   });
