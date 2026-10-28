@@ -5,6 +5,13 @@ import { wbLoad } from './wrongbook.js';
 let _currentRange = 'today';
 let _lastVals = {};
 
+// ⭐ 新增：允许外部设置当前范围
+export function setRange(range) {
+  if (['today', 'week', 'all'].includes(range)) {
+    _currentRange = range;
+  }
+}
+
 export function getStudyStreak() {
   const list = historyLoad();
   if (!list.length) return 0;

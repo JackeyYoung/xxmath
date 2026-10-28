@@ -11,14 +11,10 @@ export default async function mount(container, ctx) {
   const M8 = { base: 3, times: 3, maxBase: 5, maxTimes: 20 };
 
   // TODO: 拷贝 main.js 中的 m8Render
-  function m8Render(isUserAction = false) {
+  // 拷贝 main.js 中的 m8Render
+  function m8Render() {
     const { base, times } = M8;
     const total = base * times;
-    if (isUserAction) {
-      // M8：滑块变化
-      ctx.data.recordActivity('m8', `${base} 的 ${times} 倍`, `共 ${base*times} 个`);
-    }
-
 
     // 第一行
     $('#m8row1').innerHTML = Array(base).fill('<span class="bei-shape">🍎</span>').join('');
@@ -35,9 +31,9 @@ export default async function mount(container, ctx) {
     $('#m8row2').innerHTML = row2;
 
     $('#m8result').innerHTML = `
-      <div style="font-size:17px;font-weight:700;color:#334155;margin-bottom:16px;">
+      <div style="font-size:17px;font-weight:700;color:var(--text-soft);margin-bottom:16px;">
         第二行有 <b style="color:var(--primary-d);">${total}</b> 个，是第一行 <b style="color:var(--primary-d);">${base}</b> 个的
-        <b style="color:#b45309;">${times}</b> 倍
+        <b style="color:var(--amber-text);">${times}</b> 倍
       </div>
       <div class="div-demo">
         <div class="div-row mul">
@@ -52,16 +48,35 @@ export default async function mount(container, ctx) {
     `;
   }
 
+   // 第一行数量滑块
   $('#m8base')?.addEventListener('input', () => {
     M8.base = +$('#m8base').value;
     $('#m8baseval').textContent = M8.base;
     m8Render();
   });
+  $('#m8base')?.addEventListener('change', () => {
+    // 用户松开滑块时记录
+    if (ctx?.data?.recordActivity) {
+      ctx.data.recordActivity('m8', `${M8.base} 的 ${M8.times} 倍`, `共 ${M8.base * M8.times} 个`);
+    } else if (ctx?.data?.activityAdd) {
+      ctx.data.activityAdd('m8', `${M8.base} 的 ${M8.times} 倍`, `共 ${M8.base * M8.times} 个`);
+    }
+  });
+
+  // 倍数滑块
   $('#m8times')?.addEventListener('input', () => {
     M8.times = +$('#m8times').value;
     $('#m8timesval').textContent = M8.times;
     m8Render();
   });
+  $('#m8times')?.addEventListener('change', () => {
+    if (ctx?.data?.recordActivity) {
+      ctx.data.recordActivity('m8', `${M8.base} 的 ${M8.times} 倍`, `共 ${M8.base * M8.times} 个`);
+    } else if (ctx?.data?.activityAdd) {
+      ctx.data.activityAdd('m8', `${M8.base} 的 ${M8.times} 倍`, `共 ${M8.base * M8.times} 个`);
+    }
+  });
+  
   $('#m8baseMax')?.addEventListener('input', () => {
     let v = +$('#m8baseMax').value;
     if (isNaN(v)) return;

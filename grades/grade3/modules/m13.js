@@ -142,6 +142,7 @@ export default async function mount(container, ctx) {
         $('#m13StepsLocked').style.display = 'block';
         $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
         $('#m13StandardSteps').style.display = 'none';
+        $('#m13StandardSteps')?.classList.remove('open');
       }
     }
   }
@@ -153,10 +154,12 @@ export default async function mount(container, ctx) {
   m13InitSteps();
   resetAllSteps();
   
-  // ⭐ 取消注释，执行加载题库！
+  //执行加载题库！
   loadBank(); 
 
-  window.M13_PROBLEMS_BANK = M13_BANK;
+  // 删掉这两行，已经移到 done 回调里了
+  // window.M13_PROBLEMS_BANK = M13_BANK;
+  // console.log('加载的问题', M13_BANK);
 
   registerActiveModule('m13', {
     redo: (text) => {
@@ -164,6 +167,7 @@ export default async function mount(container, ctx) {
       m13InitSteps();
       $('#m13StandardSteps').style.display = 'none';
       $('#m13StepsLocked').style.display = 'block';
+      $('#m13StandardSteps')?.classList.remove('open');
     },
     showSolution: (text) => {
       const cached = findCachedFeedback(text, M13_BANK);
@@ -191,8 +195,8 @@ export default async function mount(container, ctx) {
   }
 
   function closeDrawer() {
-    const drawer = $('#problemPickerDrawer');
-    if (drawer) drawer.style.display = 'none';
+    const mask = $('#problemPickerMask');
+    if (mask) mask.style.display = 'none';
     document.body.classList.remove('modal-open');
   }
 
@@ -216,12 +220,22 @@ export default async function mount(container, ctx) {
     step.classList.toggle('completed', status === 'done');
 
     if (status === 'done' && prev !== 'done') {
-      step.classList.remove('expanded');
+      step.classList.remove('open');
       const next = $(`.m13-step[data-step="${stepNum + 1}"]`);
-      if (next && !next.classList.contains('expanded')) {
-        setTimeout(() => next.classList.add('expanded'), 200);
+      if (next && !next.classList.contains('open')) {
+        setTimeout(() => next.classList.add('open'), 200);
       }
     }
+  }
+
+  function resetAllSteps() {
+    hasUsedHighlight = false;
+    $$('.m13-step').forEach((step) => {
+      step.classList.remove('open', 'completed');   // ⭐ 全部默认折叠
+      const status = step.querySelector('.m13-step-status');
+      if (status) status.dataset.status = 'pending';
+    });
+    updateAllSteps();
   }
 
   function updateAllSteps() {
@@ -240,17 +254,6 @@ export default async function mount(container, ctx) {
     // Step 4
     const pAnswer = $('#pAnswer');
     setStatus(4, pAnswer?.value.trim() ? 'done' : 'pending');
-  }
-
-  function resetAllSteps() {
-    hasUsedHighlight = false;
-    $$('.m13-step').forEach((step, i) => {
-      step.classList.toggle('expanded', i === 0);
-      step.classList.remove('completed');
-      const status = step.querySelector('.m13-step-status');
-      if (status) status.dataset.status = 'pending';
-    });
-    updateAllSteps();
   }
 
   /* ================= 动态步骤管理 ================= */
@@ -352,6 +355,11 @@ export default async function mount(container, ctx) {
     const done = () => {
       if (loadBtn) { loadBtn.disabled = false; loadBtn.textContent = loadBtn.dataset._origText || '📥 载入'; }
       isBankReady = true;
+      
+      // ⭐ 核心修复 1：在题库加载完成后，再挂载给全局，供 Koji 和错题本使用
+      window.M13_PROBLEMS_BANK = M13_BANK;
+      //console.log('题库加载完成，已挂载到全局:', window.M13_PROBLEMS_BANK);
+
       // 如果 shell.js 提前触发了层级切换，这里补执行一次
       const savedLevel = localStorage.getItem('grade3_m13_level');
       if (savedLevel) {
@@ -499,10 +507,14 @@ export default async function mount(container, ctx) {
     if (!problemText) return ctx.toast('请先输入题目', 'info');
 
     const box = $('#m13StandardSteps');
+    const body = $('#m13StandardStepsBody');
     const lock = $('#m13StepsLocked');
+    if (!box || !body) return;
+
     lock.style.display = 'none';
     box.style.display = 'block';
-    box.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在分析标准解法…</div></div><span class="think-time" id="stdTime">0.0s</span></div>`;
+    box.classList.remove('open');   // ⭐ 保持折叠，用户自己点开
+    body.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在分析标准解法…</div></div><span class="think-time" id="stdTime">0.0s</span></div>`;
 
     const start = performance.now();
     const timeEl = document.getElementById('stdTime');
@@ -514,7 +526,7 @@ export default async function mount(container, ctx) {
       renderStandardSolution(normalizeAiFeedback(raw, null));
     } catch (e) {
       clearInterval(timer);
-      box.innerHTML = `<div style="text-align:center;padding:24px 20px;"><div style="color:#b91c1c;font-weight:700;margin-bottom:12px;">❌ 获取标准解法失败：${e.message || '请稍后重试'}</div><button class="btn" id="m13RetryStdBtn">🔄 重新获取</button></div>`;
+      body.innerHTML = `<div style="text-align:center;padding:24px 20px;"><div style="color:var(--red-text);font-weight:700;margin-bottom:12px;">❌ 获取标准解法失败：${e.message || '请稍后重试'}</div><button class="btn" id="m13RetryStdBtn">🔄 重新获取</button></div>`;
       document.getElementById('m13RetryStdBtn')?.addEventListener('click', () => m13FetchStandardSolution());
       lock.style.display = 'block';
     }
@@ -522,14 +534,28 @@ export default async function mount(container, ctx) {
 
   function renderStandardSolution(p) {
     const box = $('#m13StandardSteps');
+    const body = $('#m13StandardStepsBody');
+    if (!box || !body) return;
+
     const stepsHtml = (p.steps || []).map(s => `
-      <div class="std-fold open"><div class="std-fold-hd"><span>第 ${s.step} 步</span><span class="arrow">▶</span></div>
+      <div class="std-fold"><div class="std-fold-hd"><span>第 ${s.step} 步</span><span class="arrow">▶</span></div>
       <div class="std-fold-bd"><div class="std-line"><b>关系式：</b>${s.relation || '—'}</div><div class="std-line"><b>代入：</b>${s.substitution || '—'}</div><div class="std-line"><b>得数：</b>${s.result || '—'}</div></div></div>
     `).join('');
     const kwHtml = p.keywords ? `<div class="std-keywords"><div><b>已知：</b>${p.keywords.known || '—'}</div><div><b>求：</b>${p.keywords.unknown || '—'}</div><div><b>数字：</b>${(p.keywords.numbers || []).join('、')}</div><div><b>单位：</b>${(p.keywords.units || []).join('、')}</div></div>` : '';
-    box.innerHTML = `<h4>📖 标准解题过程（AI 现算）</h4>${stepsHtml}<div class="std-fold open"><div class="std-fold-hd"><span>✅ 最终答案</span><span class="arrow">▶</span></div><div class="std-fold-bd"><div class="std-answer">${p.answer?.full || '—'}</div></div></div>${kwHtml}`;
+
+    // ⭐ 写入 body，不再覆盖折叠头
+    body.innerHTML = `${stepsHtml}<div class="std-fold"><div class="std-fold-hd"><span>✅ 最终答案</span><span class="arrow">▶</span></div><div class="std-fold-bd"><div class="std-answer">${p.answer?.full || '—'}</div></div></div>${kwHtml}`;
+
     box.style.display = 'block';
-    box.querySelectorAll('.std-fold-hd').forEach(hd => hd.addEventListener('click', () => hd.parentElement.classList.toggle('open')));
+    box.classList.remove('open');   // ⭐ 默认折叠，用户自己点开
+
+    // 内部 std-fold 独立折叠（这是子级，与标准答案外层折叠不冲突）
+    body.querySelectorAll('.std-fold-hd').forEach(hd => {
+      hd.addEventListener('click', (e) => {
+        e.stopPropagation();   // 防止冒泡触发外层 standard-steps-hd
+        hd.parentElement.classList.toggle('open');
+      });
+    });
   }
 
   /* ================= 判卷逻辑 ================= */
@@ -742,6 +768,7 @@ export default async function mount(container, ctx) {
     
     // 4. 隐藏上一次的标准解法面板
     $('#m13StandardSteps').style.display = 'none';
+    $('#m13StandardSteps')?.classList.remove('open');
     
     // 5. 关闭抽屉
     closeDrawer();
@@ -766,6 +793,7 @@ export default async function mount(container, ctx) {
     $('#pCustom').value = '';
     $('#m13StandardSteps').style.display = 'none';
     $('#m13StepsLocked').style.display = 'block';
+    $('#m13StandardSteps')?.classList.remove('open');
     $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
     m13InitSteps();
     closeDrawer();
@@ -782,6 +810,7 @@ export default async function mount(container, ctx) {
       m13LoadProblem(ev.target.result.trim(), null, 'custom', null);
       $('#m13StandardSteps').style.display = 'none';
       $('#m13StepsLocked').style.display = 'block';
+      $('#m13StandardSteps')?.classList.remove('open');
       $('#m13UnlockBtn').textContent = '🔒 查看标准解题过程（需要密码）';
       m13InitSteps();
       closeDrawer();
@@ -790,8 +819,15 @@ export default async function mount(container, ctx) {
     e.target.value = '';
   });
 
-  $('#problemChangeBtn')?.addEventListener('click', () => { $('#problemPickerDrawer').style.display = 'flex'; document.body.classList.add('modal-open'); });
+  $('#problemChangeBtn')?.addEventListener('click', () => {
+    const mask = $('#problemPickerMask');
+    if (mask) mask.style.display = 'flex';
+    document.body.classList.add('modal-open');
+  });
   $('#problemPickerClose')?.addEventListener('click', closeDrawer);
+  $('#problemPickerMask')?.addEventListener('click', (e) => {
+    if (e.target.id === 'problemPickerMask') closeDrawer();
+  });
 
   // 状态监听
   $('.hl-toolbar')?.addEventListener('click', (e) => {
@@ -805,7 +841,26 @@ export default async function mount(container, ctx) {
     if (e.target.closest('#formulaSteps')) updateCheckBtnHint();
   });
 
-  $$('.m13-step-hd').forEach(hd => hd.addEventListener('click', () => hd.parentElement.classList.toggle('expanded')));
+  /* ================= 折叠：统一事件委托（挂一次，永不丢失） ================= */
+  if (container.dataset.m13CollapseBound !== '1') {
+    container.dataset.m13CollapseBound = '1';
+    container.addEventListener('click', (e) => {
+      // 1) 步骤卡折叠
+      const stepHd = e.target.closest('.m13-step-hd');
+      if (stepHd && container.contains(stepHd)) {
+        const card = stepHd.closest('.m13-step');
+        if (card) card.classList.toggle('open');
+        return;
+      }
+      // 2) 标准答案折叠
+      const stdHd = e.target.closest('.standard-steps-hd');
+      if (stdHd && container.contains(stdHd)) {
+        const wrap = stdHd.closest('.standard-steps');
+        if (wrap) wrap.classList.toggle('open');
+        return;
+      }
+    });
+  }
 
   $('#addStepBtn')?.addEventListener('click', m13AddStep);
   $('#removeStepBtn')?.addEventListener('click', m13RemoveStep);
@@ -889,17 +944,18 @@ export default async function mount(container, ctx) {
     const problemText = $('#problem-text')?.innerText.trim();
     if (!problemText) return ctx.toast('请先输入题目', 'info');
 
-    // 降级 1：如果是题库题，且自带 steps，直接渲染在下方（免密秒出）
+    // 降级 1：题库题自带 steps，直接渲染
     if (M13_ProblemSource === 'bank' && M13_CurrentProblem?.steps?.length) {
       renderStandardSolution({
         steps: M13_CurrentProblem.steps,
         answer: { full: M13_CurrentProblem.answer?.full || M13_CurrentProblem.answer }
       });
       $('#m13StepsLocked').style.display = 'none';
+      // ⭐ 确保外层折叠（renderStandardSolution 已 remove('open')，这里不必再写）
       return;
     }
 
-    // 降级 2 & 3：如果没有自带答案，走错题本的统一弹窗（查历史缓存或调 AI）
+    // 降级 2 & 3：错题本统一弹窗
     try {
       const { showExplainModal } = await import('../../../core/ui/wrongbook-ui.js');
       showExplainModal(problemText);
@@ -959,9 +1015,6 @@ export default async function mount(container, ctx) {
   });
   */
 
-  // 加载完题库后，挂到全局供错题本查询
-  window.M13_PROBLEMS_BANK = M13_BANK;
-
   registerActiveModule('m13', {
     // 重做（只负责把题目塞进页面）
     redo: (text) => {
@@ -969,6 +1022,7 @@ export default async function mount(container, ctx) {
       m13InitSteps();
       $('#m13StandardSteps').style.display = 'none';
       $('#m13StepsLocked').style.display = 'block';
+      $('#m13StandardSteps')?.classList.remove('open');
       // 注意：这里不自动去调 API，只是把界面铺好
     },
     // 讲解/让 AI 现算（供错题本调用）

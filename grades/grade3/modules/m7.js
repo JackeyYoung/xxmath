@@ -49,56 +49,56 @@ export default async function mount(container, ctx) {
   function m7Draw() {
     const c = $('#m7canvas'); 
     if (!c) return; // ⭐ 加这一句：如果画布没了，直接退出
-    ctx = c.getContext('2d');
+    const canvasCtx = c.getContext('2d');
     const W = c.width, H = c.height, cx = W/2, cy = H/2, r = Math.min(W, H)/2 - 16;
-    ctx.clearRect(0, 0, W, H);
+    canvasCtx.clearRect(0, 0, W, H);
 
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
-    ctx.fillStyle = '#f8fafc'; ctx.fill();
-    ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 4; ctx.stroke();
+    canvasCtx.beginPath(); canvasCtx.arc(cx, cy, r, 0, Math.PI*2);
+    canvasCtx.fillStyle = '#f8fafc'; canvasCtx.fill();
+    canvasCtx.strokeStyle = '#94a3b8'; canvasCtx.lineWidth = 4; canvasCtx.stroke();
 
     for (let i = 0; i < 60; i++) {
       const ang = (i/60)*Math.PI*2 - Math.PI/2;
       const isHour = i % 5 === 0;
       const r1 = isHour ? r - 16 : r - 9, r2 = r - 5;
-      ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(ang)*r1, cy + Math.sin(ang)*r1);
-      ctx.lineTo(cx + Math.cos(ang)*r2, cy + Math.sin(ang)*r2);
-      ctx.strokeStyle = isHour ? '#334155' : '#cbd5e1';
-      ctx.lineWidth = isHour ? 3 : 1;
-      ctx.stroke();
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(cx + Math.cos(ang)*r1, cy + Math.sin(ang)*r1);
+      canvasCtx.lineTo(cx + Math.cos(ang)*r2, cy + Math.sin(ang)*r2);
+      canvasCtx.strokeStyle = isHour ? '#334155' : '#cbd5e1';
+      canvasCtx.lineWidth = isHour ? 3 : 1;
+      canvasCtx.stroke();
     }
 
-    ctx.fillStyle = '#1e293b'; ctx.font = 'bold 22px system-ui,sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    canvasCtx.fillStyle = '#1e293b'; canvasCtx.font = 'bold 22px system-ui,sans-serif';
+    canvasCtx.textAlign = 'center'; canvasCtx.textBaseline = 'middle';
     for (let i = 1; i <= 12; i++) {
       const ang = (i/12)*Math.PI*2 - Math.PI/2;
-      ctx.fillText(i, cx + Math.cos(ang)*(r-32), cy + Math.sin(ang)*(r-32));
+      canvasCtx.fillText(i, cx + Math.cos(ang)*(r-32), cy + Math.sin(ang)*(r-32));
     }
 
     const hAng = ((M7.hour % 12) + M7.minute/60 + M7.second/3600)/12*Math.PI*2 - Math.PI/2;
-    ctx.beginPath();
-    ctx.moveTo(cx - Math.cos(hAng)*14, cy - Math.sin(hAng)*14);
-    ctx.lineTo(cx + Math.cos(hAng)*(r*0.48), cy + Math.sin(hAng)*(r*0.48));
-    ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.stroke();
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(cx - Math.cos(hAng)*14, cy - Math.sin(hAng)*14);
+    canvasCtx.lineTo(cx + Math.cos(hAng)*(r*0.48), cy + Math.sin(hAng)*(r*0.48));
+    canvasCtx.strokeStyle = '#1e293b'; canvasCtx.lineWidth = 8; canvasCtx.lineCap = 'round'; canvasCtx.stroke();
 
     const mAng = (M7.minute/60 + M7.second/3600)*Math.PI*2 - Math.PI/2;
-    ctx.beginPath();
-    ctx.moveTo(cx - Math.cos(mAng)*18, cy - Math.sin(mAng)*18);
-    ctx.lineTo(cx + Math.cos(mAng)*(r*0.78), cy + Math.sin(mAng)*(r*0.78));
-    ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(cx - Math.cos(mAng)*18, cy - Math.sin(mAng)*18);
+    canvasCtx.lineTo(cx + Math.cos(mAng)*(r*0.78), cy + Math.sin(mAng)*(r*0.78));
+    canvasCtx.strokeStyle = '#2563eb'; canvasCtx.lineWidth = 5; canvasCtx.lineCap = 'round'; canvasCtx.stroke();
 
     const sAng = (M7.second/60)*Math.PI*2 - Math.PI/2;
-    ctx.beginPath();
-    ctx.moveTo(cx - Math.cos(sAng)*26, cy - Math.sin(sAng)*26);
-    ctx.lineTo(cx + Math.cos(sAng)*(r*0.88), cy + Math.sin(sAng)*(r*0.88));
-    ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(cx - Math.cos(sAng)*26, cy - Math.sin(sAng)*26, 4, 0, Math.PI*2);
-    ctx.fillStyle = '#ef4444'; ctx.fill();
+    canvasCtx.beginPath();
+    canvasCtx.moveTo(cx - Math.cos(sAng)*26, cy - Math.sin(sAng)*26);
+    canvasCtx.lineTo(cx + Math.cos(sAng)*(r*0.88), cy + Math.sin(sAng)*(r*0.88));
+    canvasCtx.strokeStyle = '#ef4444'; canvasCtx.lineWidth = 2; canvasCtx.lineCap = 'round'; canvasCtx.stroke();
+    canvasCtx.beginPath();
+    canvasCtx.arc(cx - Math.cos(sAng)*26, cy - Math.sin(sAng)*26, 4, 0, Math.PI*2);
+    canvasCtx.fillStyle = '#ef4444'; canvasCtx.fill();
 
-    ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI*2); ctx.fillStyle = '#1e293b'; ctx.fill();
-    ctx.beginPath(); ctx.arc(cx, cy, 4, 0, Math.PI*2); ctx.fillStyle = '#fff'; ctx.fill();
+    canvasCtx.beginPath(); canvasCtx.arc(cx, cy, 9, 0, Math.PI*2); canvasCtx.fillStyle = '#1e293b'; canvasCtx.fill();
+    canvasCtx.beginPath(); canvasCtx.arc(cx, cy, 4, 0, Math.PI*2); canvasCtx.fillStyle = '#fff'; canvasCtx.fill();
   }
 
   function m7UpdateDigital() {
@@ -230,7 +230,7 @@ export default async function mount(container, ctx) {
           fb.innerHTML = `✓ 对！${q.answer.h} 时 ${q.answer.m} 分`;
           fb.className = 'm7-calc-fb ok';
           // ⭐ 新增
-          ctx.data.activityAdd('m7', `时间推算`, `答对 ${q.answer.h}时${q.answer.m}分`, 0);
+          ctx.data.activityAdd('m7', `时间推算`, `答对 ${q.answer.h}时${q.answer.m}分`);
         } else {
           hIn.classList.add('wrong');
           mIn.classList.add('wrong');
@@ -296,7 +296,7 @@ export default async function mount(container, ctx) {
     m7UpdateDigital();
     
     if (M7.second === 0) {
-      ctx.data.activityAdd('m7', `时钟 ${M7.hour}:${String(M7.minute).padStart(2,'0')}`, '', 5000);
+      ctx.data.recordActivity('m7', `时钟 ${M7.hour}:${String(M7.minute).padStart(2,'0')}`, '', 5000);
     }
     m7PlayTick(false);
   }
@@ -358,7 +358,7 @@ export default async function mount(container, ctx) {
       m7UpdateSwDisplay();
       $('#swHint').innerHTML = '⏰ <b style="color:#dc2626;">时间到！</b> 点击「归零」可重新开始。';
       // ⭐ 新增
-      ctx.data.activityAdd('m7', `倒计时 ${M7.swTarget/1000} 秒`, '完成', 0);
+      ctx.data.recordActivity('m7', `倒计时 ${M7.swTarget/1000} 秒`, '完成', 0);
       return;
     }
 
@@ -485,7 +485,7 @@ export default async function mount(container, ctx) {
     M7.second = 0;
     m7Draw(); m7UpdateDigital();
     // ⭐ 新增：拖分针
-    ctx.data.activityAdd('m7', `拖分针到 ${M7.minute} 分`, '', 1000);
+    ctx.data.recordActivity('m7', `拖分针到 ${M7.minute} 分`, '', 1000);
   });
   window.addEventListener('mousemove', e => {
     if (!m7Dragging) return;

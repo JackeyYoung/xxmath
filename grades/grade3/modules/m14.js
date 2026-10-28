@@ -24,45 +24,56 @@ export default async function mount(container, ctx) {
   const detailPanels = $('#growthDetailPanels');
   
   if (panel && detailPanels) {
-    // 1. 卡片点击展开
+    const allSections = detailPanels.querySelectorAll('.collapsible-section');
+
+    // 1. 卡片点击展开/收起对应面板
     panel.querySelectorAll('.growth-card[data-goto]').forEach(card => {
       card.addEventListener('click', () => {
         const targetId = card.dataset.goto;
-        const targetSection = document.getElementById(targetId);
+        const targetSection = detailPanels.querySelector('#' + targetId);
         if (!targetSection) return;
 
-        detailPanels.querySelectorAll('.collapsible-section').forEach(sec => {
-          if (sec.id !== targetId) sec.classList.remove('expanded');
-        });
+        // 判断当前卡片是否已经展开
+        const isAlreadyOpen = card.classList.contains('expanded');
 
-        const willExpand = !targetSection.classList.contains('expanded');
-        targetSection.classList.toggle('expanded', willExpand);
-        card.classList.toggle('expanded', willExpand);
+        // 先清理所有卡片和面板的状态
+        panel.querySelectorAll('.growth-card').forEach(c => c.classList.remove('expanded'));
+        allSections.forEach(sec => sec.classList.remove('open'));
 
-        if (willExpand) {
-          setTimeout(() => targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+        // 如果点击前已经打开，本次操作即为“收起”，直接返回
+        if (isAlreadyOpen) return;
+
+        // 否则，展开当前卡片和对应面板
+        card.classList.add('expanded');
+        targetSection.classList.add('open');
+
+        // 平滑滚动到面板位置
+        setTimeout(() => {
+          targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
           
-          // 展开时，如果点开的是“做题记录”，确保重新渲染一次
+          // ⭐ 如果展开的是做题记录，触发一下重新渲染
           if (targetId === 'historySection' && typeof historyRender === 'function') {
-            historyRender();
+            historyRender(container);
           }
-        }
+        }, 100);
       });
     });
 
-    // 2. 折叠头点击同步卡片
-    detailPanels.querySelectorAll('.collapsible-section').forEach(section => {
+    // 2. 点击下方面板的头部也能收起（并同步取消卡片高亮）
+    allSections.forEach(section => {
       const hd = section.querySelector('.collapsible-hd');
       if (!hd) return;
-      hd.addEventListener('click', () => {
-        const willExpand = !section.classList.contains('expanded');
-        detailPanels.querySelectorAll('.collapsible-section').forEach(sec => {
-          if (sec !== section) sec.classList.remove('expanded');
-        });
-        section.classList.toggle('expanded', willExpand);
+      
+      hd.addEventListener('click', (e) => {
+        // 如果点到了内部某些功能性按钮，不触发收起
+        if (e.target.closest('button:not(.timeline-toggle)')) return;
 
+        // 收起面板
+        section.classList.remove('open');
+        
+        // 同步移除对应卡片的高亮
         const card = panel.querySelector(`.growth-card[data-goto="${section.id}"]`);
-        if (card) card.classList.toggle('expanded', willExpand);
+        if (card) card.classList.remove('expanded');
       });
     });
   }
@@ -298,6 +309,47 @@ export default async function mount(container, ctx) {
       }
     });
   });
+
+  // ================= 修复顶部 Tab（今日/本周/累计）与年级文字 =================
+  
+  // 1. 绑定 今日/本周/累计 切换
+  const rangeTabs = container.querySelectorAll('#rangeTabs .range-tab');
+  rangeTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      // 切换 active 样式
+      rangeTabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+
+      // 调用 core/dashboard-render.js 更新状态并重新渲染
+      import('../../../core/dashboard-render.js').then(mod => {
+        // 如果你的 dashboard-render.js 暴露了 setRange，就调用它
+        if (mod.setRange) mod.setRange(tab.dataset.range);
+        if (mod.renderDashboard) mod.renderDashboard();
+      });
+    });
+  });
+
+  // 2. 确保年级名字正确显示（因为 grade.js 里的文字更新可能比 m14 渲染早）
+  import('../../../js/grade.js').then(mod => {
+    if (mod.updateGradeChipText) mod.updateGradeChipText();
+  });
+
+  // 3. 绑定学生点击改名
+  $('#dashStudent')?.addEventListener('click', () => {
+    if (window.__showStudentModal) window.__showStudentModal();
+    else import('../../../core/student.js').then(m => m.showStudentModal());
+  });
+
+  // 4. 绑定“▼”展开/收起
+  const dashChevron = $('#dashChevron');
+  const dashExpanded = $('.dash-expanded');
+  if (dashChevron && dashExpanded) {
+    dashChevron.addEventListener('click', () => {
+      const isOpen = dashExpanded.classList.contains('open');
+      dashExpanded.classList.toggle('open', !isOpen);
+      dashChevron.classList.toggle('open', !isOpen);
+    });
+  }
 
   // 3. 生命周期清理（极其重要）
   return () => {

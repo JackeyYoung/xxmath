@@ -76,9 +76,11 @@ export async function showExplainModal(text) {
   // 复原右上角的关闭按钮绑定（防止被解绑）
   document.getElementById('explainModalClose').onclick = () => {
     modalMask.style.display = 'none';
+    document.body.classList.remove('modal-open'); // ⭐ 解除滚动锁定
   };
 
   modalMask.style.display = 'flex';
+  document.body.classList.add('modal-open');       // ⭐ 锁定主页面滚动
   
   const bank = window.M13_PROBLEMS_BANK || [];
   const cached = findCachedFeedback(text, bank);

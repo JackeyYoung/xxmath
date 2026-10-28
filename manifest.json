@@ -1,0 +1,22 @@
+{
+  "name": "三年级数学互动课堂",
+  "short_name": "数学课堂",
+  "description": "老爸数学互动课堂，适合三年级小学生的数学练习",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#eef3f9",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

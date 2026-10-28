@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>老爸数学互动课堂 · 全模块</title>
+<!-- 1. 依赖 -->
+<!-- 1. 依赖：本地优先 -->
+<script src="./js/localforage.min.js"></script>
+<!-- 2. 数据（保持原样） -->
+<script src="./data/problems.js"></script>
+
+<!-- 在 localforage 之后，main.js 之前 -->
+<!-- 加 CloudBase SDK（本地） -->
+<script src="./js/cloudbase.full.js"></script>
+
+<!-- 3. 主程序（用 module 才能 import） -->
+<script type="module" src="./app/main.js"></script>
+
+<style>
+
+/* ============================================================
+   0. Brilliant 风格全站统一变量 & 基础重置
+   ============================================================ */
+:root {
+  /* 亮色模式（温和高级灰） */
+  --primary: #22C55E;
+  --primary-d: #16A34A;
+  --primary-soft: #DCFCE7;
+  --secondary: #3B82F6;
+  
+  --bg: #F8FAFC;
+  --card: #FFFFFF;
+  --card-hover: #F1F5F9;
+  
+  --text: #0F172A;
+  --text-soft: #334155;
+  --muted: #64748B;
+  
+  --border: #E2E8F0;
+  --border-soft: #F1F5F9;
+  
+  --green-soft: #DCFCE7; --green-text: #15803D;
+  --red-soft: #FEE2E2;   --red-text: #B91C1C;
+  --amber-soft: #FEF3C7; --amber-text: #92400E;
+  --purple-soft: #F3E8FF; --purple-text: #6D28D9;
+  
+  --r-card: 16px;
+  --r-pill: 999px;
+  --r-sm: 10px;
+  --input-bg: #FFFFFF;
+}
+
+[data-theme="dark"] {
+  /* 深色模式（参考图极致深邃黑） */
+  --primary: #22C55E;
+  --primary-d: #16A34A;
+  --primary-soft: rgba(34, 197, 94, 0.15);
+  --secondary: #60A5FA;
+  
+  --bg: #09090B;
+  --card: #18181B;
+  --card-hover: #27272A;
+  
+  --text: #FAFAFA;
+  --text-soft: #D4D4D8;
+  --muted: #A1A1AA;
+  
+  --border: #27272A;
+  --border-soft: #3F3F46;
+  
+  --green-soft: rgba(34, 197, 94, 0.15); --green-text: #4ADE80;
+  --red-soft: rgba(239, 68, 68, 0.15);   --red-text: #F87171;
+  --amber-soft: rgba(245, 158, 11, 0.15);--amber-text: #FBBF24;
+  --purple-soft: rgba(168, 85, 247, 0.15);--purple-text: #C084FC;
+  
+  --input-bg: #09090B;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-text-size-adjust: 100%; scroll-padding-bottom: 300px; }
+html, body { min-height: 100%; overflow-x: hidden !important; overscroll-behavior-y: auto; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: var(--bg);
+  color: var(--text-soft);
+  padding-bottom: 60px;
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.01em;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color .3s, color .3s;
+}
+
+/* ============================================================
+   1. 全局表单/控件重置
+   ============================================================ */
+button, input, select, textarea {
+  font-family: inherit; font-variant-numeric: tabular-nums; caret-color: var(--primary);
+  color: var(--text) !important;
+}
+input, select, textarea {
+  font-size: 16px; -webkit-appearance: none; appearance: none;
+  background-color: var(--input-bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-sm); padding: 10px 14px; outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+input::placeholder, textarea::placeholder { color: var(--muted) !important; opacity: 0.6; }
+select {
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+  background-repeat: no-repeat !important; background-position: right 12px center !important; background-size: 16px !important;
+  padding-right: 40px !important; cursor: pointer;
+}
+button { cursor: pointer; border: none; background: none; transition: all .15s; }
+button:active:not(:disabled) { transform: scale(.97); }
+
+/* ============================================================
+   2. 排版与通用组件
+   ============================================================ */
+.app-header { text-align: center; padding: 32px 16px 20px; }
+.app-header h1 { font-size: 26px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+.app-header p { margin-top: 8px; font-size: 14px; color: var(--muted); letter-spacing: 2px; }
+
+.page { display: none !important; min-height: calc(100vh - 60px); padding-bottom: 100px; }
+.page.active { display: block !important; animation: pageIn .28s cubic-bezier(.34,1.3,.64,1); }
+@keyframes pageIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card);
+  padding: 24px; width: 100%; box-sizing: border-box; animation: cardIn .35s ease;
+}
+@keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+.card h2 { font-size: 20px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.card .sub { font-size: 13.5px; color: var(--muted); margin-bottom: 20px; line-height: 1.6; }
+
+.btn {
+  padding: 12px 24px; border-radius: var(--r-pill); background: var(--primary); color: #fff !important;
+  font-size: 15px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn-secondary {
+  padding: 12px 24px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--card); color: var(--text-soft); font-size: 15px; font-weight: 600;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn-secondary:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+
+/* ============================================================
+   3. 首页（Home）
+   ============================================================ */
+.home-wrap { max-width: 1000px; margin: 0 auto; padding: 16px; }
+.home-hero {
+  width: 100%; text-align: left; padding: 24px; margin-bottom: 24px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card);
+  display: flex; flex-direction: column; align-items: flex-start;
+}
+.home-hero-kicker { color: var(--primary); font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.home-hero-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; color: var(--text); }
+.home-hero-meta { color: var(--muted); font-size: 13.5px; margin-bottom: 16px; }
+.home-hero-cta { padding: 10px 24px; background: var(--primary); color: #fff !important; border-radius: var(--r-pill); font-size: 14px; font-weight: 600; }
+
+.island-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.island { text-align: left; border: 1px solid var(--border); background: var(--card); border-radius: var(--r-card); padding: 16px; cursor: pointer; }
+.island:hover { border-color: var(--primary); background: var(--card-hover); }
+.island-icon { font-size: 24px; margin-bottom: 12px; display: inline-block; padding: 8px; background: var(--bg); border-radius: 12px; }
+.island-name { font-size: 15px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+.island-desc { font-size: 12px; color: var(--muted); margin-bottom: 12px; }
+.island-progress { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+.island-progress span { display: block; height: 100%; background: var(--primary); }
+.island-meta { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+
+.home-tasks { background: transparent; border: none; margin-bottom: 24px; padding: 0; }
+.home-tasks-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding: 0 4px; }
+.home-tasks-hd span:first-child { font-size: 16px; font-weight: 700; color: var(--text); }
+.home-tasks-count { font-size: 13px; font-weight: 600; color: var(--muted); background: var(--card); padding: 2px 10px; border-radius: var(--r-pill); border: 1px solid var(--border); }
+.home-tasks-list { display: flex; flex-direction: column; gap: 8px; }
+.home-task { width: 100%; display: flex; align-items: center; gap: 12px; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); cursor: pointer; text-align: left; }
+.home-task:hover { border-color: var(--border-soft); }
+.home-task-icon { flex-shrink: 0; font-size: 18px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--bg); }
+.home-task-body { flex: 1; min-width: 0; }
+.home-task-title { font-size: 15px; font-weight: 700; color: var(--text); }
+.home-task-desc { font-size: 12.5px; color: var(--muted); margin: 4px 0; }
+.home-task-progress { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.home-task-progress span { display: block; height: 100%; background: var(--primary); }
+.home-task.done { border-color: var(--primary); background: var(--green-soft); }
+.home-task.done .home-task-icon { background: rgba(34, 197, 94, 0.2); }
+.home-task.done .home-task-title, .home-task.done .home-task-desc, .home-task.done .home-task-arrow { color: var(--green-text); }
+
+.home-week { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 24px; padding: 20px; }
+.home-week-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.home-week-hd span:first-child { font-size: 16px; font-weight: 700; color: var(--text); }
+.home-week-days { display: flex; gap: 8px; justify-content: space-between; margin-bottom: 16px; }
+.home-week-day { flex: 1; display: flex; flex-direction: column; align-items: center; }
+.home-week-dot { width: 32px; height: 32px; margin-bottom: 8px; border-radius: 50%; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 1px solid var(--border); }
+.home-week-day.active .home-week-dot { background: var(--primary); color: #fff !important; border-color: var(--primary); }
+.home-week-label { font-size: 12px; color: var(--muted); font-weight: 600; }
+.home-week-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.home-week-bar span { display: block; height: 100%; background: var(--primary); }
+
+.home-recommend { display: flex; align-items: center; gap: 16px; width: 100%; padding: 16px 20px; background: var(--amber-soft); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: var(--r-card); margin-bottom: 20px; }
+.home-recommend-icon { flex-shrink: 0; font-size: 24px; }
+.home-recommend-body { flex: 1; font-size: 14px; color: var(--amber-text); font-weight: 600; }
+.home-recommend-cta { flex-shrink: 0; padding: 8px 20px; background: var(--amber-text); color: #000 !important; border-radius: var(--r-pill); font-size: 13px; font-weight: 700; }
+
+.home-growth-entry, .home-messages-entry, .home-settings-entry {
+  width: 100%; margin-top: 12px; padding: 16px; border-radius: var(--r-card); font-size: 14px; font-weight: 700;
+  border: 1px solid var(--border); background: var(--card); color: var(--text-soft);
+  display: flex; justify-content: center; align-items: center;
+}
+.home-growth-entry:hover, .home-messages-entry:hover, .home-settings-entry:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-soft); }
+
+/* ============================================================
+   4. 课页（Lesson）与通用组件
+   ============================================================ */
+.lesson-header { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px; padding: max(10px, env(safe-area-inset-top)) 16px 10px; background: var(--bg); border-bottom: 1px solid var(--border); }
+.lesson-back, .lesson-more { width: 36px; height: 36px; border-radius: var(--r-sm); background: var(--card); border: 1px solid var(--border); color: var(--text-soft); font-size: 18px; display: flex; align-items: center; justify-content: center; }
+.lesson-title { flex: 1; font-size: 16px; font-weight: 700; color: var(--text); }
+.lesson-progress { max-width: 1200px; margin: 0 auto; padding: 10px 16px 14px; font-size: 13px; color: var(--muted); font-weight: 600; position: relative; }
+.lesson-progress-bar { position: absolute; left: 16px; right: 16px; bottom: 4px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.lesson-progress-bar span { display: block; height: 100%; background: var(--primary); transition: width .45s ease; }
+.lesson-stage { max-width: 1200px; margin: 0 auto; padding: 16px; }
+
+/* M1 混合运算 */
+.expr-box { background: var(--bg); border: 1px dashed var(--border); border-radius: var(--r-card); padding: 24px 12px; display: flex; align-items: center; justify-content: center; }
+.expr { display: flex; gap: 12px 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.token { display: inline-flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; min-width: 44px; height: 52px; border-radius: var(--r-sm); padding: 0 10px; border: 1px solid var(--border); }
+.token.num { background: var(--card); color: var(--text); }
+.token.op { background: var(--primary); color: #fff !important; border-color: var(--primary); cursor: pointer; }
+
+/* M13 解题思维 */
+.problem-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+#problem-text { min-height: 60px; border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 15px; padding: 12px 16px; background: var(--input-bg); }
+.m13-step { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-card); margin-bottom: 12px; overflow: hidden; }
+.m13-step.completed { border-color: var(--primary); background: var(--green-soft); }
+.m13-step-hd { display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: var(--bg); font-weight: 700; color: var(--text); }
+.m13-step-num { width: 28px; height: 28px; border-radius: 50%; background: var(--text); color: var(--bg); display: flex; align-items: center; justify-content: center; }
+.m13-step.completed .m13-step-num { background: var(--primary); color: #fff !important; }
+.m13-step-bd { padding: 16px 14px; border-top: 1px dashed var(--border); }
+
+/* ============================================================
+   5. 我的成长 & 错题本（图表与列表净化）
+   ============================================================ */
+#page-growth, #growthStage { background: var(--bg) !important; }
+.growth-weekly-tip { background: var(--card) !important; border: 1px solid var(--border) !important; color: var(--text-soft) !important; border-radius: var(--r-sm) !important; padding: 16px 20px !important; margin-bottom: 20px !important; font-size: 14px !important; }
+
+.weekly-summary { background: var(--card) !important; border: 1px solid var(--border) !important; border-radius: var(--r-card) !important; padding: 24px !important; }
+.weekly-summary-hd { color: var(--text) !important; font-size: 18px !important; border-bottom: 1px dashed var(--border) !important; padding-bottom: 16px !important; margin-bottom: 20px !important; display: flex !important; justify-content: space-between !important; }
+.weekly-summary-stats { display: grid !important; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)) !important; gap: 12px !important; margin-bottom: 24px !important; }
+.weekly-stat { background: var(--bg) !important; border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; padding: 16px 8px !important; text-align: center !important; display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important; }
+.weekly-stat-value { color: var(--text) !important; font-size: 26px !important; font-weight: 800 !important; font-family: monospace !important; }
+.weekly-stat-label { color: var(--muted) !important; font-size: 12px !important; margin-top: 6px !important; }
+.weekly-summary-section-title { color: var(--text) !important; font-size: 14px !important; margin-bottom: 10px !important; display: block !important; }
+.weekly-summary-tag { background: var(--bg) !important; border: 1px solid var(--border) !important; color: var(--text-soft) !important; padding: 6px 12px !important; border-radius: var(--r-pill) !important; font-size: 13px !important; }
+.weekly-mastered-item { background: var(--bg) !important; border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; color: var(--text-soft) !important; padding: 10px 14px !important; display: flex !important; align-items: center !important; }
+
+.wrong-book-drawer { background: var(--bg) !important; border-left: 1px solid var(--border) !important; }
+.wrong-book-header { background: var(--card) !important; border-bottom: 1px solid var(--border) !important; padding: 16px 20px !important; }
+.wrong-item { background: var(--card) !important; border: 1px solid var(--border) !important; border-left: 3px solid var(--red-text) !important; border-radius: var(--r-sm) !important; padding: 16px !important; margin-bottom: 12px !important; }
+.wrong-item-text { color: var(--text) !important; font-size: 15px !important; line-height: 1.6 !important; }
+.wrong-item-meta span, .wrong-item-tag-chip { background: var(--bg) !important; color: var(--muted) !important; border: 1px solid var(--border) !important; border-radius: 4px !important; padding: 2px 8px !important; }
+.wrong-item[data-wrong-count]::after { background: var(--red-soft) !important; color: var(--red-text) !important; border: none !important; }
+.wrong-item-explain, .wrong-item-redo { background: var(--bg) !important; border: 1px solid var(--border) !important; color: var(--text-soft) !important; border-radius: var(--r-pill) !important; padding: 6px 14px !important; }
+
+/* 月对比 & 成就墙 */
+.month-compare, .achievement-wall { background: var(--card) !important; border: 1px solid var(--border) !important; border-radius: var(--r-card) !important; padding: 20px !important; margin-top: 16px; }
+.month-compare-hd, .achievement-wall-hd { color: var(--text) !important; font-size: 16px !important; border-bottom: 1px dashed var(--border) !important; padding-bottom: 12px !important; margin-bottom: 16px !important; display: flex !important; justify-content: space-between !important; }
+.month-compare-grid { display: grid !important; grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
+.month-row { display: flex !important; flex-direction: column !important; padding: 16px !important; background: var(--bg) !important; border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; }
+.month-label { font-size: 13px !important; color: var(--muted) !important; margin-bottom: 6px !important; }
+.month-value { font-size: 24px !important; font-weight: 800 !important; color: var(--text) !important; font-family: monospace !important; }
+.achievement-grid { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important; gap: 12px !important; }
+.achievement-item { display: flex !important; flex-direction: column !important; align-items: center !important; background: var(--bg) !important; border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; padding: 16px !important; }
+.achievement-star { font-size: 28px !important; margin-bottom: 8px !important; }
+.achievement-text { font-size: 13px !important; color: var(--text-soft) !important; font-family: monospace !important; }
+
+/* 历史记录 */
+.history-item { background: var(--card) !important; border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important; margin-bottom: 12px !important; }
+.history-hd { background: var(--card) !important; border-bottom: 1px dashed var(--border) !important; padding: 16px !important; }
+.history-problem { color: var(--text) !important; }
+.history-bd { background: var(--bg) !important; padding: 16px !important; border-top: 1px dashed var(--border) !important; }
+
+/* 弹窗与浮层 */
+.student-modal-mask, .pwd-modal-mask, .explain-modal-mask, .export-modal-mask, .share-card-mask, .grade-modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10001; padding: 20px; }
+.student-modal, .pwd-modal, .grade-modal, .export-modal, .share-card, .explain-modal { background: var(--card); border-radius: var(--r-card); padding: 24px; color: var(--text); border: 1px solid var(--border); }
+.wrong-book-btn { position: fixed; bottom: 50px; right: 24px; width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--border); background: var(--card); color: var(--red-text); display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 998; }
+.koji-btn { position: fixed; bottom: 50px; right: 88px; width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--border); background: var(--card); color: var(--purple-text); display: flex; align-items: center; justify-content: center; font-size: 24px; z-index: 998; }
+
+/* 移动端修复 */
+@media (max-width: 600px) {
+  .home-hero { padding: 20px; }
+  .island-grid { grid-template-columns: repeat(2, 1fr); }
+  .island-desc { display: none; }
+  .home-task { padding: 12px; }
+  .weekly-summary-stats { grid-template-columns: repeat(2, 1fr) !important; }
+  .month-compare-grid { grid-template-columns: 1fr !important; }
+  .wrong-book-btn { width: 44px; height: 44px; bottom: 46px; right: 24px; font-size: 20px; }
+  .koji-btn { width: 44px; height: 44px; bottom: 46px; right: 78px; font-size: 18px; }
+}
+
+/* ============================================================
+   ⭐ 彻底修复：错题本抽屉的物理遮挡与层级
+   ============================================================ */
+
+/* 1. 错题本抽屉：固定定位，禁止被内部内容撑破 */
+.wrong-book-drawer {
+  position: fixed !important;
+  top: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  width: 400px !important;
+  max-width: 100vw !important;
+  background: var(--card) !important; /* 必须有实色背景 */
+  border-left: 1px solid var(--border) !important;
+  box-shadow: -10px 0 30px rgba(0,0,0,0.2) !important;
+  z-index: 9999 !important;
+  transform: translateX(100%) !important; /* 默认隐藏 */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+.wrong-book-drawer.open {
+  transform: translateX(0) !important;
+}
+
+/* 2. 遮罩层：必须在抽屉下方，挡住首页内容 */
+.wrong-book-mask {
+  position: fixed !important;
+  inset: 0 !important;
+  background: rgba(0, 0, 0, 0.6) !important;
+  z-index: 9998 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.3s !important;
+}
+.wrong-book-mask.open {
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+/* 3. 修复错题卡片内部标签样式（防止乱码堆叠） */
+.wrong-book-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+}
+.wrong-item {
+  background: var(--bg) !important;
+  border: 1px solid var(--border) !important;
+  border-left: 3px solid var(--red-text) !important;
+  border-radius: var(--r-sm) !important;
+  padding: 16px !important;
+  position: relative !important;
+}
+.wrong-item-meta {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+  margin-top: 12px !important;
+}
+.wrong-item-meta span {
+  background: var(--card) !important;
+  color: var(--muted) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px !important;
+  padding: 2px 8px !important;
+  font-size: 12px !important;
+}
+
+/* 移动端全屏 */
+@media (max-width: 600px) {
+  .wrong-book-drawer {
+    width: 100vw !important;
+  }
+}
+
+/* ============================================================
+   ⭐ 我的成长：完美结构重塑（卡片化 + 网格布局）
+   ============================================================ */
+
+/* 1. 容器基础重置 */
+#dashboard { margin-bottom: 24px; }
+
+/* 2. 顶部的 今日/本周/累计 切换按钮 */
+.range-tabs {
+  display: flex !important;
+  gap: 8px !important;
+  margin-bottom: 16px !important;
+}
+.range-tab {
+  padding: 8px 16px !important;
+  border-radius: var(--r-pill) !important;
+  border: 1px solid var(--border) !important;
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}
+.range-tab.active {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
+  color: #fff !important;
+}
+
+/* 3. 折叠头部（横排芯片） */
+.dash-collapsed {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  gap: 8px !important;
+  padding: 12px !important;
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-card) !important;
+  align-items: center !important;
+  scrollbar-width: none !important; /* 隐藏滚动条 */
+}
+.dash-collapsed::-webkit-scrollbar { display: none; }
+
+.dash-chip {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  background: var(--bg) !important;
+  border-radius: var(--r-sm) !important;
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
+}
+.dash-chip .chip-icon { font-size: 14px !important; }
+.dash-chip .chip-label { font-size: 12px !important; color: var(--muted) !important; font-weight: 600 !important; }
+.dash-chip .chip-value { font-size: 14px !important; color: var(--primary) !important; font-weight: 800 !important; }
+
+.dash-chevron {
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+  color: var(--muted) !important;
+  font-size: 12px !important;
+}
+
+/* 4. 展开面板（网格卡片） */
+.dash-expanded { display: none; margin-top: 12px; }
+.dashboard-bar.expanded .dash-expanded { display: block !important; }
+
+.dash-expanded-inner {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.dash-item {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-card) !important;
+  padding: 16px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+.dash-item .dash-icon { font-size: 24px !important; }
+.dash-item .dash-label { font-size: 12px !important; color: var(--muted) !important; margin-bottom: 4px !important; }
+.dash-item .dash-value { font-size: 20px !important; font-weight: 800 !important; color: var(--text) !important; }
+
+/* 5. 下部 5 个入口卡片 */
+.growth-card-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)) !important;
+  gap: 16px !important;
+  margin-top: 20px !important;
+}
+
+.growth-card {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-card) !important;
+  padding: 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  cursor: pointer !important;
+}
+.growth-card-hd { display: flex !important; align-items: center !important; gap: 12px !important; margin-bottom: 16px !important; }
+.growth-card-icon { font-size: 28px !important; }
+.growth-card-title { font-size: 15px !important; font-weight: 700 !important; color: var(--text) !important; }
+.growth-card-title small { display: block !important; font-size: 12px !important; color: var(--muted) !important; margin-top: 2px !important; }
+
+.growth-card-stats {
+  display: flex !important;
+  gap: 16px !important;
+  padding: 12px 0 !important;
+  border-top: 1px dashed var(--border) !important;
+  border-bottom: 1px dashed var(--border) !important;
+  margin-bottom: 12px !important;
+}
+.growth-card-stat { flex: 1 !important; text-align: center !important; }
+.growth-card-stat .num { font-size: 22px !important; font-weight: 800 !important; color: var(--text) !important; }
+.growth-card-stat .num small { font-size: 12px !important; color: var(--muted) !important; }
+.growth-card-stat .lbl { font-size: 12px !important; color: var(--muted) !important; margin-top: 4px !important; }
+
+.growth-card-cta { font-size: 13px !important; font-weight: 700 !important; color: var(--primary) !important; text-align: right !important; }
+
+/* 6. 详细面板（点击卡片后展开） */
+.collapsible-section {
+  background: var(--card) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-card) !important;
+  margin-top: 16px !important;
+  overflow: hidden !important;
+}
+.collapsible-hd {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 16px !important;
+  background: var(--bg) !important;
+  border-bottom: 1px solid var(--border) !important;
+  cursor: pointer !important;
+}
+.collapsible-hd .collapse-title { font-size: 15px !important; font-weight: 700 !important; color: var(--text) !important; flex: 1 !important; }
+.collapsible-hd .collapse-icon { font-size: 12px !important; color: var(--muted) !important; }
+.collapsible-hd .collapse-count { font-size: 12px !important; color: var(--muted) !important; }
+
+.collapsible-bd { display: none !important; padding: 16px !important; }
+.collapsible-section.expanded .collapsible-bd { display: block !important; }
+
+/* 7. 修复内层的：学习周报 / 数据对比 / 成就墙 */
+.weekly-summary, .month-compare, .achievement-wall {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin-bottom: 24px !important;
+}
+.weekly-summary-hd, .month-compare-hd, .achievement-wall-hd {
+  font-size: 15px !important; font-weight: 700 !important; color: var(--text) !important; margin-bottom: 16px !important;
+}
+
+/* 网格数据（强制洗牌成方块） */
+.weekly-summary-stats, .month-compare-grid, .achievement-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)) !important;
+  gap: 12px !important;
+}
+.weekly-stat, .month-row, .achievement-item {
+  display: flex !important; flex-direction: column !important; align-items: center !important; justify-content: center !important;
+  background: var(--bg) !important; border: 1px solid var(--border) !important; border-radius: var(--r-sm) !important;
+  padding: 16px !important; text-align: center !important;
+}
+/* 针对月对比数据强制定向 */
+.month-row { align-items: flex-start !important; }
+.month-label { font-size: 12px !important; color: var(--muted) !important; }
+.month-value { font-size: 22px !important; font-weight: 800 !important; color: var(--text) !important; font-family: monospace !important; }
+
+.weekly-stat-value, .achievement-text {
+  font-size: 20px !important; font-weight: 800 !important; color: var(--text) !important; font-family: monospace !important;
+  word-break: break-all !important;
+}
+.weekly-stat-label {
+  font-size: 12px !important; color: var(--muted) !important; margin-top: 6px !important;
+}
+.achievement-star { font-size: 24px !important; margin-bottom: 8px !important; }
+
+/* 8. 底部的大圆角按钮 */
+.weekly-summary-actions { display: flex !important; gap: 12px !important; margin-top: 20px !important; }
+.weekly-summary-actions button {
+  flex: 1 !important; padding: 12px !important; border-radius: var(--r-pill) !important; font-weight: 700 !important; font-size: 14px !important;
+}
+#weeklyExportBtn { background: var(--bg) !important; border: 1px solid var(--border) !important; color: var(--text) !important; }
+#weeklyGoWrongBtn { background: var(--primary) !important; color: #fff !important; }
+
+/* ============================================================
+   ⭐ 终极排版塑形：强制网格化（专治 JS 纯文本堆叠）
+   ============================================================ */
+
+/* 1. 限制折叠面板内部的最大宽度，居中显示 */
+#growthDetailPanels .collapsible-bd {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 16px !important;
+}
+
+/* 2. 全局网格：强制让纯文本/数据块变成整齐的方块 */
+.weekly-summary-stats, 
+.month-compare-grid, 
+.achievement-grid,
+#weeklyReportBox {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)) !important;
+  gap: 12px !important;
+  margin-bottom: 24px !important;
+}
+
+/* 3. 核心魔法：用 first-letter 和 nth-child 识别数据块并重塑 */
+/* 由于你没有 class，我们用 [data] 属性或者子元素强行造出卡片感 */
+.weekly-summary-stats > *, 
+.month-compare-grid > *, 
+.achievement-grid > *,
+#weeklyReportBox > * {
+  background: var(--bg) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--r-card) !important;
+  padding: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  word-break: break-all !important;
+}
+
+/* 4. 优雅处理卡片内的文字：数字放大，标签置灰 */
+.weekly-summary-stats > *,
+.month-compare-grid > *,
+#weeklyReportBox > * {
+  font-size: 24px !important; /* 数字大字 */
+  font-weight: 800 !important;
+  color: var(--text) !important;
+  font-family: ui-monospace, monospace !important;
+  line-height: 1.2 !important;
+}
+
+/* 如果你以前的数据里有小字标签，强制置灰缩小 */
+.weekly-summary-stats > * small,
+.month-compare-grid > * small,
+#weeklyReportBox > * small {
+  font-size: 12px !important;
+  color: var(--muted) !important;
+  font-weight: 600 !important;
+  font-family: "PingFang SC", sans-serif !important;
+  margin-top: 4px !important;
+}
+
+/* 5. 成就墙内的星星与题目 */
+.achievement-item {
+  flex-direction: column !important; 
+}
+.achievement-star {
+  font-size: 28px !important; 
+  margin-bottom: 8px !important;
+}
+.achievement-text {
+  font-size: 13px !important; 
+  color: var(--text-soft) !important;
+  font-family: ui-monospace, monospace !important;
+  font-weight: 600 !important;
+}
+
+/* 6. 整理“本周练得最多”这种标签云 */
+.weekly-summary-tags {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 8px !important;
+}
+.weekly-summary-tag {
+  background: var(--primary-soft) !important;
+  color: var(--primary) !important;
+  padding: 6px 14px !important;
+  border-radius: var(--r-pill) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  border: 1px solid var(--primary) !important;
+}
+
+/* 7. 整理下方的错题/掌握列表 */
+.weekly-mastered-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+.weekly-mastered-item {
+  background: var(--bg) !important;
+  border: 1px solid var(--border) !important;
+  padding: 12px 16px !important;
+  border-radius: var(--r-sm) !important;
+  font-size: 14px !important;
+  color: var(--text-soft) !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+/* 8. 统一所有图表的标题 */
+.weekly-summary-section-title,
+.month-compare-hd,
+.achievement-wall-hd {
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  color: var(--text) !important;
+  margin-bottom: 16px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px dashed var(--border) !important;
+  width: 100% !important;
+  display: block !important;
+}
+
+</style>
+</head>
+<body>
+
+<div class="app-header" id="globalHeader">
+  <h1 id="appTitle">🎓 三年级数学互动课堂</h1>
+  <p>动 手 操 作 · 即 时 反 馈 · 发 现 规 律</p>
+</div>
+<!-- 新增：三个 page 容器 -->
+<div id="page-home"   class="page active"></div>
+  
+<div id="page-lesson" class="page">
+  <div id="lessonHeader" class="lesson-header"></div>
+  <div id="lessonProgress" class="lesson-progress"></div>   <!-- ⭐ 新增 -->
+  <div id="lessonLevels" class="lesson-levels is-hidden"></div> <!-- 默认加上 is-hidden -->
+  <!-- ⭐ modulePool 就是 lesson 内容区，不再需要 lessonStage -->
+  <div id="modulePool" class="lesson-stage">
+    <main id="lesson-stage-main">
+      <!-- 这里现在什么都不用放，等着 m1.js 动态挂载 -->
+    </main>
+    <!-- ① 混合运算 -->
+    <template id="tpl-m1">
+      <div class="card">
+        <h2>① 混合运算 · 步步为营</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>先算乘除，后算加减。点击算式中的运算符，把它先算出来。</p>
+        </details>
+
+        <div class="problem-bar">
+          <select id="m1Select"></select>
+          <button class="btn" id="m1Load">📥 载入</button>
+          <input type="text" id="m1Custom" placeholder="或输入算式，如：12 × 3 + 15">
+          <button class="btn-secondary" id="m1UseCustom">使用</button>
+          <label class="file-btn">📎 上传 txt<input type="file" id="m1Upload" accept=".txt" hidden></label>
+          <button class="btn-secondary" id="m1Random">🎲 随机出题</button>
+        </div>
+
+        <div class="expr-box"><div class="expr" id="m1expr"></div></div>
+
+        <!-- 先算哪步 -->
+        <div id="m1PriorityBox" class="priority-box" style="display:none;">
+          <div class="priority-label">🤔 想一想：这道题应该先算哪一步？</div>
+          <div class="priority-options" id="m1PriorityOptions"></div>
+          <div id="m1PriorityFeedback" class="priority-feedback"></div>
+        </div>
+
+        <!-- 新增：得数输入区 -->
+        <div class="steps-box" id="m1steps"></div>
+        <div class="feedback" id="m1fb">点击算式中的运算符，把它先算出来 👆</div>
+        <div class="btn-row">
+          <button class="btn-secondary" id="m1reset">🔄 重来一次</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- ② 乘法面积 -->
+    <template id="tpl-m2">
+      <div class="card">
+        <h2>② 多位数乘一位数 · 铺地砖</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>一块一块地铺满地面，看看 12 × 3 到底是怎么算出来的。</p>
+        </details>
+        <div class="controls">
+          <label>每行 <input type="range" id="m2a" min="11" max="25" value="12"> <span class="val" id="m2aval">12</span> 块</label>
+          <label>共 <input type="range" id="m2b" min="2" max="6" value="3"> <span class="val" id="m2bval">3</span> 行</label>
+        </div>
+        <canvas id="m2canvas" width="720" height="420"></canvas>
+        <div class="btn-row" style="justify-content:center;">
+          <button class="btn" id="m2fill">🧱 铺一行</button>
+          <button class="btn-secondary" id="m2split">✂️ 拆分模式</button>
+          <button class="btn-secondary" id="m2clear">🔄 重来</button>
+        </div>
+        <div class="calc-display" id="m2calc"></div>
+      </div>
+    </template>
+
+    <!-- ③ 分数披萨 -->
+    <template id="tpl-m3">
+      <div class="card">
+        <h2>③ 分数的初步认识 · 披萨分一分</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>拖动滑块改变份数，点击披萨上的每一块来"取走"它。</p>
+        </details>
+        <div class="controls" style="justify-content:center;margin-bottom:22px;">
+          <label>平均分成 <input type="range" id="m3denRange" min="2" max="12" value="4"> <span class="val" id="m3denval">4</span> 份</label>
+        </div>
+        <div class="frac-wrap">
+          <canvas id="m3canvas" width="340" height="340"></canvas>
+          <div class="frac-info">
+            <div class="frac"><span id="m3num">0</span><span class="line"></span><span id="m3denText">4</span></div>
+            <div class="frac-text" id="m3text">还没有选任何一份</div>
+          </div>
+        </div>
+        <!-- ⭐ 分数扩展练习 -->
+        <div class="frac-extra">
+          <div class="frac-extra-tabs">
+            <button class="frac-tab active" data-frac-mode="compare">⚖️ 比大小</button>
+            <button class="frac-tab" data-frac-mode="add">➕ 分数加法</button>
+            <button class="frac-tab" data-frac-mode="sub">➖ 分数减法</button>
+            <button class="frac-tab" data-frac-mode="equiv">🟰 等值分数</button>
+          </div>
+          <div id="fracExtraContent" class="frac-extra-content"></div>
+        </div>
+        <div class="btn-row" style="justify-content:center;">
+          <button class="btn-secondary" id="m3clear">🔄 清空重选</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- ④ 长度单位 -->
+    <template id="tpl-m4">
+      <div class="card">
+        <h2>④ 毫米、分米和千米 · 单位换算器</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>长度单位每相邻两个之间都是 10 倍关系（千米和米之间是 1000 倍）。</p>
+        </details>
+        <div class="ladder">
+          <div class="rung"><span class="unit-name">千米</span><span class="unit-sym">km</span></div>
+          <div class="arrow-row">↓ × 1000 &nbsp;&nbsp; ↑ ÷ 1000</div>
+          <div class="rung"><span class="unit-name">米</span><span class="unit-sym">m</span></div>
+          <div class="arrow-row">↓ × 10 &nbsp;&nbsp; ↑ ÷ 10</div>
+          <div class="rung"><span class="unit-name">分米</span><span class="unit-sym">dm</span></div>
+          <div class="arrow-row">↓ × 10 &nbsp;&nbsp; ↑ ÷ 10</div>
+          <div class="rung"><span class="unit-name">厘米</span><span class="unit-sym">cm</span></div>
+          <div class="arrow-row">↓ × 10 &nbsp;&nbsp; ↑ ÷ 10</div>
+          <div class="rung"><span class="unit-name">毫米</span><span class="unit-sym">mm</span></div>
+        </div>
+        <div class="converter">
+          <input type="text" inputmode="decimal" id="m4val" value="3" min="0" step="any">
+          <select id="m4unit">
+            <option value="km">千米</option><option value="m" selected>米</option>
+            <option value="dm">分米</option><option value="cm">厘米</option>
+            <option value="mm">毫米</option>
+          </select>
+          <span style="font-size:16px;font-weight:700;color:var(--muted);">= ?</span>
+        </div>
+        <div class="result-list" id="m4results"></div>
+        <div class="quiz-box">
+          <div class="quiz-q" id="m4quizq">点击下方按钮开始小测</div>
+          <div class="quiz-row">
+            <button class="btn" id="m4newq">🎲 出题</button>
+            <input type="text" inputmode="decimal" id="m4answer" placeholder="答案" step="any">
+            <button class="btn-secondary" id="m4check">✔ 检查</button>
+          </div>
+          <div class="feedback" id="m4fb" style="margin-top:14px;display:none;"></div>
+        </div>
+      </div>
+    </template>
+
+    <!-- ⑤ 面积周长 -->
+    <template id="tpl-m5">
+      <div class="card">
+        <h2>⑤ 长方形和正方形的面积 · 围栏与地砖</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>拖动滑块改变长和宽，观察面积和周长各自怎么变化。</p>
+        </details>
+        <div class="controls" style="justify-content:center;">
+          <label>长 <input type="range" id="m5w" min="1" max="10" value="5"> <span class="val" id="m5wval">5</span></label>
+          <label>宽 <input type="range" id="m5h" min="1" max="10" value="3"> <span class="val" id="m5hval">3</span></label>
+        </div>
+        <div class="grid-wrap"><div class="grid" id="m5grid"></div></div>
+        <div class="stats">
+          <div class="stat area"><div class="label">面积（方块数）</div><div class="value" id="m5area">15</div></div>
+          <div class="stat perim"><div class="label">周长（边线长）</div><div class="value" id="m5perim">16</div></div>
+        </div>
+        <div class="btn-row" style="justify-content:center;">
+          <button class="btn" id="m5record">📝 记录数据</button>
+          <button class="btn-secondary" id="m5cleartable">🗑 清空表格</button>
+        </div>
+        <table class="data-table" id="m5table">
+          <thead><tr><th>序号</th><th>长</th><th>宽</th><th>面积 = 长 × 宽</th><th>周长 = (长+宽) × 2</th></tr></thead>
+          <tbody></tbody>
+        </table>
+
+        <!-- 逆向练习 -->
+        <div class="step-card" style="margin-top:24px;">
+          <div class="step-title">
+            <span class="step-num">🎯</span>逆向挑战
+          </div>
+          <div id="m5Challenge" style="padding:16px;background:#fff;border-radius:12px;border:2px solid var(--border);"></div>
+          <div class="btn-row" style="justify-content:center;margin-top:12px;">
+            <button class="btn" id="m5NewChallenge">🎲 出新题</button>
+          </div>
+        </div>
+
+      </div>
+    </template>
+
+    <!-- ⑥ 小数认识 -->
+    <template id="tpl-m6">
+      <div class="card">
+        <h2>⑥ 小数的初步认识 · 元角分</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>1 元 = 10 角 = 100 分。往钱包里放硬币，看看一共是多少元。</p>
+        </details>
+        <div class="coin-row" id="m6coins"></div>
+        <div class="money-display">
+          <div class="money-big" id="m6total">0.00<small>元</small></div>
+          <div class="money-sub" id="m6sub">还没有放硬币</div>
+        </div>
+        <div class="numline" id="m6numline"></div>
+        <div class="btn-row" style="justify-content:center;">
+          <button class="btn-secondary" id="m6clear">🔄 清空钱包</button>
+        </div>
+      </div>
+    </template>
+
+    <!-- ⑦ 时分秒 -->
+    <template id="tpl-m7">
+      <div class="card">
+        <h2>⑦ 时、分、秒 · 时钟与秒表</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>拖动分针或让秒针自动走，观察时分秒的关系。切换到秒表模式，体验正计时和倒计时。</p>
+        </details>
+
+        <div class="clock-wrap">
+          <canvas id="m7canvas" width="320" height="320"></canvas>
+          <div class="clock-info">
+            <div class="clock-digital" id="m7digital">3:00:00</div>
+            <div class="clock-chinese" id="m7chinese">三时整</div>
+            <div class="btn-row" style="justify-content:center;">
+              <button class="btn-secondary" id="m7toggle">⏸ 暂停</button>
+              <button class="btn-secondary" id="m7sound">🔇 滴答声</button>
+              <button class="btn-secondary" id="m7reset">🔄 回到 3:00</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="stopwatch-panel">
+          <div class="sw-tabs">
+            <button class="sw-tab active" data-mode="clock">🕐 时钟模式</button>
+            <button class="sw-tab" data-mode="up">⏱ 秒表正计时</button>
+            <button class="sw-tab" data-mode="down">⏳ 秒表倒计时</button>
+          </div>
+          <div class="sw-display" id="swDisplay">00:00<small>.0</small></div>
+          <div class="sw-controls" id="swControls">
+            <button class="btn" id="swToggle">▶ 开始</button>
+            <button class="btn-secondary" id="swReset">🔄 归零</button>
+            <div class="sw-input-group" id="swSetup" style="display:none;">
+              倒计时设置：
+              <input type="text" inputmode="decimal" id="swMin" value="1" min="0" max="59"> 分
+              <input type="text" inputmode="decimal" id="swSec" value="0" min="0" max="59"> 秒
+            </div>
+          </div>
+          <div class="sw-hint" id="swHint">
+            💡 时钟模式下，秒针每秒走一格；秒表模式下可精确计时到 0.1 秒。
+          </div>
+        </div>
+
+        <!-- ⭐ 时间推算挑战 -->
+        <div class="step-card" style="margin-top:24px;">
+          <div class="step-title">
+            <span class="step-num">🧮</span>时间推算
+            <span class="step-tip">算一算经过多少时间</span>
+          </div>
+          <div id="m7CalcChallenge" style="padding:16px;background:#fff;border-radius:12px;min-height:120px;"></div>
+          <div class="btn-row" style="justify-content:center;margin-top:12px;">
+            <button class="btn" id="m7NewCalcChallenge">🎲 出新题</button>
+          </div>
+        </div>
+
+      </div>
+    </template>
+
+    <!-- ⑧ 倍的认识 -->
+    <template id="tpl-m8">
+      <div class="card">
+        <h2>⑧ 倍的认识 · 图形倍数</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>第一行摆几个图形，第二行摆的是它的几倍。拖动滑块，数一数、圈一圈。</p>
+        </details>
+
+                <div class="controls" style="justify-content:center; flex-wrap:wrap;">
+          <label>第一行 <input type="range" id="m8base" min="1" max="5" value="3"> <span class="val" id="m8baseval">3</span> 个</label>
+          <label>第二行是它的 <input type="range" id="m8times" min="1" max="20" value="3"> <span class="val" id="m8timesval">3</span> 倍</label>
+        </div>
+
+        <div class="bei-wrap">
+          <div class="bei-row"><span class="bei-label">第一行：</span><div id="m8row1" style="display:flex;gap:6px;"></div></div>
+          <div class="bei-row"><span class="bei-label">第二行：</span><div id="m8row2" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;"></div></div>
+        </div>
+        <div class="calc-display" style="padding:22px;">
+          <div id="m8result"></div>
+        </div>
+
+        <!-- 老师配置项 · 低调放置于底部 -->
+        <details style="margin-top:26px;font-size:13px;color:var(--muted);">
+          <summary style="cursor:pointer;font-weight:600;color:var(--border);user-select:none;list-style:none;padding:6px 0;text-align:center;">
+            ⚙️ 老师配置（点击展开）
+          </summary>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:center;padding:14px 16px;margin-top:8px;background:var(--hover-bg-soft);border-radius:10px;border:1px dashed var(--border);">
+            <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;">
+              第一行上限
+              <input type="text" inputmode="decimal" id="m8baseMax" min="1" max="20" value="5"
+                      style="width:56px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center;font-family:inherit;outline:none;color:var(--muted);background:#fff;">
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;">
+              倍的上限
+              <input type="text" inputmode="decimal" id="m8max" min="2" max="50" value="20"
+                      style="width:56px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center;font-family:inherit;outline:none;color:var(--muted);background:#fff;">
+            </label>
+            <span style="color:var(--border);font-weight:500;font-size:12px;">数字越小越适合低年级</span>
+          </div>
+        </details>
+      </div>
+    </template>
+
+    <!-- ⑨ 竖式运算 -->
+    <template id="tpl-m9">
+      <div class="card">
+        <h2>⑨ 竖式运算 · 加减乘除</h2>
+
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>选择运算类型，输入数字，点击「下一步」逐步计算。每一步的得数、进位、借位都由你来填。</p>
+        </details>
+
+        <div class="controls" style="justify-content:center; align-items:center; flex-wrap:wrap;">
+          <input type="text" inputmode="decimal" id="m9a" value="348" min="0" max="999"
+                  style="width:100px;padding:10px;border:2px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;text-align:center;font-family:ui-monospace,monospace;outline:none;">
+          <select id="m9op"
+                  style="padding:10px 14px;border:2px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;background:#fff;outline:none;">
+            <option>+</option>
+            <option>−</option>
+            <option>×</option>
+            <option>÷</option>
+          </select>
+          <button class="btn-secondary" id="m9random" title="随机生成一道题">🎲 随机</button>
+          <input type="text" inputmode="decimal" id="m9b" value="176" min="0" max="999"
+                  style="width:100px;padding:10px;border:2px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;text-align:center;font-family:ui-monospace,monospace;outline:none;">
+        </div>
+
+        <div id="m9display" style="display:flex;justify-content:center;margin:20px 0;"></div>
+
+        <div id="m9EstimateBox" class="priority-box" style="display:none;">
+          <div class="priority-label">🤔 先估一估：这道题的结果大约是多少？</div>
+          <div class="priority-options" id="m9EstimateOptions"></div>
+          <div id="m9EstimateFeedback" class="priority-feedback"></div>
+        </div>
+
+        <div class="btn-row" style="justify-content:center;">
+          <button class="btn" id="m9step">▶ 下一步</button>
+          <button class="btn-secondary" id="m9reset">🔄 重来</button>
+        </div>
+
+        <div class="feedback" id="m9fb">点击「下一步」，开始计算</div>
+      </div>
+    </template>
+
+    <!-- ⑩ 年月日 -->
+    <template id="tpl-m10">
+      <div class="card">
+        <h2>⑩ 年月日 · 日历探索</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>切换年份和月份，看看每个月的天数有什么规律。</p>
+        </details>
+        <div class="controls" style="justify-content:center; align-items:center;">
+          <label>年份 <input type="text" inputmode="decimal" id="m10year" value="2026" min="1900" max="2100" style="width:100px;padding:8px 10px;border:2px solid var(--border);border-radius:8px;font-size:15px;font-weight:700;text-align:center;font-family:inherit;outline:none;"></label>
+          <label>月份
+            <select id="m10month" style="padding:8px 12px;border:2px solid var(--border);border-radius:8px;font-size:15px;font-weight:700;background:#fff;outline:none;">
+              <option>1</option><option>2</option><option>3</option><option>4</option>
+              <option>5</option><option>6</option><option>7</option><option>8</option>
+              <option>9</option><option>10</option><option>11</option><option>12</option>
+            </select>
+          </label>
+        </div>
+        <div style="text-align:center;font-size:24px;font-weight:800;color:var(--primary-d);margin-top:10px;" id="m10title">2026 年 10 月</div>
+        <table class="calendar" id="m10calendar"></table>
+        <div class="feedback ok" id="m10info"></div>
+      </div>
+    </template>
+
+    <!-- ⑪ 位置方向 -->
+    <template id="tpl-m11">
+      <div class="card">
+        <h2>⑪ 位置与方向 · 方阵坐标</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>点击方阵中的任意格子，看看它在第几列、第几行。</p>
+        </details>
+        <div id="m11grid-wrap" style="overflow-x:auto;"></div>
+        <div class="calc-display"><div class="calc-final" id="m11result">还没有选位置</div></div>
+      </div>
+    </template>
+
+    <!-- ⑫ 吨的认识 -->
+    <template id="tpl-m12">
+      <div class="card">
+        <h2>⑫ 吨的认识 · 质量单位换算</h2>
+        <details class="lesson-hint">
+          <summary>💡 不会做？点我看提示</summary>
+          <p>1 吨 = 1000 千克，1 千克 = 1000 克。</p>
+        </details>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:20px 0;">
+          <div class="t-unit-row"><span>吨</span><span style="color:var(--primary-d);font-family:ui-monospace;">t</span></div>
+          <div class="arrow-row">↓ × 1000 &nbsp;&nbsp; ↑ ÷ 1000</div>
+          <div class="t-unit-row"><span>千克</span><span style="color:var(--primary-d);font-family:ui-monospace;">kg</span></div>
+          <div class="arrow-row">↓ × 1000 &nbsp;&nbsp; ↑ ÷ 1000</div>
+          <div class="t-unit-row"><span>克</span><span style="color:var(--primary-d);font-family:ui-monospace;">g</span></div>
+        </div>
+        <div class="converter">
+          <input type="text" inputmode="decimal" id="m12val" value="2" min="0" step="any">
+          <select id="m12unit">
+            <option value="t">吨</option><option value="kg" selected>千克</option><option value="g">克</option>
+          </select>
+          <span style="font-size:16px;font-weight:700;color:var(--muted);">= ?</span>
+        </div>
+        <div class="result-list" id="m12results"></div>
+      </div>
+    </template>
+
+    <!-- ⑬ 解题思维训练 -->
+    <template id="tpl-m13">
+      <div class="card">
+
+        <!-- ⭐ 顶部：题目卡 -->
+        <div class="problem-bar">
+          <div class="problem-bar-current">
+            
+            <!-- 标题行（包含标题和换题按钮） -->
+            <div class="problem-bar-head">
+              <div class="problem-bar-head-left">
+                <span class="problem-bar-icon">📝</span>
+                <span class="problem-bar-label">题目</span>
+              </div>
+              <!-- 换题按钮 -->
+              <button class="problem-bar-change" id="problemChangeBtn">
+                <span class="problem-bar-change-icon">🔄</span> 换一题
+              </button>
+            </div>
+
+            <!-- 题目文本输入框 -->
+            <div id="problem-text" contenteditable="true"
+                data-placeholder="请点「换一题」选择题目，或直接在这里输入题目…"></div>
+
+          </div>
+        </div>
+
+        <!-- ⭐ 换题抽屉（默认隐藏） -->
+        <div id="problemPickerDrawer" class="problem-picker-drawer" style="display:none;">
+          <div class="problem-picker-inner">
+            <div class="problem-picker-hd">
+              <span>📚 选一道题</span>
+              <button id="problemPickerClose" aria-label="关闭">×</button>
+            </div>
+            <div class="problem-picker-body">
+
+              <!-- ⭐ 下拉框 + 随机按钮（使用 flex 并排） -->
+              <div style="display: flex; gap: 8px;">
+                <select id="pSelect" style="flex: 1; min-width: 0;">
+                  <!-- 下拉选项由 m13InitSelect 动态注入，这里不需要写死 -->
+                </select>
+                <button class="btn-secondary" id="pRandomBtn" style="flex-shrink: 0; padding: 0 16px; height: 44px;">🎲 随机</button>
+              </div>
+
+              <!-- 载入按钮 -->
+              <button class="btn" id="pLoad" data-_orig-text="📥 载入" style="height: 44px;">📥 载入</button>
+              
+              <div class="problem-picker-divider"><span>或</span></div>
+              
+              <!-- 自定义输入 -->
+              <input type="text" id="pCustom" placeholder="手动输入题目…">
+              <button class="btn-secondary" id="pUseCustom">使用</button>
+              
+              <!-- AI 生成按钮（放在这里最顺手） -->
+              <button class="btn-secondary ai-btn" id="pickerAiBtn" style="border-color: #c4b5fd; background: var(--violet-soft); color: var(--violet-text);">
+                🤖 让 AI 生成一道同类题
+              </button>
+              
+              <label class="file-btn">
+                📎 上传 txt
+                <input type="file" id="pUpload" accept=".txt" hidden>
+              </label>
+            </div>
+
+            <!-- AI 生成时的加载态（默认隐藏） -->
+            <div id="pickerAiLoading" style="display: none; padding: 40px 20px; text-align: center;">
+              <div class="ai-thinking" style="justify-content: center;">
+                <span class="dots"><span></span><span></span><span></span></span>
+                <div style="text-align: left;">
+                  <div class="think-text">🤖 AI 正在为你出题…</div>
+                  <div class="think-sub" id="pickerAiSub">正在分析当前题目的知识点</div>
+                </div>
+              </div>
+            </div>
+
+            <button class="problem-picker-clear" id="pClear">🗑 清空当前题目</button>
+          </div>
+        </div>
+
+        <!-- ⭐ Step 1：读题圈一圈 -->
+        <div class="m13-step" data-step="1">
+          <div class="m13-step-hd">
+            <span class="m13-step-num">1</span>
+            <span class="m13-step-title">读题 · 圈一圈</span>
+            <span class="m13-step-status" data-status="pending"></span>
+            <span class="m13-step-arrow">▶</span>
+          </div>
+          <div class="m13-step-bd">
+            <div class="m13-step-hint">
+              💡 第一遍圈数字、条件、运算；第二遍圈已知、求什么、缺什么
+            </div>
+            <div class="hl-toolbar">
+              <span class="hl-label">第一遍：</span>
+              <button class="hl-btn" data-color="#bfdbfe">数字</button>
+              <button class="hl-btn" data-color="#bbf7d0">条件</button>
+              <button class="hl-btn" data-color="#fed7aa">运算关系</button>
+              <button class="hl-btn" data-color="#e9d5ff">单位</button>
+              <span class="hl-sep"></span>
+              <span class="hl-label">第二遍：</span>
+              <button class="hl-btn" data-color="#a5f3fc">已知</button>
+              <button class="hl-btn" data-color="#fecaca">求什么</button>
+              <button class="hl-btn" data-color="#fef08a">缺什么</button>
+              <span class="hl-sep"></span>
+              <button class="hl-btn hl-clear" data-color="transparent">清除</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⭐ Step 2：草稿纸 -->
+        <div class="m13-step" data-step="2">
+          <div class="m13-step-hd">
+            <span class="m13-step-num">2</span>
+            <span class="m13-step-title">草稿纸 · 分区写</span>
+            <span class="m13-step-status" data-status="pending"></span>
+            <span class="m13-step-arrow">▶</span>
+          </div>
+          <div class="m13-step-bd">
+            <div class="m13-step-hint">
+              💡 两步计算禁止心算，一步一步写下来
+            </div>
+            <div class="scratch-grid">
+              <div class="scratch-cell">
+                <span class="scratch-label">草稿 ①</span>
+                <textarea placeholder="第一步计算过程…"></textarea>
+              </div>
+              <div class="scratch-cell">
+                <span class="scratch-label">草稿 ②</span>
+                <textarea placeholder="第二步计算过程…"></textarea>
+              </div>
+              <div class="scratch-cell">
+                <span class="scratch-label">草稿 ③</span>
+                <textarea placeholder="验算 / 检查过程…"></textarea>
+              </div>
+              <div class="scratch-cell">
+                <span class="scratch-label">草稿 ④</span>
+                <textarea placeholder="备用…"></textarea>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⭐ Step 3：公式步骤 -->
+        <div class="m13-step" data-step="3">
+          <div class="m13-step-hd">
+            <span class="m13-step-num">3</span>
+            <span class="m13-step-title">关系式 · 代入 · 得数</span>
+            <span class="m13-step-status" data-status="pending"></span>
+            <span class="m13-step-arrow">▶</span>
+          </div>
+          <div class="m13-step-bd">
+            <div class="m13-step-hint">
+              💡 一步公式、一步代入、一步结果，几步都行
+            </div>
+            <div id="formulaSteps"></div>
+            <div class="m13-step-actions">
+              <button class="btn-secondary" id="addStepBtn">＋ 添加一步</button>
+              <button class="btn-secondary" id="removeStepBtn">－ 删除最后一步</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⭐ Step 4：我的答案 + 一题一得 -->
+        <div class="m13-step" data-step="4">
+          <div class="m13-step-hd">
+            <span class="m13-step-num">4</span>
+            <span class="m13-step-title">我的答案</span>
+            <span class="m13-step-status" data-status="pending"></span>
+            <span class="m13-step-arrow">▶</span>
+          </div>
+          <div class="m13-step-bd">
+            <div class="check-area">
+              <label>我的答案</label>
+              <input type="text" id="pAnswer" placeholder="写出最终答案（含单位）">
+            </div>
+
+            <div class="takeaway">
+              <h4>💡 一题一得 · 这道题教会我什么？</h4>
+              <div class="takeaway-row">
+                <input type="text" id="pTakeaway"
+                      placeholder="例：遇到「还剩多少」，要用减法；先算一共用去多少，再减…">
+                <button type="button" id="pTakeawaySave" class="btn-secondary">💾 保存</button>
+              </div>
+              <div id="pTakeawayHint" class="takeaway-hint"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⭐ 标准解题过程（折叠在底部） -->
+        <div id="m13StepsLocked" class="steps-locked" style="display:none;">
+          <button class="steps-locked-btn" id="m13UnlockBtn">
+            🔒 查看标准解题过程（需要密码）
+          </button>
+        </div>
+        <div id="m13StandardSteps" class="standard-steps" style="display:none;"></div>
+
+        <!-- ⭐ 底部固定：检查按钮 + AI 加载态 -->
+        <div class="m13-bottom-bar">
+          <div id="aiThinking" class="ai-thinking" style="display:none;">
+            <span class="dots"><span></span><span></span><span></span></span>
+            <div>
+              <div class="think-text">🤖 AI 正在思考…</div>
+              <div class="think-sub" id="aiThinkingSub">正在分析你的解题过程</div>
+            </div>
+            <span class="think-time" id="aiThinkingTime">0.0s</span>
+          </div>
+          <div class="m13-bottom-row">
+            <span id="pResult" class="m13-result-badge"></span>
+            <button class="m13-check-btn" id="pCheck">✔ 检查</button>
+          </div>
+        </div>
+
+      </div>
+    </template>
+
+    <!-- ⑭ 我的成长 -->
+    <template id="tpl-m14">
+      <div class="card">
+        <h2>📊 我的成长</h2>
+        <p class="sub">这里记录你做过的每一道题、每一条心得、每一周的变化。</p>
+
+        <!-- ⭐ 学习看板（单行折叠 + 展开） -->
+        <div id="dashboard" class="dashboard-bar">
+          <div class="range-tabs" id="rangeTabs">
+            <button class="range-tab active" data-range="today">今日</button>
+            <button class="range-tab" data-range="week">本周</button>
+            <button class="range-tab" data-range="all">累计</button>
+          </div>
+          <!-- 折叠头部（默认可见，横向滚动） -->
+          <div class="dash-collapsed" id="dashCollapsed">
+            <div class="dash-chip" id="dashStudent" title="点此设置名字">
+              <span class="chip-icon">👦</span>
+              <span class="chip-label">学生</span>
+              <span class="chip-value" id="dashStudentName">—</span>
+            </div>
+            <!-- ⭐ 年级 -->
+            <div class="dash-chip" id="dashGrade" title="点此切换年级">
+              <span class="chip-icon">📚</span>
+              <span class="chip-label">年级</span>
+              <span class="chip-value" id="dashGradeName">三年级</span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">📝</span>
+              <span class="chip-label">今日</span>
+              <span class="chip-value" id="dashToday">0<small>道</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">✅</span>
+              <span class="chip-label">对</span>
+              <span class="chip-value" id="dashCorrect">0<small>道</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">🎯</span>
+              <span class="chip-label">率</span>
+              <span class="chip-value" id="dashRate">—<small>%</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">🔥</span>
+              <span class="chip-label">连续</span>
+              <span class="chip-value" id="dashStreak">0<small>天</small></span>
+            </div>
+            <div class="dash-chip">
+              <span class="chip-icon">📕</span>
+              <span class="chip-label">错题</span>
+              <span class="chip-value" id="dashWrong">0<small>道</small></span>
+            </div>
+            <div class="dash-chevron" id="dashChevron">▼</div>
+          </div>
+
+          <!-- 展开面板 -->
+          <div class="dash-expanded">
+            <div class="dash-expanded-inner">
+              <div class="dash-item">
+                <div class="dash-icon">📝</div>
+                <div class="dash-info">
+                  <div class="dash-label">今日做题</div>
+                  <div class="dash-value" id="dashToday2">0 <small>道</small></div>
+                </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">✅</div>
+                <div class="dash-info">
+                  <div class="dash-label">今日正确</div>
+                  <div class="dash-value" id="dashCorrect2">0 <small>道</small></div>
+                </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">🎯</div>
+                <div class="dash-info">
+                  <div class="dash-label">正确率</div>
+                  <div class="dash-value" id="dashRate2">— <small>%</small></div>
+                </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">🔥</div>
+                <div class="dash-info">
+                  <div class="dash-label">连续学习</div>
+                  <div class="dash-value" id="dashStreak2">0 <small>天</small></div>
+                </div>
+              </div>
+              <div class="dash-item">
+                <div class="dash-icon">📕</div>
+                <div class="dash-info">
+                  <div class="dash-label">错题本</div>
+                  <div class="dash-value" id="dashWrong2">0 <small>道</small></div>
+                </div>
+              </div>
+
+              <!-- 成长曲线（横跨整行） -->
+              <div class="growth-wrap">
+                <div class="growth-wrap-hd">
+                  <span>📈 最近 7 天成长曲线</span>
+                  <small>🟩 正确 · 🟥 错</small>
+                </div>
+                <div class="growth-bars" id="growthBarsBox"></div>
+              </div>
+
+              <!-- 打卡树（横跨整行） -->
+              <div class="streak-wrap">
+                <div class="streak-wrap-hd">
+                  <span>🌱 打卡树</span>
+                  <small id="streakDaysLabel">已连续 0 天</small>
+                </div>
+                <div class="streak-dots" id="streakDotsBox"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ⭐ 5 张成长卡片（静态 HTML） -->
+        <div id="growthPanelContainer" class="growth-card-grid">
+
+          <!-- ① 做题记录 -->
+          <div class="growth-card c-blue" data-goto="historySection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">📚</div>
+              <div class="growth-card-title">
+                做题记录
+                <small>每一道题的足迹</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="historyStats">
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">题目</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>次</small></div><div class="lbl">练习</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>%</small></div><div class="lbl">正确率</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ② 一题一得 -->
+          <div class="growth-card c-amber" data-goto="takeawaySection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">💡</div>
+              <div class="growth-card-title">
+                一题一得
+                <small>每道题的心得</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="takeawayStats">
+              <div class="growth-card-stat"><div class="num">0<small>条</small></div><div class="lbl">心得</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ③ 成长曲线 -->
+          <div class="growth-card c-green" data-goto="growthChartSection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">📈</div>
+              <div class="growth-card-title">
+                成长曲线
+                <small>最近 7 天的变化</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="growthChartStats">
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">本周做题</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">做对</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">学习天数</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ④ 打卡树 -->
+          <div class="growth-card c-teal" data-goto="streakTreeSection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">🌱</div>
+              <div class="growth-card-title">
+                打卡树
+                <small>每天进步一点点</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="streakTreeStats">
+              <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">连续打卡</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>轮</small></div><div class="lbl">7天周期</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+          <!-- ⑤ 周报 -->
+          <div class="growth-card c-violet" data-goto="weeklyReportSection">
+            <div class="growth-card-hd">
+              <div class="growth-card-icon">📊</div>
+              <div class="growth-card-title">
+                本周学习周报
+                <small>一周的表现</small>
+              </div>
+            </div>
+            <div class="growth-card-stats" id="weeklyReportStats">
+              <div class="growth-card-stat"><div class="num">0<small>道</small></div><div class="lbl">本周做题</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>%</small></div><div class="lbl">正确率</div></div>
+              <div class="growth-card-stat"><div class="num">0<small>天</small></div><div class="lbl">学习天数</div></div>
+            </div>
+            <div class="growth-card-cta">点击展开 ▾</div>
+          </div>
+
+        </div>
+
+        <!-- ⭐ 展开后显示的 5 个内容面板（默认全部隐藏） -->
+        <div id="growthDetailPanels">
+          <!-- 错题画像面板 -->
+          <div id="errorProfilePanel" class="error-profile-panel" style="display:none;"></div>
+
+          <div class="collapsible-section" id="historySection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">📚 做题记录</span>
+              <span class="collapse-count" id="historyCount">共 0 道</span>
+            </div>
+            <div class="collapsible-bd">
+              <div id="historyList" class="history-list">
+                <div class="history-empty">还没有做题记录哦</div>
+              </div>
+              <div class="btn-row" style="justify-content:flex-end;margin-top:12px;">
+                <button class="btn-secondary" id="historyExport">📤 导出记录</button>
+                <button class="btn-secondary" id="historyClear">🗑 清空记录</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="takeawaySection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">💡 一题一得 · 汇总</span>
+              <span class="collapse-count" id="takeawayCount">0 条</span>
+            </div>
+            <div class="collapsible-bd">
+              <div id="takeawayGalleryBox"></div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="growthChartSection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">📈 最近 7 天成长曲线</span>
+            </div>
+            <div class="collapsible-bd">
+              <div class="growth-bars" id="growthChartInline"></div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="streakTreeSection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">🌱 打卡树</span>
+              <span class="collapse-hint" id="streakTreeInlineLabel">已连续 0 天</span>
+            </div>
+            <div class="collapsible-bd">
+              <div class="streak-dots" id="streakTreeInline"></div>
+            </div>
+          </div>
+
+          <div class="collapsible-section" id="weeklyReportSection">
+            <div class="collapsible-hd">
+              <span class="collapse-icon">▶</span>
+              <span class="collapse-title">📊 本周学习周报</span>
+            </div>
+            <div class="collapsible-bd">
+              <div id="weeklyReportBox"></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </template>
+  </main>
+  </div>
+</div>
+
+<div id="page-growth" class="page">
+  <div id="growthHeader" class="lesson-header"></div>
+  <div id="growthStage"  class="growth-stage"></div>
+</div>
+
+<!-- ⭐ 新增留言 -->
+<div id="page-messages" class="page">
+  <div id="messagesHeader" class="lesson-header"></div>
+  <div id="messagesStage" class="messages-stage"></div>
+</div>
+
+<!-- ⭐ 新增加 page-settings 容器 -->
+<div id="page-settings" class="page">
+  <div id="settingsHeader" class="lesson-header"></div>
+  <div id="settingsStage" class="settings-stage"></div>
+</div>
+
+<script type="module">
+  import { initGradeSelector, updateTitle } from './js/grade.js';
+  initGradeSelector();
+  updateTitle();
+</script>
+
+
+<button id="kojiBtn" class="koji-btn" title="Koji 助手" aria-label="Koji 助手">🤖</button>
+<button id="wrongBookBtn" class="wrong-book-btn" title="错题本" aria-label="错题本">📕
+  <span class="wrong-book-badge" id="wrongBookBadge" style="display:none;">0</span>
+</button>
+
+<div id="wrongBookDrawer" class="wrong-book-drawer">
+  <div class="wrong-book-header">
+    <span>📕 错题本</span>
+    <button class="wrong-book-close" id="wrongBookClose">×</button>
+  </div>
+  <!-- ⭐ 智能推荐 -->
+  <div id="wbRecommend" class="wb-recommend" style="display:none;"></div>
+  <div class="wrong-book-list" id="wrongBookList"></div>
+  <div class="wrong-book-footer">
+    <button class="btn-secondary" id="wrongBookClear">🗑 清空错题本</button>
+    <button class="btn-secondary" id="wrongBookExport">📤 导出</button>
+  </div>
+</div>
+<div id="wrongBookMask" class="wrong-book-mask"></div>
+
+<!-- 讲解弹窗 -->
+<div id="explainModalMask" class="explain-modal-mask" style="display:none;">
+  <div class="explain-modal">
+    <div class="explain-modal-header">
+      <h3>🧠 AI 讲解</h3>
+      <button class="explain-modal-close" id="explainModalClose">×</button>
+    </div>
+    <div class="explain-modal-body" id="explainModalBody"></div>
+  </div>
+</div>
+
+
+</body>
+</html>

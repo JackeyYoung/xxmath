@@ -7,6 +7,8 @@ import { on, EVT } from '../core/events.js';
 import { activityStatsByModule, activityLoad } from '../core/activity.js';
 
 import { masteryLoad } from '../core/mastery.js';
+import { downloadBlob } from '../core/download.js';
+import { buildWeeklyReportHtml } from '../core/weekly-report.js';
 
 import {
 escapeHtmlStrict, escapeHtml,
@@ -895,13 +897,15 @@ function renderWeeklySummary() {
   });
   const topWrong = Object.entries(wrongByModule).sort((a, b) => b[1] - a[1])[0];
 
-  /*成就墙*/
+/* ==========================================
+  ⭐ 重构成就墙：使用专门类名 + 防止断行
+  ========================================== */
   const allMastered = Object.values(masteryMap).filter(r => r.state === 'mastered');
   const achievementHtml = `
     <div class="achievement-wall">
       <div class="achievement-wall-hd">
         <span>🏆 成就墙</span>
-        <span class="achievement-wall-count">共掌握 <b>${allMastered.length}</b> 题</span>
+        <small>共掌握 ${allMastered.length} 题</small>
       </div>
       ${allMastered.length === 0 ? `
         <div class="achievement-empty">
@@ -909,19 +913,21 @@ function renderWeeklySummary() {
         </div>
       ` : `
         <div class="achievement-grid">
-          ${allMastered.slice(0, 20).map((r, i) => `
-            <div class="achievement-item" title="${escapeHtmlStrict(r.text)}">
-              <div class="achievement-star">⭐</div>
-              <div class="achievement-text">${escapeHtmlStrict(r.text.slice(0, 20))}${r.text.length > 20 ? '…' : ''}</div>
+          ${allMastered.slice(0, 20).map(r => `
+            <div class="achievement-badge unlocked" title="${escapeHtmlStrict(r.text)}">
+              <div class="achievement-icon">⭐</div>
+              <div class="achievement-name">${escapeHtmlStrict(r.text)}</div>
             </div>
           `).join('')}
-          ${allMastered.length > 20 ? `<div class="achievement-more">还有 ${allMastered.length - 20} 题…</div>` : ''}
+          ${allMastered.length > 20 ? `<div class="achievement-more-badge">还有 ${allMastered.length - 20} 题…</div>` : ''}
         </div>
       `}
     </div>
   `;
 
-  // ⭐ 月对比
+  /* ==========================================
+     ⭐ 重构本月 vs 上月：使用 2x2 四宫格卡片
+     ========================================== */
   const monthCompareHtml = (() => {
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
@@ -938,69 +944,55 @@ function renderWeeklySummary() {
     const lastCorrect = lastMonth.filter(r => r.isCorrect).length;
     const lastRate = lastTotal ? Math.round(lastCorrect / lastTotal * 100) : 0;
 
-    // 掌握数
-    const masteryMap = masteryLoad();
     const thisMastered = Object.values(masteryMap).filter(r => r.state === 'mastered' && r.lastAt >= thisMonthStart).length;
     const lastMastered = Object.values(masteryMap).filter(r => r.state === 'mastered' && r.lastAt >= lastMonthStart && r.lastAt < thisMonthStart).length;
 
-    // 学习天数
     const thisDays = new Set(thisMonth.map(r => new Date(r.timestamp).toDateString())).size;
     const lastDays = new Set(lastMonth.map(r => new Date(r.timestamp).toDateString())).size;
 
     if (lastTotal === 0 && thisTotal === 0) return '';
 
-    const arrow = (cur, prev) => {
+    const getDiff = (cur, prev) => {
       if (prev === 0 && cur === 0) return '';
-      if (prev === 0) return '<span class="month-arrow up">新</span>';
-      if (cur > prev) return '<span class="month-arrow up">↑</span>';
-      if (cur < prev) return '<span class="month-arrow down">↓</span>';
-      return '<span class="month-arrow flat">—</span>';
+      if (prev === 0) return '<span class="mc-diff up">↑ 新</span>';
+      if (cur > prev) return '<span class="mc-diff up">↑ 提升</span>';
+      if (cur < prev) return '<span class="mc-diff down">↓ 退步</span>';
+      return '<span class="mc-diff same">— 持平</span>';
     };
 
     return `
-      <div class="month-compare">
+      <div class="month-compare-card">
         <div class="month-compare-hd">
           <span>📈 本月 vs 上月</span>
-          <span class="month-compare-month">${now.getFullYear()}年${now.getMonth() + 1}月</span>
+          <span style="font-size:12px;font-weight:600;">${now.getFullYear()}年${now.getMonth() + 1}月</span>
         </div>
         <div class="month-compare-grid">
-          <div class="month-row">
-            <span class="month-label">做题</span>
-            <span class="month-value">${thisTotal}</span>
-            <span class="month-vs">上月 ${lastTotal}</span>
-            ${arrow(thisTotal, lastTotal)}
+          <div class="month-compare-item">
+            <div class="mc-label">做题</div>
+            <div class="mc-value">${thisTotal} <small style="font-size:11px;font-weight:600;color:var(--muted);">/ 上月 ${lastTotal}</small></div>
+            ${getDiff(thisTotal, lastTotal)}
           </div>
-          <div class="month-row">
-            <span class="month-label">正确率</span>
-            <span class="month-value">${thisRate}%</span>
-            <span class="month-vs">上月 ${lastRate}%</span>
-            ${arrow(thisRate, lastRate)}
+          <div class="month-compare-item">
+            <div class="mc-label">正确率</div>
+            <div class="mc-value">${thisRate}% <small style="font-size:11px;font-weight:600;color:var(--muted);">/ 上月 ${lastRate}%</small></div>
+            ${getDiff(thisRate, lastRate)}
           </div>
-          <div class="month-row">
-            <span class="month-label">掌握</span>
-            <span class="month-value">${thisMastered}</span>
-            <span class="month-vs">上月 ${lastMastered}</span>
-            ${arrow(thisMastered, lastMastered)}
+          <div class="month-compare-item">
+            <div class="mc-label">掌握</div>
+            <div class="mc-value">${thisMastered} <small style="font-size:11px;font-weight:600;color:var(--muted);">/ 上月 ${lastMastered}</small></div>
+            ${getDiff(thisMastered, lastMastered)}
           </div>
-          <div class="month-row">
-            <span class="month-label">学习天数</span>
-            <span class="month-value">${thisDays}</span>
-            <span class="month-vs">上月 ${lastDays}</span>
-            ${arrow(thisDays, lastDays)}
+          <div class="month-compare-item">
+            <div class="mc-label">学习天数</div>
+            <div class="mc-value">${thisDays} <small style="font-size:11px;font-weight:600;color:var(--muted);">/ 上月 ${lastDays}</small></div>
+            ${getDiff(thisDays, lastDays)}
           </div>
         </div>
       </div>
     `;
   })();
 
-  document.getElementById('weeklyNoteParentWrite')?.addEventListener('click', () => {
-    window.__showParentSettingsModal?.();
-    // 弹窗打开后自动聚焦 textarea
-    setTimeout(() => {
-      document.getElementById('parentWeeklyNote')?.focus();
-    }, 300);
-  });
-
+  // ===== 最后拼装到页面 =====
   wrap.innerHTML = `
     <div class="weekly-summary">
       <div class="weekly-summary-hd">
@@ -1068,6 +1060,14 @@ function renderWeeklySummary() {
     ${monthCompareHtml}
     ${achievementHtml}
   `;
+
+  document.getElementById('weeklyNoteParentWrite')?.addEventListener('click', () => {
+    window.__showParentSettingsModal?.();
+    // 弹窗打开后自动聚焦 textarea
+    setTimeout(() => {
+      document.getElementById('parentWeeklyNote')?.focus();
+    }, 300);
+  });
 
   document.getElementById('weeklyExportBtn').addEventListener('click', () => {
     const name = (typeof getStudentName === 'function' && getStudentName()) || '未命名';
@@ -1698,6 +1698,13 @@ function renderSettings() {
               ${soundOn ? '🔊 已开启' : '🔇 已关闭'}
             </button>
           </div>
+          <!-- ⭐ 新增：深色模式 -->
+          <div class="settings-row" style="margin-top:12px;">
+            <span class="settings-label">深色模式</span>
+            <button id="settingsThemeToggle" class="settings-toggle ${document.documentElement.getAttribute('data-theme') === 'dark' ? 'on' : ''}">
+              ${document.documentElement.getAttribute('data-theme') === 'dark' ? '🌙 深色' : '☀️ 浅色'}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1770,6 +1777,20 @@ function renderSettings() {
     lsSet('grade3_sound_on', newVal ? '1' : '0');
     renderSettings();
     window.showToast?.(newVal ? '🔊 音效已开启' : '🔇 音效已关闭', 'success');
+  });
+
+  // ⭐ 深色模式开关
+  document.getElementById('settingsThemeToggle')?.addEventListener('click', () => {
+    const html = document.documentElement;
+    const isDark = html.getAttribute('data-theme') === 'dark';
+    const newTheme = isDark ? 'light' : 'dark';
+    
+    html.setAttribute('data-theme', newTheme);
+    localStorage.setItem('grade3_theme', newTheme);
+    
+    // 重新渲染设置页以更新按钮文案
+    renderSettings();
+    window.showToast?.(newTheme === 'dark' ? '🌙 已切换为深色模式' : '☀️ 已切换为浅色模式', 'success');
   });
 
   // 错误日志

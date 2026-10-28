@@ -26,16 +26,22 @@ export function getGradeName(g) {
   return names[String(g)] || '三年级';
 }
 
-/* 初始化年级选择器 */
-/* 初始化年级 chip（点击弹窗选择） */
+/* 初始化年级选择器（使用事件委托，支持动态 DOM） */
 export function initGradeSelector() {
-  const chip = document.getElementById('dashGrade');
-  if (!chip) return;
+  // 把监听绑在 document 上，这样不管 #dashGrade 什么时候渲染出来都能点
+  document.body.addEventListener('click', (e) => {
+    const chip = e.target.closest('#dashGrade');
+    if (chip) {
+      showGradeModal();
+    }
+  });
 
-  chip.style.cursor = 'pointer';
-  chip.addEventListener('click', showGradeModal);
+  // 初始化文字（如果有的话）
+  updateGradeChipText();
+}
 
-  // 更新 chip 上的文字
+/* 暴露一个更新 UI 文字的全局方法，方便 M14 渲染完后调用 */
+export function updateGradeChipText() {
   const nameEl = document.getElementById('dashGradeName');
   if (nameEl) {
     nameEl.textContent = getGradeName(getCurrentGrade());

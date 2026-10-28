@@ -1,6 +1,7 @@
 /* app/main.js —— 纯净版，只负责启动和全局绑定 */
 
 // ========== 1. 基础依赖 ==========
+import { injectTemplates } from './templates.js';
 import {
   lsGet, lsSet, lsRemove, lsKeysByPrefix,
   initStorage, migrateFromLocalStorage,
@@ -71,6 +72,10 @@ import { showMasteryCard } from '../core/ui/mastery-card.js';
 import { showShareCard } from '../core/share-card.js';
 import { buildWeeklyReport, buildWeeklyReportHtml } from '../core/weekly-report.js';
 import { downloadBlob } from '../core/download.js';
+
+import { initGradeSelector, updateTitle } from '../js/grade.js';
+initGradeSelector();
+updateTitle();
 
 // 初始化全局错误捕获
 installGlobalErrorHandlers();
@@ -250,6 +255,17 @@ function showUnreadParentMsg() {
 
 // ========== 5. 启动流程 ==========
 (async function bootstrap() {
+  // ⭐ 核心：先注入 HTML 模板，确保后续模块挂载时能拿到 DOM
+  injectTemplates();
+  // ⭐ 初始化主题
+  const savedTheme = localStorage.getItem('grade3_theme') || 'light';
+  document.documentElement.setAttribute('data-theme', savedTheme);
+  // 修改 PWA 状态栏颜色
+  const metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.setAttribute('content', savedTheme === 'dark' ? '#0f172a' : '#3b82f6');
+  }
+
   await initStorage();
   await migrateFromLocalStorage();
 

@@ -62,38 +62,42 @@ export function buildWeeklyReport() {
   const lastCorrect = lastMonthList.filter(r => r.isCorrect).length;
   const lastRate = lastTotal ? Math.round(lastCorrect / lastTotal * 100) : 0;
 
+  // ⭐ 1. 月对比（改用标准类名，无内联样式）
   const monthCompareHtml = (lastTotal > 0 || thisTotal > 0) ? `
     <div class="weekly-report-section">
       <h5>📈 本月 vs 上月</h5>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-        <div style="background:#f0f9ff;padding:10px;border-radius:8px;">
-          <div style="font-size:11.5px;color:#64748b;font-weight:700;">做题</div>
-          <div style="font-size:18px;font-weight:800;color:#2563eb;">${thisTotal} <small style="color:#94a3b8;font-size:11px;font-weight:600;">/ 上月 ${lastTotal}</small></div>
+      <div class="month-compare-grid">
+        <div class="month-compare-item">
+          <div class="mc-label">做题</div>
+          <div class="mc-value">${thisTotal} <small style="font-size:11px;font-weight:600;color:var(--muted);">/ 上月 ${lastTotal}</small></div>
         </div>
-        <div style="background:#f0fdf4;padding:10px;border-radius:8px;">
-          <div style="font-size:11.5px;color:#64748b;font-weight:700;">正确率</div>
-          <div style="font-size:18px;font-weight:800;color:#15803d;">${thisRate}% <small style="color:#94a3b8;font-size:11px;font-weight:600;">/ 上月 ${lastRate}%</small></div>
+        <div class="month-compare-item">
+          <div class="mc-label">正确率</div>
+          <div class="mc-value">${thisRate}% <small style="font-size:11px;font-weight:600;color:var(--muted);">/ 上月 ${lastRate}%</small></div>
         </div>
       </div>
     </div>
   ` : '';
 
+  // ⭐ 2. 留言（用类名代替内联）
   const weekMsg = msgLoad().filter(m => m.at >= weekAgo);
   const msgHtml = weekMsg.length ? `
     <div class="weekly-report-section">
       <h5>💌 本周留言</h5>
       ${weekMsg.map(m => `
-        <div style="margin-bottom:8px;padding:8px 12px;background:#fff;border-radius:8px;font-size:13px;">
-          <div style="color:#be185d;font-weight:700;">家长：${escapeHtmlStrict(m.text)}</div>
-          ${m.reply ? `<div style="color:#334155;margin-top:4px;">👦 孩子：${escapeHtmlStrict(m.reply)}</div>` : `<div style="color:#94a3b8;margin-top:4px;">孩子还没回复</div>`}
+        <div class="weekly-msg-item">
+          <div class="weekly-msg-parent">家长：${escapeHtmlStrict(m.text)}</div>
+          ${m.reply ? `<div class="weekly-msg-child">👦 孩子：${escapeHtmlStrict(m.reply)}</div>` : `<div class="weekly-msg-child empty">孩子还没回复</div>`}
         </div>
       `).join('')}
     </div>
   ` : '';
 
+  // ⭐ 3. 完整面板（全是干干净净的 class）
   return `
     <div class="weekly-report-panel" id="weeklyReportPanel">
       <h4>📊 本周学习周报</h4>
+      
       <div class="weekly-report-stats">
         <div class="weekly-report-stat"><div class="label">做题总数</div><div class="value">${total}<small> 道</small></div></div>
         <div class="weekly-report-stat"><div class="label">正确率</div><div class="value">${total ? rate : '—'}<small>%</small></div></div>
@@ -101,33 +105,46 @@ export function buildWeeklyReport() {
         <div class="weekly-report-stat"><div class="label">学习天数</div><div class="value">${days.size}<small> 天</small></div></div>
         <div class="weekly-report-stat"><div class="label">连续打卡</div><div class="value">${streak}<small> 天</small></div></div>
       </div>
+      
       ${msgHtml}
+      
       ${weekMastered.length ? `
         <div class="weekly-report-section">
           <h5>🏆 本周掌握的题</h5>
-          ${weekMastered.slice(0, 5).map(r => `<div>• ${escapeHtmlStrict(r.text.slice(0, 40))}…</div>`).join('')}
-          ${weekMastered.length > 5 ? `<div style="color:#94a3b8;font-size:12px;margin-top:4px;">还有 ${weekMastered.length - 5} 题…</div>` : ''}
+          <div class="weekly-list">
+            ${weekMastered.slice(0, 5).map(r => `<div class="weekly-list-item">• ${escapeHtmlStrict(r.text.slice(0, 40))}…</div>`).join('')}
+            ${weekMastered.length > 5 ? `<div class="weekly-list-more">还有 ${weekMastered.length - 5} 题…</div>` : ''}
+          </div>
         </div>
       ` : ''}
+      
       ${topWrong.length ? `
         <div class="weekly-report-section">
           <h5>⚠️ 需要重点复习的题</h5>
-          ${topWrong.map(([t, c]) => `<div>• ${escapeHtmlStrict(t.slice(0, 40))}…（错 ${c} 次）</div>`).join('')}
+          <div class="weekly-list">
+            ${topWrong.map(([t, c]) => `<div class="weekly-list-item">• ${escapeHtmlStrict(t.slice(0, 40))}…（错 ${c} 次）</div>`).join('')}
+          </div>
         </div>
       ` : ''}
+      
       ${topTakeaways.length ? `
         <div class="weekly-report-section">
           <h5>💡 我的心得精选</h5>
-          ${topTakeaways.map(t => `<div>• ${escapeHtmlStrict(t)}</div>`).join('')}
+          <div class="weekly-list">
+            ${topTakeaways.map(t => `<div class="weekly-list-item">• ${escapeHtmlStrict(t)}</div>`).join('')}
+          </div>
         </div>
       ` : ''}
+      
       ${topTag ? `
         <div class="weekly-report-section">
           <h5>🎯 下周建议</h5>
-          <div>集中练习「<b>${topTag[0]}</b>」类题目（本周错过 ${topTag[1]} 次）</div>
+          <div class="weekly-tip">集中练习「<b>${topTag[0]}</b>」类题目（本周错过 ${topTag[1]} 次）</div>
         </div>
       ` : ''}
+      
       ${monthCompareHtml}
+      
       <div class="weekly-report-actions">
         <button class="btn-secondary" id="weeklyReportExport">📤 导出周报 HTML</button>
       </div>
