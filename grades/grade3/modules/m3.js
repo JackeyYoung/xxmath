@@ -143,6 +143,7 @@ export default async function mount(container, ctx) {
           btn.classList.add('correct');
           fb.textContent = `✓ 对！${n1}/${d1} ${correct === 'gt' ? '>' : correct === 'lt' ? '<' : '='} ${n2}/${d2}`;
           fb.className = 'priority-feedback ok';
+          ctx.data.activityAdd('m3', fb.textContent);
         } else {
           btn.classList.add('wrong');
           const hint = `提示：可以先通分再比较——${n1}/${d1} ≈ ${v1.toFixed(3)}，${n2}/${d2} ≈ ${v2.toFixed(3)}`;
@@ -220,6 +221,7 @@ export default async function mount(container, ctx) {
           denInput.classList.add('correct');
           fb.textContent = `🎉 太棒了，完全正确！`;
           fb.className = 'priority-feedback ok';
+          ctx.data.activityAdd('m3', fb.textContent);
         } else {
           numInput.classList.add('wrong');
           denInput.classList.add('wrong');
@@ -285,6 +287,7 @@ export default async function mount(container, ctx) {
         if (userSaysEqual === isEqual) {
           fb.innerHTML = `<div style="color:var(--green-text);font-weight:800;text-align:center;">🎉 判断正确！</div>`;
           fb.className = 'priority-feedback ok';
+          ctx.data.activityAdd('m3', fb.innerHTML );
         } else {
           fb.innerHTML = `<div style="color:var(--red-text);font-weight:800;text-align:center;">❌ 判断错了，再仔细观察一下哦。</div>`;
           fb.className = 'priority-feedback error';
