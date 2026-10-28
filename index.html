@@ -5053,6 +5053,182 @@ body.thumb-bar-open {
 .daily-complete-go:hover {
   background: var(--primary-d);
 }
+
+/* ============================================================
+   ⭐ 云端同步与登录配置弹窗 (Sync Setup Modal)
+   ============================================================ */
+.sync-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10020;
+  padding: 20px;
+  animation: fadeIn .18s;
+}
+
+.sync-modal {
+  background: var(--card);
+  border-radius: var(--r-card);
+  padding: 24px 26px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+  width: 400px;
+  max-width: 92vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  font-family: inherit;
+  color: var(--text);
+}
+
+/* 标题与描述 */
+.sync-modal h3 {
+  font-size: 17px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+.sync-modal p {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.sync-modal p b {
+  color: var(--primary-d);
+}
+
+/* 输入框 */
+.sync-modal label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-soft);
+  margin-bottom: 6px;
+}
+.sync-modal input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  margin-bottom: 16px;
+  outline: none;
+  font-family: inherit;
+  background: var(--input-bg) !important;
+  color: var(--text) !important;
+  transition: border-color .15s;
+}
+.sync-modal input:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+
+/* 错误提示 */
+.sync-modal .sb-err {
+  color: var(--red-text);
+  font-size: 13px;
+  min-height: 18px;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+/* 账号信息卡片 */
+.sync-acc-card {
+  background: var(--bg);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--border-soft);
+}
+.sync-acc-card .label {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.sync-acc-card .email {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  word-break: break-all;
+  margin-bottom: 8px;
+}
+.sync-acc-card .uid {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: ui-monospace, monospace;
+  word-break: break-all;
+}
+
+/* 警告提示 */
+.sync-warning {
+  background: var(--amber-soft);
+  border: 1.5px dashed var(--amber-text);
+  border-radius: var(--r-sm);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--amber-text);
+  line-height: 1.7;
+}
+
+/* 底部按钮组 */
+.sync-btn-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.sync-btn {
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  border: none;
+  transition: all .15s;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.sync-btn-primary {
+  background: var(--secondary);
+  color: #fff !important;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.1);
+}
+.sync-btn-primary:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+.sync-btn-secondary {
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  color: var(--text-soft);
+}
+.sync-btn-secondary:hover {
+  border-color: var(--primary);
+  color: var(--primary-d);
+}
+.sync-btn-danger {
+  background: var(--card);
+  border: 1.5px solid var(--red-soft);
+  color: var(--red-text);
+}
+.sync-btn-danger:hover {
+  border-color: var(--red-text);
+  background: var(--red-soft);
+}
+
+/* 登录验证码 */
+.sync-modal .code-input {
+  font-size: 22px;
+  font-weight: 800;
+  text-align: center;
+  letter-spacing: 6px;
+  font-family: ui-monospace, monospace;
+}
 </style>
 </head>
 <body>

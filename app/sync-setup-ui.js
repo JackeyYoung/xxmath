@@ -25,25 +25,15 @@ export function openSyncSetupModal() {
 
   const mask = document.createElement('div');
   mask.id = 'syncSetupMask';
-  mask.style.cssText = `
-    position: fixed; inset: 0; z-index: 10010;
-    background: rgba(15, 23, 42, .5);
-    display: flex; align-items: center; justify-content: center;
-    padding: 20px;
-  `;
-  mask.innerHTML = `<div id="syncSetupModal" style="
-    background: #fff; border-radius: 16px; padding: 24px 26px;
-    box-shadow: 0 20px 60px rgba(15,23,42,.3);
-    width: 400px; max-width: 92vw; max-height: 90vh; overflow-y: auto;
-    font-family: inherit;
-  "></div>`;
-
+  mask.className = 'sync-modal-mask';
+  
+  mask.innerHTML = `<div id="syncSetupModal" class="sync-modal"></div>`;
   document.body.appendChild(mask);
+  
   mask.addEventListener('click', e => {
     if (e.target === mask) mask.remove();
   });
 
-  // 每次打开重置状态
   loginStep = 'input-email';
   _renderContent();
 }
@@ -56,7 +46,6 @@ function _renderContent() {
   const logged = isLoggedIn();
   const user = getCurrentUser();
 
-  // ⭐ 核心逻辑调整：如果是明确在“输验证码”流程，强行渲染验证码界面
   if (configured && loginStep === 'input-code') {
     modal.innerHTML = _htmlCodeStep(loginEmail);
     _bindCodeStep(loginEmail);
@@ -78,26 +67,17 @@ function _renderContent() {
 /* ============ 视图 1：环境 ID 配置 ============ */
 function _htmlSetupForm() {
   return `
-    <h3 style="font-size:17px;font-weight:800;margin-bottom:8px;">☁️ 配置云端同步</h3>
-    <p style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px;">
-      填入腾讯云 CloudBase 环境 ID（在 <b>云开发控制台 → 环境</b> 可以看到）。
-    </p>
-    <label style="display:block;font-size:13px;font-weight:700;color:#475569;margin-bottom:6px;">
-      环境 ID
-    </label>
-    <input id="tcbEnvId" type="text" placeholder="math-classroom-1a2b3c"
-      style="width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:10px;
-             font-size:14px;margin-bottom:16px;outline:none;font-family:inherit;">
-    <div id="sbErr" style="color:#ef4444;font-size:13px;min-height:18px;margin-bottom:8px;"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button id="sbCancel" style="padding:9px 18px;border-radius:10px;border:none;
-              background:#f1f5f9;color:#64748b;font-size:14px;font-weight:700;
-              cursor:pointer;font-family:inherit;">取消</button>
-      <button id="sbSave" style="padding:9px 18px;border-radius:10px;border:none;
-              background:#3b82f6;color:#fff;font-size:14px;font-weight:700;
-              cursor:pointer;font-family:inherit;box-shadow:0 3px 0 #2563eb;">
-        保存并重载
-      </button>
+    <h3>☁️ 配置云端同步</h3>
+    <p>填入腾讯云 CloudBase 环境 ID（在 <b>云开发控制台 → 环境</b> 可以看到）。</p>
+    
+    <label>环境 ID</label>
+    <input id="tcbEnvId" type="text" placeholder="math-classroom-1a2b3c" />
+    
+    <div id="sbErr" class="sb-err"></div>
+    
+    <div class="sync-btn-row">
+      <button id="sbCancel" class="sync-btn sync-btn-secondary" style="flex:1; margin-bottom:0;">取消</button>
+      <button id="sbSave" class="sync-btn sync-btn-primary" style="flex:2; margin-bottom:0;">保存并重载</button>
     </div>
   `;
 }
@@ -124,26 +104,15 @@ function _bindSetupForm() {
 /* ============ 视图 2：输入邮箱 ============ */
 function _htmlEmailStep() {
   return `
-    <h3 style="font-size:17px;font-weight:800;margin-bottom:8px;">👤 登录 / 注册</h3>
-    <p style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px;">
-      输入邮箱，我们会发送 6 位验证码。<br>
-      <b>首次使用</b>会自动注册，无需额外步骤。
-    </p>
-
-    <label style="display:block;font-size:13px;font-weight:700;color:#475569;margin-bottom:6px;">
-      邮箱
-    </label>
-    <input id="loginEmail" type="email" placeholder="you@example.com"
-      style="width:100%;padding:10px 12px;border:2px solid #e2e8f0;border-radius:10px;
-             font-size:14px;margin-bottom:16px;outline:none;font-family:inherit;">
-
-    <div id="loginErr" style="color:#ef4444;font-size:13px;min-height:18px;margin-bottom:8px;"></div>
-
-    <button id="loginSendCode" style="width:100%;padding:11px;border-radius:10px;border:none;
-            background:#3b82f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-            font-family:inherit;box-shadow:0 3px 0 #2563eb;">
-      发送验证码
-    </button>
+    <h3>👤 登录 / 注册</h3>
+    <p>输入邮箱，我们会发送 6 位验证码。<br><b>首次使用</b>会自动注册，无需额外步骤。</p>
+    
+    <label>邮箱</label>
+    <input id="loginEmail" type="email" placeholder="you@example.com" />
+    
+    <div id="loginErr" class="sb-err"></div>
+    
+    <button id="loginSendCode" class="sync-btn sync-btn-primary">发送验证码</button>
   `;
 }
 
@@ -164,16 +133,11 @@ function _bindEmailStep() {
 
     try {
       const result = await sendEmailCode(email);
-      
-      // ⭐ 确保跳转前数据已保存
       loginEmail = email;
       verificationId = result.verification_id;
       isUser = result.is_user;
-      
-      // ⭐ 切换状态并重绘
       loginStep = 'input-code';
       _renderContent();
-      
     } catch (e) {
       console.error('[发送验证码失败]', e);
       err.textContent = '发送失败：' + (e.message || '请重试');
@@ -186,38 +150,20 @@ function _bindEmailStep() {
 /* ============ 视图 3：输入验证码 ============ */
 function _htmlCodeStep(email) {
   return `
-    <h3 style="font-size:17px;font-weight:800;margin-bottom:8px;">📧 输入验证码</h3>
-    <p style="font-size:13px;color:#64748b;line-height:1.6;margin-bottom:16px;">
-      验证码已发送到 <b>${email}</b>，10 分钟内有效。
-    </p>
-
-    <label style="display:block;font-size:13px;font-weight:700;color:#475569;margin-bottom:6px;">
-      6 位验证码
-    </label>
-    <input id="loginCode" type="text" inputmode="numeric" maxlength="6"
-      placeholder="000000"
-      style="width:100%;padding:12px;border:2px solid #e2e8f0;border-radius:10px;
-             font-size:22px;font-weight:800;text-align:center;letter-spacing:6px;
-             font-family:ui-monospace,monospace;margin-bottom:16px;outline:none;">
-
-    <div id="loginErr" style="color:#ef4444;font-size:13px;min-height:18px;margin-bottom:8px;"></div>
-
-    <button id="loginVerify" style="width:100%;padding:11px;border-radius:10px;border:none;
-            background:#3b82f6;color:#fff;font-size:15px;font-weight:700;cursor:pointer;
-            font-family:inherit;box-shadow:0 3px 0 #2563eb;margin-bottom:10px;">
-      确认登录
-    </button>
-
-    <button id="loginBack" style="width:100%;padding:11px;border-radius:10px;
-            border:2px solid #e2e8f0;background:#fff;color:#64748b;font-size:14px;
-            font-weight:700;cursor:pointer;font-family:inherit;">
-      ← 返回修改邮箱
-    </button>
+    <h3>📧 输入验证码</h3>
+    <p>验证码已发送到 <b>${email}</b>，10 分钟内有效。</p>
+    
+    <label>6 位验证码</label>
+    <input id="loginCode" type="text" inputmode="numeric" maxlength="6" placeholder="000000" class="code-input" />
+    
+    <div id="loginErr" class="sb-err"></div>
+    
+    <button id="loginVerify" class="sync-btn sync-btn-primary" style="margin-bottom:10px;">确认登录</button>
+    <button id="loginBack" class="sync-btn sync-btn-secondary">← 返回修改邮箱</button>
   `;
 }
 
 function _bindCodeStep(email) {
-  // 自动聚焦验证码输入框
   setTimeout(() => document.getElementById('loginCode')?.focus(), 100);
 
   document.getElementById('loginBack').onclick = () => {
@@ -242,7 +188,6 @@ function _bindCodeStep(email) {
     try {
       await verifyAndSignIn(email, code, verificationId, isUser);
       
-      // 同步成功后，清理弹窗并刷新
       const { resumeSync } = await import('../core/sync/sync-manager.js');
       resumeSync();
       
@@ -265,41 +210,24 @@ function _htmlAccountPanel(user) {
   const isAnonymous = !user?.email;
 
   return `
-    <h3 style="font-size:17px;font-weight:800;margin-bottom:16px;">☁️ 账号</h3>
+    <h3>☁️ 账号设置</h3>
 
-    <div style="background:#f8fafc;border-radius:12px;padding:14px 16px;margin-bottom:14px;">
-      <div style="font-size:12px;color:#94a3b8;font-weight:700;margin-bottom:4px;">当前账号</div>
-      <div style="font-size:15px;font-weight:800;color:#334155;word-break:break-all;margin-bottom:8px;">
-        ${email}
-      </div>
-      <div style="font-size:11px;color:#94a3b8;font-family:ui-monospace,monospace;word-break:break-all;">
-        UID: ${uid}
-      </div>
+    <div class="sync-acc-card">
+      <div class="label">当前账号</div>
+      <div class="email">${email}</div>
+      <div class="uid">UID: ${uid}</div>
     </div>
 
     ${isAnonymous ? `
-      <div style="background:#fffbeb;border:2px dashed #fcd34d;border-radius:12px;
-                  padding:12px 14px;margin-bottom:14px;font-size:13px;color:#92400e;
-                  line-height:1.7;">
+      <div class="sync-warning">
         ⚠️ <b>匿名账号跨设备不共享</b>。<br>
         如果要手机和 iPad 看同样的记录，请使用邮箱登录。
       </div>
-      <button id="accToLogin" style="width:100%;padding:11px;border-radius:10px;border:none;
-              background:#f59e0b;color:#fff;font-size:14px;font-weight:700;cursor:pointer;
-              font-family:inherit;box-shadow:0 3px 0 #b45309;margin-bottom:10px;">
-        使用邮箱登录 / 注册
-      </button>
+      <button id="accToLogin" class="sync-btn sync-btn-primary" style="background:var(--amber-text);">使用邮箱登录 / 注册</button>
     ` : ''}
 
-    <button id="accSync" style="width:100%;padding:11px;border-radius:10px;border:none;
-            background:#3b82f6;color:#fff;font-size:14px;font-weight:700;cursor:pointer;
-            font-family:inherit;box-shadow:0 3px 0 #2563eb;margin-bottom:10px;">
-      立即同步
-    </button>
-
-    <button id="accLogout" style="width:100%;padding:11px;border-radius:10px;
-            border:2px solid #e2e8f0;background:#fff;color:#ef4444;font-size:14px;
-            font-weight:700;cursor:pointer;font-family:inherit;">
+    <button id="accSync" class="sync-btn sync-btn-primary">立即同步</button>
+    <button id="accLogout" class="sync-btn sync-btn-danger">
       ${isAnonymous ? '清除本地登录态' : '退出登录'}
     </button>
   `;
