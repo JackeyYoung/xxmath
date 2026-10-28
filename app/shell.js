@@ -1166,23 +1166,25 @@ function renderGrowth() {
     stage.innerHTML = `<div style="padding:40px;text-align:center;color:#ef4444;">加载失败：${err.message}</div>`;
   });
 
-   // ⭐ 本周周报提示
+  // ⭐ 本周周报提示
   const now = new Date();
   const dayOfWeek = now.getDay();
   const isSunday = dayOfWeek === 0;
   const weekAgo = now.getTime() - 7 * 86400000;
   const weekRecords = historyLoad().filter(r => r.timestamp >= weekAgo);
 
-  // ⭐ 核心修复：每次生成前，先把页面上旧的提示条删掉！
+  // ⭐ 每次生成前，先把页面上旧的提示条删掉！
   document.querySelectorAll('.growth-weekly-tip').forEach(el => el.remove());
 
   if (weekRecords.length > 0) {
     const tip = document.createElement('div');
     tip.className = 'growth-weekly-tip';
+    
+    // ⭐ 移除硬编码的 cssText，完全交给 CSS 类控制
     tip.innerHTML = isSunday
-      ? `📊 <b>今天是周日</b>，本周学习了 <b>${weekRecords.length}</b> 道题，看看周报吧 →`
-      : `📊 本周已学习 <b>${weekRecords.length}</b> 道题，<b>周日</b>会生成完整周报`;
-    tip.style.cssText = 'margin: 12px 16px; padding: 12px 16px; background: linear-gradient(135deg, #f0f9ff, #e0f2fe); border: 2px solid #bae6fd; border-radius: 12px; font-size: 13px; color: #0c4a6e; line-height: 1.7;';
+      ? `🎉 <b>今天是周日</b>，本周共学习了 <b>${weekRecords.length}</b> 道题，快去下方查看你的专属周报吧！`
+      : `📊 本周已学习 <b>${weekRecords.length}</b> 道题，周日将为你生成完整周报。`;
+      
     const header = document.getElementById('growthHeader');
     if (header && header.nextSibling) {
       header.parentNode.insertBefore(tip, header.nextSibling);

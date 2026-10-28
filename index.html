@@ -2250,21 +2250,39 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
    ============================================================ */
 
 /* 1. 修复顶部提示横幅（解决浅蓝背景过亮） */
+./* ============================================================
+   ⭐ 成长页 - 本周学习提示条
+   ============================================================ */
 .growth-weekly-tip {
   margin: 12px 16px;
-  padding: 12px 16px;
-  background: #f0f9ff;
-  border: 2px solid #bae6fd;
+  padding: 14px 18px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-left: 4px solid var(--secondary); /* 左侧蓝色强调边 */
   border-radius: var(--r-sm);
-  font-size: 13px;
-  color: #0c4a6e;
-  line-height: 1.7;
-  text-align: center;
+  font-size: 13.5px;
+  color: var(--text-soft);
+  line-height: 1.6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow-sm);
 }
+
+.growth-weekly-tip b {
+  color: var(--secondary);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+/* 深色模式适配 */
 [data-theme="dark"] .growth-weekly-tip {
-  background: rgba(14, 165, 233, 0.1);
-  border-color: rgba(14, 165, 233, 0.3);
-  color: #38bdf8;
+  background: var(--card);
+  border-color: var(--border);
+  border-left-color: var(--secondary);
+}
+[data-theme="dark"] .growth-weekly-tip b {
+  color: #93c5fd; /* 深色模式下高亮的浅蓝色 */
 }
 
 /* 2. 修复周报核心统计网格 */
