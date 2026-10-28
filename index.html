@@ -4579,6 +4579,234 @@ body.thumb-bar-open {
   pointer-events: auto;
 }
 
+/* ============================================================
+   ⭐ 每日推荐与鼓励浮窗 (Daily Suggest & Cheer)
+   ============================================================ */
+
+/* 1. 每日推荐卡片 */
+.daily-suggest {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 320px;
+  max-width: 90vw;
+  background: var(--card);
+  border: 1.5px solid var(--primary);
+  border-radius: var(--r-card);
+  padding: 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .15);
+  z-index: 10005;
+  animation: slideInRight .3s cubic-bezier(.34,1.3,.64,1);
+}
+
+.daily-suggest-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: none;
+  color: var(--muted);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.daily-suggest-close:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.daily-suggest-hd {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--primary-d);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.daily-suggest-body {
+  font-size: 13.5px;
+  color: var(--text-soft);
+  line-height: 1.6;
+  margin-bottom: 16px;
+}
+.daily-suggest-body b {
+  color: var(--amber-text);
+  font-weight: 800;
+}
+
+.daily-suggest-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.daily-suggest-later,
+.daily-suggest-go {
+  padding: 8px 18px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s;
+  border: none;
+}
+
+.daily-suggest-later {
+  background: var(--bg);
+  color: var(--text-soft);
+}
+.daily-suggest-later:hover {
+  background: var(--border);
+}
+
+.daily-suggest-go {
+  background: var(--primary);
+  color: #fff !important;
+}
+.daily-suggest-go:hover {
+  background: var(--primary-d);
+}
+
+/* 2. 底部鼓励浮窗 (替换原来的内联样式) */
+.daily-cheer {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--card);
+  border: 2px solid var(--primary);
+  border-radius: var(--r-pill);
+  padding: 12px 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .15);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 9999;
+  animation: slideUpFade .3s cubic-bezier(.34,1.3,.64,1);
+  white-space: nowrap;
+  max-width: 95vw;
+}
+
+.daily-cheer span {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.daily-cheer b {
+  color: var(--primary-d);
+  font-size: 16px;
+}
+
+.daily-cheer-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.daily-cheer-btn {
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  font-size: 12.5px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+}
+.daily-cheer-rest {
+  background: var(--border-soft);
+  color: var(--text-soft);
+}
+.daily-cheer-go {
+  background: var(--primary);
+  color: #fff !important;
+}
+
+/* 动画 */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+/* 3. 今日完成居中弹窗 */
+.daily-complete-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10010;
+  padding: 20px;
+  animation: fadeIn .18s;
+}
+
+.daily-complete-card {
+  background: var(--card);
+  border-radius: var(--r-card);
+  padding: 32px 28px 24px;
+  width: 380px;
+  max-width: 92vw;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+}
+
+.daily-complete-emoji {
+  font-size: 56px;
+  margin-bottom: 12px;
+}
+.daily-complete-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--green-text);
+  margin-bottom: 12px;
+}
+.daily-complete-body {
+  font-size: 14px;
+  color: var(--text-soft);
+  line-height: 1.8;
+  margin-bottom: 24px;
+}
+.daily-complete-body b {
+  color: var(--primary);
+  font-size: 16px;
+}
+
+.daily-complete-actions {
+  display: flex;
+  gap: 12px;
+}
+.daily-complete-rest,
+.daily-complete-go {
+  flex: 1;
+  padding: 12px;
+  border-radius: var(--r-pill);
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+}
+.daily-complete-rest {
+  background: var(--bg);
+  color: var(--text-soft);
+}
+.daily-complete-rest:hover {
+  background: var(--border);
+}
+.daily-complete-go {
+  background: var(--primary);
+  color: #fff !important;
+}
+.daily-complete-go:hover {
+  background: var(--primary-d);
+}
 </style>
 </head>
 <body>

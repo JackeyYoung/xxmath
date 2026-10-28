@@ -69,7 +69,12 @@ function patchDailySuggest() {
     </div>
   `;
   document.body.appendChild(card);
-  const close = () => { sessionStorage.setItem('grade3_daily_suggest_shown', '1'); card.remove(); };
+
+  const close = () => { 
+    sessionStorage.setItem('grade3_daily_suggest_shown', '1'); 
+    card.remove(); 
+  };
+  
   document.getElementById('dailySuggestClose').addEventListener('click', close);
   card.querySelector('.daily-suggest-later').addEventListener('click', close);
   card.querySelector('.daily-suggest-go').addEventListener('click', () => {
@@ -81,23 +86,25 @@ function patchDailySuggest() {
 
 function showDailyComplete({ total, correct, rate }) {
   if (document.querySelector('.daily-complete-mask')) return;
+  
+  // 使用统一的遮罩和弹窗类名，不再硬编码内联样式
   const mask = document.createElement('div');
-  mask.className = 'daily-complete-mask';
-  mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10010;padding:20px;';
+  mask.className = 'daily-complete-mask'; 
   mask.innerHTML = `
-    <div style="background:#fff;border-radius:20px;padding:32px 28px 24px;width:380px;max-width:92vw;text-align:center;box-shadow:0 20px 60px rgba(15,23,42,.3);">
-      <div style="font-size:56px;margin-bottom:8px;">🎉</div>
-      <div style="font-size:20px;font-weight:800;color:#15803d;margin-bottom:8px;">今日目标完成！</div>
-      <div style="font-size:14px;color:#64748b;line-height:1.8;margin-bottom:20px;">
-        今天做了 <b style="color:#2563eb;">${total}</b> 道题，<br>
-        正确 <b style="color:#15803d;">${correct}</b> 道，正确率 <b style="color:#2563eb;">${rate}%</b>
+    <div class="daily-complete-card">
+      <div class="daily-complete-emoji">🎉</div>
+      <div class="daily-complete-title">今日目标完成！</div>
+      <div class="daily-complete-body">
+        今天做了 <b>${total}</b> 道题，<br>
+        正确 <b>${correct}</b> 道，正确率 <b>${rate}%</b>
       </div>
-      <div style="display:flex;gap:10px;">
-        <button id="dailyCompleteRest" style="flex:1;padding:12px;border-radius:12px;font-weight:700;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-family:inherit;">休息一下</button>
-        <button id="dailyCompleteMore" style="flex:1;padding:12px;border-radius:12px;font-weight:700;background:#2563eb;color:#fff;border:none;cursor:pointer;box-shadow:0 3px 0 #1d4ed8;font-family:inherit;">再来几题</button>
+      <div class="daily-complete-actions">
+        <button id="dailyCompleteRest" class="daily-complete-rest">休息一下</button>
+        <button id="dailyCompleteMore" class="daily-complete-go">再来几题</button>
       </div>
     </div>
   `;
+  
   document.body.appendChild(mask);
   document.getElementById('dailyCompleteRest').addEventListener('click', () => {
     mask.remove();
