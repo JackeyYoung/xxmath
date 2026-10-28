@@ -109,7 +109,8 @@ export async function showExplainModal(text) {
     } catch(e) {}
     
   } catch (e) {
-    modalBody.innerHTML = `<div style="color:red;text-align:center;padding:20px;">AI 讲解获取失败：${e.message}</div>`;
+    // 使用语义化错误变量
+    modalBody.innerHTML = `<div style="color:var(--red-text);text-align:center;padding:20px;font-weight:700;">AI 讲解获取失败：${e.message}</div>`;
   }
 }
 
@@ -131,8 +132,8 @@ function renderExplainContent(result) {
   // 还原原版：展示“一题一得”
   const takeaway = takeawayLoad(result._problemText);
   const takeawayHtml = takeaway ? `
-    <div style="margin-top:12px;padding:12px 16px;background:#f0f9ff;border-left:4px solid #0ea5e9;border-radius:8px;font-size:13px;line-height:1.7;color:#0369a1;">
-      <b>💡 一题一得：</b>${escapeHtmlStrict(takeaway)}
+    <div style="margin-top:12px;padding:12px 16px;background:var(--primary-soft);border-left:4px solid var(--primary);border-radius:8px;font-size:13px;line-height:1.7;color:var(--text-soft);">
+      <b style="color:var(--primary-d);">💡 一题一得：</b>${escapeHtmlStrict(takeaway)}
     </div>
   ` : '';
 
@@ -141,9 +142,10 @@ function renderExplainContent(result) {
       <span class="koji-intro-emoji">🤖</span>
       <span>💡 Koji 想跟你说：${result.problem_understanding ? '先想想——' + escapeHtmlStrict(result.problem_understanding) : '我们一步一步来看看这道题。'}</span>
     </div>
+    
     <div style="margin-bottom:16px;">
-      <div style="font-size:13px;color:#64748b;margin-bottom:8px;">题目：</div>
-      <div style="font-size:15px;line-height:1.7;color:#334155;background:#f8fafc;padding:12px 16px;border-radius:10px;">${escapeHtmlStrict(result._problemText)}</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:8px;">题目：</div>
+      <div style="font-size:15px;line-height:1.7;color:var(--text-soft);background:var(--bg);padding:12px 16px;border-radius:10px;">${escapeHtmlStrict(result._problemText)}</div>
     </div>
     
     ${insight.strengthsHtml}
@@ -158,11 +160,11 @@ function renderExplainContent(result) {
     </div>
     ${takeawayHtml}
     
-    <div class="koji-more-wrap" style="margin-top:16px;padding:14px 16px;background:#f5f3ff;border-radius:12px;border-left:4px solid #8b5cf6;">
-      <div style="font-size:13px;color:#6d28d9;font-weight:700;margin-bottom:10px;">💡 这是之前保存的讲解。还想让 AI 换个角度再讲一遍吗？</div>
-      <div style="display:flex;gap:8px;">
-        <button class="btn-secondary" id="kojiMoreBtn" style="flex:1;background:#fff;border:2px solid #8b5cf6;color:#6d28d9;font-weight:700;">🤖 让 AI 再讲一遍</button>
-        <button class="btn-secondary" id="kojiCloseBtn" style="flex:1;background:#fff;border:2px solid #cbd5e1;color:#64748b;">够了，谢谢</button>
+    <div class="koji-more-wrap">
+      <div class="koji-more-title">💡 这是之前保存的讲解。还想让 AI 换个角度再讲一遍吗？</div>
+      <div class="koji-more-actions">
+        <button class="btn-secondary" id="kojiMoreBtn">🤖 让 AI 再讲一遍</button>
+        <button class="btn-secondary" id="kojiCloseBtn">够了，谢谢</button>
       </div>
     </div>
   `;
@@ -217,7 +219,8 @@ function handleRedo(text) {
     document.getElementById('redoBanner')?.remove();
     const banner = document.createElement('div');
     banner.id = 'redoBanner';
-    banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;`;
+    // 使用 amber 变量，自适应深浅色
+    banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:var(--amber-text);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.1);`;
     banner.innerHTML = `🔁 正在重做错题，做对将累计掌握进度 <button onclick="this.parentElement.remove()" style="margin-left:10px;background:transparent;border:none;color:#fff;cursor:pointer;">×</button>`;
     document.body.appendChild(banner);
   }, 300);

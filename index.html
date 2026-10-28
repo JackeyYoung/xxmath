@@ -4548,6 +4548,38 @@ body.thumb-bar-open {
   font-weight: 600;
 }
 .koji-intro-emoji { font-size: 20px; }
+/* ============================================================
+   ⭐ AI 讲解弹窗底部按钮深色模式适配 (koji-more-wrap)
+   ============================================================ */
+.koji-more-wrap {
+  margin-top: 16px;
+  padding: 14px 16px;
+  background: var(--violet-soft); /* 浅色模式浅紫，深色模式深紫 */
+  border-radius: 12px;
+  border-left: 4px solid var(--violet);
+}
+
+.koji-more-wrap .btn-secondary {
+  border: 2px solid var(--violet-border) !important;
+  background: var(--card) !important; 
+  color: var(--violet) !important;
+  font-weight: 700;
+  transition: all 0.15s;
+}
+
+.koji-more-wrap .btn-secondary:hover {
+  filter: brightness(0.95);
+}
+
+/* 专门针对“够了，谢谢”按钮做中性色处理 */
+#kojiCloseBtn {
+  border: 2px solid var(--border) !important;
+  color: var(--muted) !important;
+}
+#kojiCloseBtn:hover {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
 
 /* ============================================================
    ⭐ 离线提示横幅 (Offline Banner)
