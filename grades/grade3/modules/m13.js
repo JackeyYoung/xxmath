@@ -1134,8 +1134,10 @@ export default async function mount(container, ctx) {
     try {
       const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
       const hit = history.find(r => r.problemText === problemText && r.aiFeedback && r.aiFeedback.answer);
-      if (hit) {
-        cachedFeedback = hit.aiFeedback;
+      if (hits.length) {
+        // ⭐ 按 timestamp 倒序，取最新的一条
+        hits.sort((a, b) => b.timestamp - a.timestamp);
+        cachedFeedback = hits[0].aiFeedback;
       }
     } catch (e) {}
 

@@ -34,6 +34,19 @@ export function historyLoad() {
   }
 }
 
+export function historyUpdate(problemText, newRecord) {
+  const list = historyLoad();
+  const idx = list.findIndex(r => r.problemText === problemText);
+  if (idx >= 0) {
+    // 用新的覆盖旧的，保留原本的 ID
+    list[idx] = { ...list[idx], ...newRecord };
+    // 如果你想更新后置顶，可以把它挪到数组最前面
+    const [updated] = list.splice(idx, 1);
+    list.unshift(updated);
+    historySave(list);
+  }
+}
+
 export function historySave(list) {
   try {
     lsSet(getHistoryKey(), JSON.stringify(list));

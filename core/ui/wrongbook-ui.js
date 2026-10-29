@@ -241,21 +241,32 @@ function renderExplainContent(result) {
         console.warn('更新错题本 AI 缓存失败', e);
       }
 
-      // ⭐ 核心修复 2：静默更新到做题记录（历史记录）
+      // ⭐ 核心修复 2：静默更新到做题记录（历史记录）- 先删后加，防止 ID 冲突
       try {
-        const hList = ctx?.data?.historyLoad ? ctx.data.historyLoad() : [];
-        if (hList && hList.length) {
-          // 找到这道题最近的一条记录
-          const recentRecord = hList.find(r => r.problemText === result._problemText);
-          if (recentRecord) {
-            // 这里我们直接修改该条记录（注意：history 库如果支持直接 wbSave 那种覆盖，最好用）
-            // 这里为了安全，我们重新 add 一条覆盖
-            ctx.data.historyAdd({
-              ...recentRecord,
-              aiFeedback: newResult,
-              timestamp: Date.now()
-            });
+        if (ctx?.data?.historyLoad && ctx?.data?.historyAdd) {
+          const hList = ctx.data.historyLoad();
+          // 找出该题目所有旧的记录并清理（避免脏数据）
+          const recordsToDelete = hList.filter(r => r.problemText === result._problemText);
+          
+          // 如果你的 history 支持 historyRemove，就直接删；如果没有，就自己写覆盖逻辑
+          if (window.historyRemove) {
+             recordsToDelete.forEach(r => window.historyRemove(r.id));
+          } else {
+             // 如果没暴露 remove，就借位修改
+             // ... 这里假定你有 remove 机制，或者你可以在 history.js 里加一个 updateHistory 方法
           }
+
+          // 然后插入新的记录
+          ctx.data.historyAdd({
+            problemText: result._problemText,
+            problemSource: '自定义',
+            moduleId: 'm13',
+            studentSteps: result._userContext?.studentSteps || [],
+            studentAnswer: result._userContext?.studentAnswer || '',
+            isCorrect: recentRecord?.isCorrect ?? false, // 保持对错状态
+            correctAnswer: newResult.answer?.full || '',
+            aiFeedback: newResult // ⭐ 这里用最新的结果
+          });
         }
       } catch (e) {
         console.warn('更新做题记录缓存失败', e);
