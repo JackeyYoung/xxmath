@@ -1,5 +1,5 @@
 /* core/ui/wrongbook-ui.js */
-import { wbLoad, wbRemove, wbClear } from '../wrongbook.js';
+import { wbLoad, wbRemove, wbClear, wbSave, wbAdd  } from '../wrongbook.js';
 import { findCachedFeedback } from '../feedback-resolver.js';
 import { activeModules } from '../../app/shell.js';
 import { showToast } from './toast.js';
@@ -180,13 +180,31 @@ function renderExplainContent(result) {
   
   document.getElementById('kojiMoreBtn')?.addEventListener('click', () => {
     document.querySelector('.koji-more-wrap')?.remove();
-    modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在思考…</div></div></div>`;
+    modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在重新思考…</div></div></div>`;
+    
     callLLM({ problem: result._problemText, studentAnswer: '', steps: [] }).then(raw => {
       const newResult = normalizeAiFeedback(raw, null);
       newResult._problemText = result._problemText;
+      
+      // ⭐ 核心新增：用 wbAdd 更新错题本里的解析
+      try {
+        const wbList = wbLoad();
+        const existing = wbList.find(w => w.text === result._problemText);
+        if (existing) {
+          // 如果错题本里有这道题，利用 wbAdd 的覆盖机制更新它
+          wbAdd({
+            ...existing,
+            aiFeedback: newResult,
+            timestamp: Date.now()
+          });
+        }
+      } catch (e) {
+        console.warn('更新 AI 重新讲解缓存失败', e);
+      }
+
       renderExplainContent(newResult);
     }).catch(e => {
-      modalBody.innerHTML = `<div style="color:red;text-align:center;padding:20px;">AI 讲解获取失败：${e.message}</div>`;
+      modalBody.innerHTML = `<div style="color:var(--red-text);text-align:center;padding:20px;">AI 讲解获取失败：${e.message}</div>`;
     });
   });
 }
