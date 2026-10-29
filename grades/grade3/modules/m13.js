@@ -693,7 +693,11 @@ export default async function mount(container, ctx) {
           ctx.data.masteryRecord(problemText, true);
         }
 
-        showExplainModal(problemText); // ⭐ 直接调用
+        // ⭐ 传入用户当前的作答和步骤
+        showExplainModal(problemText, {
+          studentAnswer: user,
+          studentSteps: studentSteps
+        });
 
         // ⭐ 核心修复：调用全局重做成功逻辑
         if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
@@ -719,7 +723,11 @@ export default async function mount(container, ctx) {
           ctx.data.masteryRecord(problemText, false);
         }
 
-        showExplainModal(problemText); // ⭐ 直接调用
+        // ⭐ 传入用户当前的作答和步骤
+        showExplainModal(problemText, {
+          studentAnswer: user,
+          studentSteps: studentSteps
+        });
                 
         // ⭐ 题库题错误，写入错题本
         if (ctx.data.wbAdd) {
@@ -774,7 +782,11 @@ export default async function mount(container, ctx) {
         //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
         ctx.data.masteryRecord(problemText, true);
 
-        showExplainModal(problemText); // ⭐ 直接调用
+        // ⭐ 传入用户当前的作答和步骤
+        showExplainModal(problemText, {
+          studentAnswer: user,
+          studentSteps: studentSteps
+        });
 
         // ⭐ 核心修复：调用全局重做成功逻辑
         if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
@@ -785,7 +797,11 @@ export default async function mount(container, ctx) {
         // 展开第一步标准解法
         const stdSteps = $$('#m13StandardSteps .std-fold');
         if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
-        showExplainModal(problemText); // ⭐ 直接调用
+        // ⭐ 传入用户当前的作答和步骤
+        showExplainModal(problemText, {
+          studentAnswer: user,
+          studentSteps: studentSteps
+        });
       }
 
       // 渲染缓存讲解内容
@@ -834,7 +850,11 @@ export default async function mount(container, ctx) {
       const ok = result.judgement.answer_correct;
 
       setBadge(ok ? 'ok' : 'no', ok ? `🎉 ${getEncouragement('m13', 1)} 参考答案：${result.answer.full}` : `❌ ${result.judgement.student_answer_issue || '再检查一下'}`);
-      showExplainModal(problemText); // ⭐ 直接调用
+      // ⭐ 传入用户当前的作答和步骤
+      showExplainModal(problemText, {
+        studentAnswer: user,
+        studentSteps: studentSteps
+      });
       if (ok) { badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)'; 
         setTimeout(() => { badge.style.animation = ''; }, 500); 
         
@@ -1127,7 +1147,11 @@ export default async function mount(container, ctx) {
     // ⭐ 降级 3：真没有缓存，才调起 AI 现算弹窗
     try {
       const { showExplainModal } = await import('../../../core/ui/wrongbook-ui.js');
-      showExplainModal(problemText);
+      // ⭐ 传入用户当前的作答和步骤
+      showExplainModal(problemText, {
+        studentAnswer: user,
+        studentSteps: studentSteps
+      });
     } catch (err) {
       console.error('加载讲解组件失败', err);
       ctx.toast('加载讲解失败，请重试', 'error');

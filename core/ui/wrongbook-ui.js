@@ -68,7 +68,7 @@ function closeDrawer() {
 // ==========================================
 // 核心：讲解弹窗逻辑（题库 -> 缓存 -> AI）
 // ==========================================
-export async function showExplainModal(text) {
+export async function showExplainModal(text, userContext = null) {
   const modalMask = document.getElementById('explainModalMask');
   const modalBody = document.getElementById('explainModalBody');
   if (!modalMask || !modalBody) return;
@@ -96,9 +96,15 @@ export async function showExplainModal(text) {
   modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在思考…</div></div></div>`;
   
   try {
-    const raw = await callLLM({ problem: text, studentAnswer: '', steps: [] });
+    // ⭐ 如果用户有作答，就带上；如果没有，传空
+    const raw = await callLLM({ 
+      problem: text, 
+      studentAnswer: userContext?.studentAnswer || '', 
+      steps: userContext?.studentSteps || [] 
+    });
     const result = normalizeAiFeedback(raw, null);
     result._problemText = text;
+    result._userContext = userContext; // ⭐ 存到 result 里，供弹窗内部使用
     renderExplainContent(result);
 
     // 回写缓存
@@ -182,16 +188,21 @@ function renderExplainContent(result) {
     document.querySelector('.koji-more-wrap')?.remove();
     modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在重新思考…</div></div></div>`;
     
-    callLLM({ problem: result._problemText, studentAnswer: '', steps: [] }).then(raw => {
+    // ⭐ 核心修复：把用户的作答（如果有）一并传递给 AI
+    callLLM({ 
+      problem: result._problemText, 
+      studentAnswer: result._userContext?.studentAnswer || '', 
+      steps: result._userContext?.studentSteps || [] 
+    }).then(raw => {
       const newResult = normalizeAiFeedback(raw, null);
       newResult._problemText = result._problemText;
+      newResult._userContext = result._userContext; // 保持上下文不丢
       
-      // ⭐ 核心新增：用 wbAdd 更新错题本里的解析
+      // 更新错题本缓存
       try {
         const wbList = wbLoad();
         const existing = wbList.find(w => w.text === result._problemText);
         if (existing) {
-          // 如果错题本里有这道题，利用 wbAdd 的覆盖机制更新它
           wbAdd({
             ...existing,
             aiFeedback: newResult,
