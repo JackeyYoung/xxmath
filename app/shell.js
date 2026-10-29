@@ -37,7 +37,7 @@ import { showMasteryCard } from '../core/ui/mastery-card.js';
 import { buildAiInsightHtml } from '../core/ui/ai-insight.js';
 import { activityAdd } from '../core/activity.js';
 import { historyAdd, historyLoad, historySave } from '../core/history.js';
-import { wbAdd } from '../core/wrongbook.js';
+import { wbAdd, wbSave } from '../core/wrongbook.js';
 
 // shell.js 顶部建立全局模块注册表（让模块自己报备重做）
 export const activeModules = {}; 
@@ -736,7 +736,7 @@ function mountLesson(lessonId) {
         masteryRecord, takeawayLoad, 
         activityAdd,// 保留原来的
         recordActivity, // ⭐ 新增防抖版本
-        wbAdd, wbLoad,
+        wbAdd, wbLoad,wbSave,
       },
       showMasteryCard: showMasteryCard,
       buildAiInsightHtml: buildAiInsightHtml,
@@ -1144,6 +1144,7 @@ function renderGrowth() {
         activityAdd: activityAdd,
         wbAdd: wbAdd,
         wbLoad: wbLoad,
+        wbSave: wbSave,
       },
       showMasteryCard: showMasteryCard,
       buildAiInsightHtml: buildAiInsightHtml,
