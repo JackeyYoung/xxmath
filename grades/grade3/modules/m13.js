@@ -614,6 +614,14 @@ export default async function mount(container, ctx) {
 
     $('#pCheck').disabled = true; // ⭐ 加锁
 
+    console.log('=== M13 判卷诊断 ===');
+    console.log('1. 当前题目来源 (应为 bank):', M13_ProblemSource);
+    console.log('2. 当前题目对象:', M13_CurrentProblem);
+    console.log('3. 提取的标准答案对象 (stdValue):', stdValue);
+    console.log('4. 提取的标准完整答案 (stdFull):', stdFull);
+    console.log('5. 用户完整步骤数量 (completeSteps):', completeSteps.length);
+    console.log('====================');
+
     const user = $('#pAnswer').value.trim();
     const badge = $('#pResult');
     const problemText = $('#problem-text').innerText.trim();
