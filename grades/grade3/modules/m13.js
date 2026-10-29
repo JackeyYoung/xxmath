@@ -728,18 +728,15 @@ export default async function mount(container, ctx) {
       return;
     }
 
-    // 2. 优先查历史缓存 (如果是【自定义题】，优先查历史缓存（题目+步骤+答案完全一致才复用）)
+    // 4. 自定义题：查历史解析 (⭐ 核心优化：放宽条件，只要有解析就拿来对比)
     const cachedRecord = (function findCached() {
       try {
         const list = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
-        const currentSteps = m13CollectSteps(); // 获取用户当前填写的步骤
-        
-        // 只有当：题目相同、答案相同、且步骤完全相同 时，才复用缓存
+        // 只要能找到这道题的 aiFeedback 就行，不管上次的答案和步骤是什么
         return list.find(r => 
           r.problemText === problemText && 
-          r.studentAnswer === user && 
-          JSON.stringify(r.studentSteps) === JSON.stringify(currentSteps) && 
-          r.aiFeedback
+          r.aiFeedback && 
+          r.aiFeedback.answer
         ) || null;
       } catch (e) { return null; }
     })();
@@ -751,7 +748,7 @@ export default async function mount(container, ctx) {
       const allMatch = cNums.length && cNums.every(v => uNums.some(x => Math.abs(x - v) < 0.001));
 
       if (allMatch) {
-        setBadge('ok', '🎉 ' + getEncouragement('m13', 1) + ` （历史缓存）参考答案：${fb.answer?.full || cachedRecord.correctAnswer || '—'}`);
+        setBadge('ok', '🎉 ' + getEncouragement('m13', 1) + ` （复用历史解析）参考答案：${fb.answer?.full || cachedRecord.correctAnswer || '—'}`);
         badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
         setTimeout(() => { badge.style.animation = ''; }, 500);
 
@@ -763,6 +760,7 @@ export default async function mount(container, ctx) {
             // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
             wbList[wbIdx].studentAnswer = user;
             wbList[wbIdx].correctAnswer = fb.answer?.full || cachedRecord.correctAnswer || '';
+            wbList[wbIdx].aiFeedback = fb;
             ctx.data.wbSave(wbList);
           }
         } catch (e) {
