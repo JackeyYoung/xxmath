@@ -34,7 +34,10 @@ function patchDailyCheer() {
   cheer.querySelector('.daily-cheer-rest').addEventListener('click', () => cheer.remove());
   cheer.querySelector('.daily-cheer-go').addEventListener('click', () => {
     cheer.remove();
-    document.querySelector('.tab[data-target="m13"]')?.click();
+    // ⭐ 使用全局 navigate 直接跳转到 lesson/m13
+    if (window.__shell?.navigate) {
+      window.__shell.navigate('lesson', { lessonId: 'm13' });
+    }
   });
   setTimeout(() => { if (cheer.parentElement) cheer.remove(); }, 15000);
 }
@@ -79,8 +82,10 @@ function patchDailySuggest() {
   card.querySelector('.daily-suggest-later').addEventListener('click', close);
   card.querySelector('.daily-suggest-go').addEventListener('click', () => {
     close();
-    document.querySelector(`.tab[data-target="${targetModule}"]`)?.click();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // ⭐ 使用全局 navigate 跳转到具体的知识岛
+    if (window.__shell?.navigate) {
+      window.__shell.navigate('lesson', { lessonId: targetModule });
+    }
   });
 }
 

@@ -32,13 +32,15 @@ export function installGlobalUI() {
   // ⭐ ① 输入框聚焦避让 + visualViewport
   document.addEventListener('focusin', e => {
     if (!_isInputTarget(e.target)) return;
+    
+    // ⭐ 不再直接移除 show 类，而是由 body.input-focused 触发 CSS 动画滑出
     document.body.classList.add('input-focused');
-    const thumbBar = document.getElementById('thumbBar');
-    if (thumbBar) thumbBar.classList.remove('show', 'ok', 'err');
+    
     if (e.target.id === 'problem-text') {
       const bottomBar = document.querySelector('.m13-bottom-bar');
       if (bottomBar) bottomBar.style.display = 'none';
     }
+    
     setTimeout(() => {
       try {
         const rect = e.target.getBoundingClientRect();
@@ -52,6 +54,7 @@ export function installGlobalUI() {
     if (!_isInputTarget(e.target)) return;
     setTimeout(() => {
       if (!_isInputTarget(document.activeElement)) {
+        // ⭐ 失去焦点，移除 input-focused 类，拇指条会自动滑回
         document.body.classList.remove('input-focused');
         const bottomBar = document.querySelector('.m13-bottom-bar');
         if (bottomBar) bottomBar.style.display = '';
@@ -90,9 +93,31 @@ export function installGlobalUI() {
   // ⭐ ③ 离线横幅
   const offline = document.createElement('div');
   offline.className = 'offline-banner';
-  offline.textContent = '当前离线，已完成内容保存在本地，恢复网络后可继续';
+  offline.textContent = '当前离线模式，已完成内容保存在本地';
   document.body.appendChild(offline);
-  const refreshOnline = () => offline.classList.toggle('show', !navigator.onLine);
+
+  let offlineTimer = null;
+
+  const refreshOnline = () => {
+    if (!navigator.onLine) {
+      // 断网了，立刻滑上来显示
+      offline.classList.add('show');
+      
+      // 清空上一次的定时器
+      if (offlineTimer) clearTimeout(offlineTimer);
+      
+      // ⭐ 核心：3 秒后自动滑走隐藏
+      offlineTimer = setTimeout(() => {
+        offline.classList.remove('show');
+      }, 3000);
+      
+    } else {
+      // 网络恢复了，瞬间让它滑走消失
+      offline.classList.remove('show');
+      if (offlineTimer) clearTimeout(offlineTimer);
+    }
+  };
+
   window.addEventListener('online', refreshOnline);
   window.addEventListener('offline', refreshOnline);
   refreshOnline();

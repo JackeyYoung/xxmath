@@ -45,6 +45,7 @@
   --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
   --shadow-md: 0 4px 16px rgba(0,0,0,.05);
   --input-bg: #ffffff;
+  --btn-text: #ffffff; 
 
   /* ⭐ 新增：模板专用语义色（与上面体系一致，只是给模板里的"紫色/蓝色系"一个名字） */
   --violet-soft: #f5f3ff;    /* AI 相关浅紫底 */
@@ -79,6 +80,7 @@
   /* 深色模式下取消黑边框感，改用微弱的泛白边缘 */
   --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.05);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --btn-text: #ffffff; 
 
   --violet-soft: #2e1065;
   --violet: #a78bfa;
@@ -180,7 +182,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 
 .btn {
   padding: 12px 24px; border-radius: var(--r-pill);
-  background: var(--primary); color: #fff !important;
+  background: var(--primary); color: var(--btn-text) !important;
   font-size: 15px; font-weight: 600; letter-spacing: -0.01em;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
 }
@@ -1977,10 +1979,11 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
   gap: 10px;
 }
 
-/* 仅针对满宽按钮的设定，排除掉随机按钮 */
+/* ============================================================
+   ⭐ 选题弹窗内的按钮统一排版（只控制大小和形状）
+   ============================================================ */
 .problem-picker-body .btn,
 .problem-picker-body .btn-secondary:not(.picker-random-btn),
-/* 上传按钮全宽对齐 */
 .problem-picker-body .file-btn {
   width: 100% !important;
   height: 44px;
@@ -1989,14 +1992,24 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
   justify-content: center;
   padding: 0 16px;
   border-radius: var(--r-pill);
-  border: 1.5px solid var(--border);
-  background: var(--card);
-  color: var(--text-soft);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   box-sizing: border-box;
 }
+
+/* 主按钮（载入）保持系统原生绿底白字即可，无需覆盖，但如果你有特殊的强制需求可保留 */
+/* 现在这里什么都不用写，它会自动继承全局的 .btn */
+
+/* 次级按钮（使用、AI生成）和上传按钮：全宽布局下，确保不受内联样式影响 */
+.problem-picker-body .btn-secondary:not(.picker-random-btn),
+.problem-picker-body .file-btn {
+  /* 如果这里不想保留 border，可以让它继承全局的 .btn-secondary */
+  /* 但因为我们前面限制了 height 和 width，最好这里不写强制样式，让 .btn-secondary 自己接管 */
+}
+
+/* 悬浮时的反馈（统一给轻量的视觉反馈） */
+.problem-picker-body .btn-secondary:not(.picker-random-btn):hover,
 .problem-picker-body .file-btn:hover {
   border-color: var(--primary);
   color: var(--primary-d);
@@ -2006,7 +2019,7 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
 /* 选择行：flex 布局 */
 .problem-picker-row {
   display: flex !important;
-  flex-direction: row !important; /* 强制横排 */
+  flex-direction: row !important;
   gap: 8px;
   width: 100%;
   align-items: stretch;
@@ -2030,6 +2043,8 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
   font-size: 14px;
   font-weight: 700;
 }
+
+/* 分割线 */
 .problem-picker-divider {
   text-align: center;
   font-size: 12px;
@@ -2048,6 +2063,8 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
 }
 .problem-picker-divider::before { left: 0; }
 .problem-picker-divider::after  { right: 0; }
+
+/* 清空按钮 */
 .problem-picker-clear {
   width: 100%;
   margin-top: 6px;
@@ -2503,7 +2520,7 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
   border-top: 1px solid var(--border);
   box-shadow: 0 -8px 32px rgba(0, 0, 0, .1);
   transform: translateY(100%);
-  transition: transform .28s cubic-bezier(.34,1.2,.64,1);
+  transition: transform .28s cubic-bezier(.34,1.3,.64,1), opacity .2s !important;
   z-index: 900;
   display: flex;
   align-items: center;
@@ -2570,9 +2587,20 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
   color: var(--text-soft);
 }
 
-/* 拇指条弹出时，给页面底部留出空间，防止挡住内容 */
-body.thumb-bar-open {
-  padding-bottom: 120px !important;
+/* 当底部的拇指条处于打开状态时，触发上移 */
+body.thumb-bar-open .wrong-book-btn,
+body.thumb-bar-open .koji-btn {
+  /* 向上平移 80px（大概是一个拇指条的高度），你可以根据实际效果微调这个数值 */
+  transform: translateY(-80px) scale(0.95);
+}
+/* 
+ * 当页面中有输入框聚焦（键盘弹起）时，拇指条自动向下滑出屏幕
+ * 这样既不遮挡键盘，也不突兀，且 DOM 状态仍然保留
+ */
+body.input-focused .thumb-bar {
+  transform: translateY(100%) !important;
+  opacity: 0;
+  pointer-events: none;
 }
 
 
@@ -3054,8 +3082,18 @@ body.thumb-bar-open {
   to { opacity: 1; }
 }
 
-.wrong-book-btn { position: fixed; bottom: max(50px, env(safe-area-inset-bottom)); right: max(24px, env(safe-area-inset-right)); width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--card); color: var(--red-text); font-size: 22px; box-shadow: var(--shadow-md); z-index: 998; display: flex; align-items: center; justify-content: center; }
-.koji-btn { position: fixed; bottom: max(50px, env(safe-area-inset-bottom)); right: max(88px, calc(env(safe-area-inset-right) + 88px)); width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--card); color: #7c3aed; font-size: 22px; box-shadow: var(--shadow-md); z-index: 998; display: flex; align-items: center; justify-content: center; }
+.wrong-book-btn { position: fixed; bottom: max(24px, env(safe-area-inset-bottom)); 
+  right: max(24px, env(safe-area-inset-right)); width: 52px; height: 52px; border-radius: 50%; 
+  border: 1.5px solid var(--border); background: var(--card); color: var(--red-text); font-size: 22px; 
+  box-shadow: var(--shadow-md); z-index: 998; display: flex; align-items: center; justify-content: center; 
+  transition: transform 0.28s cubic-bezier(.34,1.3,.64,1), background-color 0.15s, box-shadow 0.15s !important;
+}
+.koji-btn { position: fixed; bottom: max(24px, env(safe-area-inset-bottom)); right: max(88px, calc(env(safe-area-inset-right) + 88px)); 
+  width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--card); 
+  color: #7c3aed; font-size: 22px; box-shadow: var(--shadow-md); z-index: 998; 
+  display: flex; align-items: center; justify-content: center; 
+  transition: transform 0.28s cubic-bezier(.34,1.3,.64,1), background-color 0.15s, box-shadow 0.15s !important;
+}
 .wrong-book-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 90vw; background: var(--card); box-shadow: -8px 0 32px rgba(0, 0, 0, .15); z-index: 1000; transform: translateX(100%); transition: transform .28s ease; display: flex; flex-direction: column; }
 .wrong-book-drawer.open { transform: translateX(0); }
 .wrong-book-header { padding: 18px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; color: var(--text); font-weight: 800; }
@@ -4796,31 +4834,34 @@ body.thumb-bar-open {
 }
 
 /* ============================================================
-   ⭐ 离线提示横幅 (Offline Banner)
+   ⭐ 离线提示横幅 (Offline Banner) —— 带自动消失动画
    ============================================================ */
 .offline-banner {
   position: fixed;
-  bottom: 20px;
-  left: 20px;
+  bottom: 24px;
+  left: 50%;
+  transform: translate(-50%, 150%); /* 默认隐藏在屏幕底部之外 */
+  opacity: 0;
+  pointer-events: none; /* 隐藏时不可点击 */
   background: var(--amber-text);
   color: #fff;
-  padding: 10px 16px;
-  border-radius: var(--r-sm);
+  padding: 12px 20px;
+  border-radius: var(--r-pill);
   font-size: 13px;
   font-weight: 700;
   z-index: 9999;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .15);
   
-  /* 默认隐藏：向下位移，并且透明度为 0 */
-  transform: translateY(150%);
-  opacity: 0;
-  pointer-events: none;
-  transition: all 0.3s cubic-bezier(.34,1.3,.64,1);
+  /* 强制平滑过渡，不仅仅是位移，还有透明度 */
+  transition: transform .3s cubic-bezier(.34,1.3,.64,1), opacity .3s ease;
+  white-space: nowrap;
+  max-width: 95vw;
+  text-align: center;
 }
 
-/* 当 JS 给它加上 .show 类时，才显示出来 */
+/* 显示状态：滑上来并显现 */
 .offline-banner.show {
-  transform: translateY(0);
+  transform: translate(-50%, 0);
   opacity: 1;
   pointer-events: auto;
 }
@@ -5228,6 +5269,73 @@ body.thumb-bar-open {
   text-align: center;
   letter-spacing: 6px;
   font-family: ui-monospace, monospace;
+}
+
+/* ============================================================
+   ⭐ 会话恢复提示条 (Session Backup Bar)
+   ============================================================ */
+.backup-restore-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 90vw;
+  background: var(--card);
+  border: 2px solid var(--amber-text);
+  border-radius: var(--r-sm);
+  padding: 12px 20px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .15);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  z-index: 10020;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--amber-text);
+  animation: slideUpFade .3s cubic-bezier(.34,1.3,.64,1);
+}
+
+.backup-restore-bar button {
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all .15s;
+}
+
+/* 忽略按钮 */
+.backup-restore-bar .backup-restore-no {
+  background: var(--bg);
+  color: var(--text-soft);
+  border: 1px solid var(--border);
+}
+.backup-restore-bar .backup-restore-no:hover {
+  background: var(--border);
+}
+
+/* 恢复按钮 */
+.backup-restore-bar .backup-restore-yes {
+  background: var(--amber-text);
+  color: #fff !important;
+}
+.backup-restore-bar .backup-restore-yes:hover {
+  filter: brightness(0.95);
+}
+
+/* 适配移动端 */
+@media (max-width: 600px) {
+  .backup-restore-bar {
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+  }
+  .backup-restore-bar button {
+    width: 100%;
+    padding: 10px;
+  }
 }
 </style>
 </head>

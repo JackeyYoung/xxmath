@@ -90,6 +90,10 @@ let currentRoute = 'home';
 let currentLessonId = null;
 
 export function navigate(route, opts = {}) {
+   // ⭐ 路由切换时，强制清空拇指条状态
+  const bar = document.getElementById('thumbBar');
+  if (bar) bar.classList.remove('show', 'ok', 'err');
+
   if (!ROUTES.includes(route)) return;
   currentRoute = route;
   if (opts.lessonId) currentLessonId = opts.lessonId;
@@ -653,6 +657,10 @@ function retriggerModuleRender(lessonId) {
 const _levelHandlers = new Map(); // ⭐ 保存各模块的层级切换函数
 
 function mountLesson(lessonId) {
+  // ⭐ 加载新模块时，清空残留反馈
+  const bar = document.getElementById('thumbBar');
+  if (bar) bar.classList.remove('show', 'ok', 'err');
+
   if (!lessonId) lessonId = 'm1';
   const stage = document.getElementById('lesson-stage-main') || document.getElementById('modulePool');
   if (!stage) return;

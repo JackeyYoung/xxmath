@@ -24,7 +24,10 @@ export function injectTemplates() {
           <button class="btn" id="m1Load">📥 载入</button>
           <input type="text" id="m1Custom" placeholder="或输入算式，如：12 × 3 + 15">
           <button class="btn-secondary" id="m1UseCustom">使用</button>
-          <label class="file-btn">📎 上传 txt<input type="file" id="m1Upload" accept=".txt" hidden></label>
+          <label class="btn-secondary file-btn" style="width: 100%;">
+            📎 上传 txt
+            <input type="file" id="pUpload" accept=".txt" hidden>
+          </label>
           <button class="btn-secondary" id="m1Random">🎲 随机出题</button>
         </div>
         <div class="expr-box"><div class="expr" id="m1expr"></div></div>
@@ -421,7 +424,7 @@ export function injectTemplates() {
               <button class="btn-secondary ai-btn" id="pickerAiBtn" style="border-color: var(--violet-border); background: var(--violet-soft); color: var(--violet);">
                 🤖 让 AI 生成一道同类题
               </button>
-              <label class="file-btn">
+              <label class="btn-secondary file-btn" style="width: 100%;">
                 📎 上传 txt
                 <input type="file" id="pUpload" accept=".txt" hidden>
               </label>

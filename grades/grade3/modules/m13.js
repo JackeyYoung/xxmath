@@ -163,13 +163,27 @@ export default async function mount(container, ctx) {
 
   registerActiveModule('m13', {
     redo: (text) => {
-      m13LoadProblem(text, null, 'custom', null);
+      // ⭐ 核心修复：在重做前，去全量题库里找一下这道题
+      const bankItem = FULL_BANK.find(p => p.text === text);
+      
+      if (bankItem) {
+        // 如果找到了，说明它是题库题，恢复题库身份和标准答案
+        const ansFull = bankItem.answer ? (typeof bankItem.answer === 'string' ? bankItem.answer : bankItem.answer.full) : null;
+        m13LoadProblem(bankItem.text, ansFull, 'bank', bankItem);
+        $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
+      } else {
+        // 如果没找到，才是真正的自定义题
+        m13LoadProblem(text, null, 'custom', null);
+        $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
+      }
+
       m13InitSteps();
       $('#m13StandardSteps').style.display = 'none';
       $('#m13StepsLocked').style.display = 'block';
       $('#m13StandardSteps')?.classList.remove('open');
     },
     showSolution: (text) => {
+      // 这里保持你原来的逻辑不变...
       const cached = findCachedFeedback(text, M13_BANK);
       if (cached) {
         renderStandardSolution(cached.aiFeedback);
@@ -219,12 +233,26 @@ export default async function mount(container, ctx) {
     el.dataset.status = status;
     step.classList.toggle('completed', status === 'done');
 
+    // 只有当状态从未完成变成完成时，才自动操作下一步
     if (status === 'done' && prev !== 'done') {
-      step.classList.remove('open');
-      const next = $(`.m13-step[data-step="${stepNum + 1}"]`);
-      if (next && !next.classList.contains('open')) {
-        setTimeout(() => next.classList.add('open'), 200);
-      }
+      
+      // ⭐ 延时 800ms 再收起当前面板，给用户留出看一眼的缓冲
+      setTimeout(() => {
+        // 如果此时用户还在当前步骤写东西，就不要收起来
+        if (document.activeElement && step.contains(document.activeElement)) return;
+        
+        step.classList.remove('open');
+        
+        // 展开下一步
+        const next = $(`.m13-step[data-step="${stepNum + 1}"]`);
+        if (next && !next.classList.contains('open')) {
+          setTimeout(() => {
+            next.classList.add('open');
+            // 平滑滚动到下一步
+            next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        }
+      }, 800); 
     }
   }
 
@@ -240,18 +268,27 @@ export default async function mount(container, ctx) {
 
   function updateAllSteps() {
     const problemText = $('#problem-text')?.innerText.trim() || '';
-    // Step 1
+    
+    // Step 1: 读题圈画
     setStatus(1, (problemText && hasUsedHighlight) ? 'done' : 'pending');
-    // Step 2
+    
+    // Step 2: 草稿纸（至少有 2 个格子写了内容才算完成）
     const scratch = $$('.scratch-cell textarea');
-    setStatus(2, scratch.some(t => t.value.trim()) ? 'done' : 'pending');
-    // Step 3
+    const scratchFilled = scratch.filter(t => t.value.trim().length > 0).length;
+    setStatus(2, scratchFilled >= 2 ? 'done' : 'pending');
+    
+    // Step 3: 关系式（至少有一组完整的「关系式」+「代入数字」+「得数」才算完成）
     const stepInputs = $$('#formulaSteps input');
-    const relInputs = stepInputs.filter(i => i.dataset.field === 'rel');
-    const subInputs = stepInputs.filter(i => i.dataset.field === 'sub');
-    const hasFormula = relInputs.some((r, i) => r.value.trim() && subInputs[i]?.value.trim());
-    setStatus(3, hasFormula ? 'done' : 'pending');
-    // Step 4
+    let completeFormulaCount = 0;
+    $$('#formulaSteps .formula-step').forEach(step => {
+      const rel = step.querySelector('input[data-field="rel"]')?.value.trim();
+      const sub = step.querySelector('input[data-field="sub"]')?.value.trim();
+      const res = step.querySelector('input[data-field="res"]')?.value.trim();
+      if (rel && sub && res) completeFormulaCount++;
+    });
+    setStatus(3, completeFormulaCount > 0 ? 'done' : 'pending');
+    
+    // Step 4: 我的答案
     const pAnswer = $('#pAnswer');
     setStatus(4, pAnswer?.value.trim() ? 'done' : 'pending');
   }
@@ -571,62 +608,9 @@ export default async function mount(container, ctx) {
       badge.textContent = text || '';
     };
 
-    const p = (M13_ProblemSource === 'bank') ? M13_CurrentProblem : null;
-    const stdValue = p && p.answer && typeof p.answer === 'object' ? p.answer.value : null;
-    const stdFull = p && p.answer ? (typeof p.answer === 'string' ? p.answer : p.answer.full) : null;
-
     // 1. 前置校验
     if (!problemText) return setBadge('no', '请先选择或输入题目');
     if (!user) return setBadge('no', '✏ 请先写出答案');
-
-    // 2. 优先查历史缓存 (原版逻辑)
-    const cachedRecord = (function findCached() {
-      try {
-        const list = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
-        return list.find(r => r.problemText === problemText) || null;
-      } catch (e) { return null; }
-    })();
-
-    if (cachedRecord && cachedRecord.aiFeedback) {
-      const fb = cachedRecord.aiFeedback;
-      const uNums = m13ExtractNums(user);
-      const cNums = (typeof fb.answer?.value === 'number') ? [fb.answer.value] : m13ExtractNums(fb.answer?.full || cachedRecord.correctAnswer || '');
-      const allMatch = cNums.length && cNums.every(v => uNums.some(x => Math.abs(x - v) < 0.001));
-
-      if (allMatch) {
-        setBadge('ok', '🎉 ' + getEncouragement('m13', 1) + ` （历史缓存）参考答案：${fb.answer?.full || cachedRecord.correctAnswer || '—'}`);
-        badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
-        setTimeout(() => { badge.style.animation = ''; }, 500);
-        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
-        ctx.data.masteryRecord(problemText, true);
-
-        // ⭐ 核心修复：调用全局重做成功逻辑
-        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
-        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
-      } else {
-        setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
-        ctx.data.masteryRecord(problemText, false);
-        // 展开第一步标准解法
-        const stdSteps = $$('#m13StandardSteps .std-fold');
-        if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
-      }
-
-      // 渲染缓存讲解内容
-      try {
-        if (typeof buildAiInsightHtml === 'function' && fb.steps && fb.steps.length) {
-          // 这里如果原版有 renderLLMFeedback，就直接在页面上渲染出来
-        }
-      } catch (e) { console.warn('[缓存渲染失败]', e); }
-
-      // ⭐ 写入历史
-      ctx.data.historyAdd({ problemText, problemSource: cachedRecord.problemSource || '题库', moduleId: cachedRecord.moduleId || 'm13', studentSteps: m13CollectSteps(), studentAnswer: user, isCorrect: allMatch, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb });
-
-      // ⭐ 错误则写入错题本
-      if (!allMatch && ctx.data.wbAdd) {
-        ctx.data.wbAdd({ id: 'cached', type: cachedRecord.problemSource || '题库', text: problemText, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', studentSteps: m13CollectSteps(), steps: fb.steps || null, aiFeedback: fb });
-      }
-      return; // 命中缓存直接结束
-    }
 
     // 3. 校验步骤完整度
     const studentSteps = m13CollectSteps();
@@ -634,6 +618,10 @@ export default async function mount(container, ctx) {
     const completeSteps = studentSteps.filter(s => {
       return (s.rel || '').trim().length > 0 && (s.sub || '').trim().length > 0 && m13IsValidSubstitution(s.sub, problemNums);
     });
+
+    const p = (M13_ProblemSource === 'bank') ? M13_CurrentProblem : null;
+    const stdValue = p && p.answer && typeof p.answer === 'object' ? p.answer.value : null;
+    const stdFull = p && p.answer ? (typeof p.answer === 'string' ? p.answer : p.answer.full) : null;
 
     if (completeSteps.length === 0) {
       const anyRel = studentSteps.some(s => (s.rel || '').trim());
@@ -687,6 +675,63 @@ export default async function mount(container, ctx) {
         }
       }
       return;
+    }
+
+    // 2. 优先查历史缓存 (如果是【自定义题】，优先查历史缓存（题目+步骤+答案完全一致才复用）)
+    const cachedRecord = (function findCached() {
+      try {
+        const list = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
+        const currentSteps = m13CollectSteps(); // 获取用户当前填写的步骤
+        
+        // 只有当：题目相同、答案相同、且步骤完全相同 时，才复用缓存
+        return list.find(r => 
+          r.problemText === problemText && 
+          r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(currentSteps) && 
+          r.aiFeedback
+        ) || null;
+      } catch (e) { return null; }
+    })();
+
+    if (cachedRecord && cachedRecord.aiFeedback) {
+      const fb = cachedRecord.aiFeedback;
+      const uNums = m13ExtractNums(user);
+      const cNums = (typeof fb.answer?.value === 'number') ? [fb.answer.value] : m13ExtractNums(fb.answer?.full || cachedRecord.correctAnswer || '');
+      const allMatch = cNums.length && cNums.every(v => uNums.some(x => Math.abs(x - v) < 0.001));
+
+      if (allMatch) {
+        setBadge('ok', '🎉 ' + getEncouragement('m13', 1) + ` （历史缓存）参考答案：${fb.answer?.full || cachedRecord.correctAnswer || '—'}`);
+        badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
+        setTimeout(() => { badge.style.animation = ''; }, 500);
+        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
+        ctx.data.masteryRecord(problemText, true);
+
+        // ⭐ 核心修复：调用全局重做成功逻辑
+        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
+        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
+      } else {
+        setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
+        ctx.data.masteryRecord(problemText, false);
+        // 展开第一步标准解法
+        const stdSteps = $$('#m13StandardSteps .std-fold');
+        if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+      }
+
+      // 渲染缓存讲解内容
+      try {
+        if (typeof buildAiInsightHtml === 'function' && fb.steps && fb.steps.length) {
+          // 这里如果原版有 renderLLMFeedback，就直接在页面上渲染出来
+        }
+      } catch (e) { console.warn('[缓存渲染失败]', e); }
+
+      // ⭐ 写入历史
+      ctx.data.historyAdd({ problemText, problemSource: cachedRecord.problemSource || '题库', moduleId: cachedRecord.moduleId || 'm13', studentSteps: m13CollectSteps(), studentAnswer: user, isCorrect: allMatch, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb });
+
+      // ⭐ 错误则写入错题本
+      if (!allMatch && ctx.data.wbAdd) {
+        ctx.data.wbAdd({ id: 'cached', type: cachedRecord.problemSource || '题库', text: problemText, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', studentSteps: m13CollectSteps(), steps: fb.steps || null, aiFeedback: fb });
+      }
+      return; // 命中缓存直接结束
     }
 
     // 5. 大模型批改
@@ -1016,24 +1061,34 @@ export default async function mount(container, ctx) {
   */
 
   registerActiveModule('m13', {
-    // 重做（只负责把题目塞进页面）
     redo: (text) => {
-      m13LoadProblem(text, null, 'custom', null);
+      // ⭐ 核心修复：在重做前，去全量题库里找一下这道题
+      const bankItem = FULL_BANK.find(p => p.text === text);
+      
+      if (bankItem) {
+        // 如果找到了，说明它是题库题，恢复题库身份和标准答案
+        const ansFull = bankItem.answer ? (typeof bankItem.answer === 'string' ? bankItem.answer : bankItem.answer.full) : null;
+        m13LoadProblem(bankItem.text, ansFull, 'bank', bankItem);
+        $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
+      } else {
+        // 如果没找到，才是真正的自定义题
+        m13LoadProblem(text, null, 'custom', null);
+        $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
+      }
+
       m13InitSteps();
       $('#m13StandardSteps').style.display = 'none';
       $('#m13StepsLocked').style.display = 'block';
       $('#m13StandardSteps')?.classList.remove('open');
-      // 注意：这里不自动去调 API，只是把界面铺好
     },
-    // 讲解/让 AI 现算（供错题本调用）
     showSolution: (text) => {
+      // 这里保持你原来的逻辑不变...
       const cached = findCachedFeedback(text, M13_BANK);
       if (cached) {
         renderStandardSolution(cached.aiFeedback);
         $('#m13StepsLocked').style.display = 'none';
         $('#m13StandardSteps').style.display = 'block';
       } else {
-        // 强制调用 API
         m13FetchStandardSolution();
       }
     }
