@@ -685,7 +685,7 @@ export default async function mount(container, ctx) {
           if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText, record);
         }
 
-        showExplainModal(problemText, { studentAnswer: user, studentSteps });
+        showExplainModal(problemText, { studentAnswer: user, studentSteps: studentSteps });
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
         const stdSteps = $$('#m13StandardSteps .std-fold');
@@ -700,7 +700,7 @@ export default async function mount(container, ctx) {
           ctx.data.masteryRecord(problemText, false);
         }
 
-        showExplainModal(problemText, { studentAnswer: user, studentSteps });
+        showExplainModal(problemText, { studentAnswer: user, studentSteps: studentSteps });
         
         if (ctx.data.wbAdd) {
           ctx.data.wbAdd({ id: p ? p.id : 'bank', type: p ? p.type : '题库', moduleId: 'm13', text: problemText, studentAnswer: user, correctAnswer: stdFull, studentSteps, steps: p?.steps || null, aiFeedback: p?.steps ? normalizeAiFeedback({ answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: false }, _source: 'bank' }, stdFull) : null });
@@ -749,7 +749,7 @@ export default async function mount(container, ctx) {
           if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText, record);
         }
 
-        showExplainModal(problemText, { studentAnswer: user, studentSteps });
+        showExplainModal(problemText, { studentAnswer: user, studentSteps: studentSteps });
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
         ctx.data.masteryRecord(problemText, false);
@@ -769,7 +769,7 @@ export default async function mount(container, ctx) {
           ctx.data.wbAdd({ id: 'cached', type: cachedRecord.problemSource || '题库', text: problemText, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', studentSteps, steps: fb.steps || null, aiFeedback: fb });
         }
 
-        showExplainModal(problemText, { studentAnswer: user, studentSteps });
+        showExplainModal(problemText, { studentAnswer: user, studentSteps: studentSteps });
       }
       $('#pCheck').disabled = false;
       return;
@@ -828,7 +828,7 @@ export default async function mount(container, ctx) {
         ctx.data.wbAdd({ id: 'llm', type: '自定义', text: problemText, studentAnswer: user, correctAnswer: result.answer.full, studentSteps, steps: result.steps || null, aiFeedback: result });
       }
 
-      showExplainModal(problemText, { studentAnswer: user, studentSteps });
+      showExplainModal(problemText, { studentAnswer: user, studentSteps: studentSteps });
     } catch (e) {
       const msg = e.message || '';
       if (msg.includes('超时')) setBadge('no', '⏰ 网络有点慢（300 秒未响应），请检查网络后重试');

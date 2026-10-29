@@ -93,9 +93,17 @@ export async function showExplainModal(text, userContext = null) {
   const bank = window.M13_PROBLEMS_BANK || [];
   const cached = findCachedFeedback(text, bank);
 
-  if (cached) {
+  // ⭐ 核心修复：检查用户是否传了新的作答进来
+  const hasNewContext = userContext && (
+    (userContext.studentAnswer && userContext.studentAnswer.trim() !== '') || 
+    (userContext.studentSteps && userContext.studentSteps.length > 0)
+  );
+
+  // 只有当“没有新作答”（比如从错题本点看解析），且“有缓存”时，才直接展示缓存
+  if (cached && !hasNewContext) {
     const fb = JSON.parse(JSON.stringify(cached.aiFeedback));
     fb._problemText = text;
+    fb._userContext = null; 
     renderExplainContent(fb);
     return;
   }
