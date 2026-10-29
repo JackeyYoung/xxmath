@@ -609,7 +609,6 @@ export default async function mount(container, ctx) {
     });
   }
 
-  /* ================= 判卷逻辑 ================= */
   async function handleCheck() {
     if ($('#pCheck').disabled) return;
 
@@ -625,10 +624,10 @@ export default async function mount(container, ctx) {
     };
 
     // 1. 前置校验
-    if (!problemText) return setBadge('no', '请先选择或输入题目');
-    if (!user) return setBadge('no', '✏ 请先写出答案');
+    if (!problemText) { $('#pCheck').disabled = false; return setBadge('no', '请先选择或输入题目'); }
+    if (!user) { $('#pCheck').disabled = false; return setBadge('no', '✏ 请先写出答案'); }
 
-    // 3. 校验步骤完整度
+    // 2. 校验步骤完整度
     const studentSteps = m13CollectSteps();
     const problemNums = m13ProblemNumbers(problemText);
     const completeSteps = studentSteps.filter(s => {
@@ -646,10 +645,11 @@ export default async function mount(container, ctx) {
       if (anyRel && !anySub) tip = '✏ 有一步没写「代入数字」，补上再检查';
       else if (!anyRel && anySub) tip = '✏ 有一步没写「关系式」，补上再检查';
       else if (anySub) tip = '✏ 「代入数字」需要用到题目中的数字（如：15 − 8 − 3）';
+      $('#pCheck').disabled = false;
       return setBadge('no', tip);
     }
 
-    // 4. 题库题直接校验
+    // 3. 题库题直接校验
     if (M13_ProblemSource === 'bank' && (stdValue != null || stdFull)) {
       const uNums = m13ExtractNums(user);
       const cNums = stdValue != null ? [stdValue] : m13ExtractNums(stdFull);
@@ -660,96 +660,61 @@ export default async function mount(container, ctx) {
         badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
         setTimeout(() => { badge.style.animation = ''; }, 500);
 
-        // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
+        // 更新错题本
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
           const existing = wbList.find(w => w.text === problemText);
           if (existing && ctx.data.wbAdd) {
             ctx.data.wbAdd({
-              ...existing,
-              studentAnswer: user, 
-              correctAnswer: stdFull, 
+              ...existing, studentAnswer: user, correctAnswer: stdFull, 
               aiFeedback: p && p.steps ? normalizeAiFeedback({ answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: true }, _source: 'bank' }, stdFull) : existing.aiFeedback,
               timestamp: Date.now()
             });
           }
-        } catch (e) { console.warn('同步更新错题本失败', e); }
+        } catch (e) {}
 
-        //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
-        
-        // ⭐ 防止重复提交产生大量相同记录
+        // ⭐ 防重复
         const isDuplicate = ctx.data.historyLoad().some(r => 
-          r.problemText === problemText && 
-          r.studentAnswer === user && 
-          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
-          r.isCorrect === allMatch
+          r.problemText === problemText && r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === true
         );
-        
         if (!isDuplicate) {
-          ctx.data.historyAdd({
-            problemText, problemSource: '题库', moduleId: 'm13', studentSteps: studentSteps, studentAnswer: user, isCorrect: true, correctAnswer: stdFull,
-            aiFeedback: p && p.steps ? { answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: true, student_answer_issue: '无', step_issues: [], step_count_comment: '' }, _source: 'bank' } : null
-          });
+          const record = { problemText, problemSource: '题库', moduleId: 'm13', studentSteps, studentAnswer: user, isCorrect: true, correctAnswer: stdFull, aiFeedback: p && p.steps ? { answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: true, student_answer_issue: '无', step_issues: [], step_count_comment: '' }, _source: 'bank' } : null };
+          ctx.data.historyAdd(record);
           ctx.data.masteryRecord(problemText, true);
+          if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText, record);
         }
 
-        // ⭐ 传入用户当前的作答和步骤
-        showExplainModal(problemText, {
-          studentAnswer: user,
-          studentSteps: studentSteps
-        });
-
-        // ⭐ 核心修复：调用全局重做成功逻辑
-        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
-        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
+        showExplainModal(problemText, { studentAnswer: user, studentSteps });
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
         const stdSteps = $$('#m13StandardSteps .std-fold');
         if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
         
-        // ⭐ 防止重复提交产生大量相同记录
         const isDuplicate = ctx.data.historyLoad().some(r => 
-          r.problemText === problemText && 
-          r.studentAnswer === user && 
-          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
-          r.isCorrect === allMatch
+          r.problemText === problemText && r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === false
         );
-        
         if (!isDuplicate) {
-          ctx.data.historyAdd({
-            problemText, problemSource: '题库', moduleId: 'm13', studentSteps: studentSteps, studentAnswer: user, isCorrect: false, correctAnswer: stdFull,
-            aiFeedback: p && p.steps ? { answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: false, student_answer_issue: '答案有误', step_issues: [], step_count_comment: '' }, _source: 'bank' } : null
-          });
+          ctx.data.historyAdd({ problemText, problemSource: '题库', moduleId: 'm13', studentSteps, studentAnswer: user, isCorrect: false, correctAnswer: stdFull, aiFeedback: p && p.steps ? { answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: false, student_answer_issue: '答案有误', step_issues: [], step_count_comment: '' }, _source: 'bank' } : null });
           ctx.data.masteryRecord(problemText, false);
         }
 
-        // ⭐ 传入用户当前的作答和步骤
-        showExplainModal(problemText, {
-          studentAnswer: user,
-          studentSteps: studentSteps
-        });
-                
-        // ⭐ 题库题错误，写入错题本
+        showExplainModal(problemText, { studentAnswer: user, studentSteps });
+        
         if (ctx.data.wbAdd) {
-          ctx.data.wbAdd({ 
-            id: p ? p.id : 'bank', type: p ? p.type : '题库', moduleId: 'm13', text: problemText, studentAnswer: user, correctAnswer: stdFull, studentSteps: studentSteps, steps: p?.steps || null, 
-            aiFeedback: p?.steps ? normalizeAiFeedback({ answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: false }, _source: 'bank' }, stdFull) : null 
-          });
+          ctx.data.wbAdd({ id: p ? p.id : 'bank', type: p ? p.type : '题库', moduleId: 'm13', text: problemText, studentAnswer: user, correctAnswer: stdFull, studentSteps, steps: p?.steps || null, aiFeedback: p?.steps ? normalizeAiFeedback({ answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: false }, _source: 'bank' }, stdFull) : null });
         }
       }
+      $('#pCheck').disabled = false;
       return;
     }
 
-    // 4. 自定义题：查历史解析 (⭐ 核心优化：放宽条件，只要有解析就拿来对比)
+    // 4. 自定义题：查历史解析 (只要有解析就拿来对比)
     const cachedRecord = (function findCached() {
       try {
         const list = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
-        // 只要能找到这道题的 aiFeedback 就行，不管上次的答案和步骤是什么
-        return list.find(r => 
-          r.problemText === problemText && 
-          r.aiFeedback && 
-          r.aiFeedback.answer
-        ) || null;
+        return list.find(r => r.problemText === problemText && r.aiFeedback && r.aiFeedback.answer) || null;
       } catch (e) { return null; }
     })();
 
@@ -764,83 +729,61 @@ export default async function mount(container, ctx) {
         badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
         setTimeout(() => { badge.style.animation = ''; }, 500);
 
-        // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
           const existing = wbList.find(w => w.text === problemText);
           if (existing && ctx.data.wbAdd) {
-            ctx.data.wbAdd({
-              ...existing,
-              studentAnswer: user,
-              correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '',
-              aiFeedback: fb,
-              timestamp: Date.now()
-            });
+            ctx.data.wbAdd({ ...existing, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb, timestamp: Date.now() });
           }
-        } catch (e) { console.warn('同步更新错题本失败', e); }
-        
-        //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
+        } catch (e) {}
+
         ctx.data.masteryRecord(problemText, true);
 
-        // ⭐ 传入用户当前的作答和步骤
-        showExplainModal(problemText, {
-          studentAnswer: user,
-          studentSteps: studentSteps
-        });
+        const isDuplicate = ctx.data.historyLoad().some(r => 
+          r.problemText === problemText && r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === true
+        );
+        if (!isDuplicate) {
+          const record = { problemText, problemSource: cachedRecord.problemSource || '题库', moduleId: cachedRecord.moduleId || 'm13', studentSteps, studentAnswer: user, isCorrect: true, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb };
+          ctx.data.historyAdd(record);
+          if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText, record);
+        }
 
-        // ⭐ 核心修复：调用全局重做成功逻辑
-        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
-        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
+        showExplainModal(problemText, { studentAnswer: user, studentSteps });
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
         ctx.data.masteryRecord(problemText, false);
-        // 展开第一步标准解法
+        
         const stdSteps = $$('#m13StandardSteps .std-fold');
         if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
-        // ⭐ 传入用户当前的作答和步骤
-        showExplainModal(problemText, {
-          studentAnswer: user,
-          studentSteps: studentSteps
-        });
-      }
-
-      // 渲染缓存讲解内容
-      try {
-        if (typeof buildAiInsightHtml === 'function' && fb.steps && fb.steps.length) {
-          // 这里如果原版有 renderLLMFeedback，就直接在页面上渲染出来
+        
+        const isDuplicate = ctx.data.historyLoad().some(r => 
+          r.problemText === problemText && r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === false
+        );
+        if (!isDuplicate) {
+          ctx.data.historyAdd({ problemText, problemSource: cachedRecord.problemSource || '题库', moduleId: cachedRecord.moduleId || 'm13', studentSteps, studentAnswer: user, isCorrect: false, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb });
         }
-      } catch (e) { console.warn('[缓存渲染失败]', e); }
+        
+        if (ctx.data.wbAdd) {
+          ctx.data.wbAdd({ id: 'cached', type: cachedRecord.problemSource || '题库', text: problemText, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', studentSteps, steps: fb.steps || null, aiFeedback: fb });
+        }
 
-      // ⭐ 防止重复提交产生大量相同记录
-      const isDuplicate = ctx.data.historyLoad().some(r => 
-        r.problemText === problemText && 
-        r.studentAnswer === user && 
-        JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
-        r.isCorrect === allMatch
-      );
-      
-      if (!isDuplicate) {
-        // ⭐ 写入历史
-        ctx.data.historyAdd({ problemText, problemSource: cachedRecord.problemSource || '题库', moduleId: cachedRecord.moduleId || 'm13', studentSteps: m13CollectSteps(), studentAnswer: user, isCorrect: allMatch, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb });
+        showExplainModal(problemText, { studentAnswer: user, studentSteps });
       }
-      
-      // ⭐ 错误则写入错题本
-      if (!allMatch && ctx.data.wbAdd) {
-        ctx.data.wbAdd({ id: 'cached', type: cachedRecord.problemSource || '题库', text: problemText, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', studentSteps: m13CollectSteps(), steps: fb.steps || null, aiFeedback: fb });
-      }
-      return; // 命中缓存直接结束
+      $('#pCheck').disabled = false;
+      return;
     }
 
     // 5. 大模型批改
-    if (!LLM_CONFIG.enabled) return setBadge('info', '📝 自定义题目无标准答案，请对照题意自查（未启用大模型）');
+    if (!LLM_CONFIG.enabled) { $('#pCheck').disabled = false; return setBadge('info', '📝 自定义题目无标准答案，请对照题意自查（未启用大模型）'); }
 
     if (!window_llmPwdOK) {
-      $('#pCheck').disabled = false; // 解锁，等待密码验证
+      $('#pCheck').disabled = false;
       showPasswordModal(() => { window_llmPwdOK = true; handleCheck(); });
       return;
     }
 
-    $('#pCheck').disabled = true;
     $('#pCheck').innerHTML = '<span class="btn-spinner"></span>AI 批改中…';
     setBadge('info', '');
 
@@ -850,55 +793,42 @@ export default async function mount(container, ctx) {
       const ok = result.judgement.answer_correct;
 
       setBadge(ok ? 'ok' : 'no', ok ? `🎉 ${getEncouragement('m13', 1)} 参考答案：${result.answer.full}` : `❌ ${result.judgement.student_answer_issue || '再检查一下'}`);
-      // ⭐ 传入用户当前的作答和步骤
-      showExplainModal(problemText, {
-        studentAnswer: user,
-        studentSteps: studentSteps
-      });
-      if (ok) { badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)'; 
+      
+      if (ok) { 
+        badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)'; 
         setTimeout(() => { badge.style.animation = ''; }, 500); 
         
-        // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
           const existing = wbList.find(w => w.text === problemText);
           if (existing && ctx.data.wbAdd) {
-            ctx.data.wbAdd({
-              ...existing,
-              studentAnswer: user,
-              correctAnswer: result.answer.full,
-              aiFeedback: result,
-              timestamp: Date.now()
-            });
+            ctx.data.wbAdd({ ...existing, studentAnswer: user, correctAnswer: result.answer.full, aiFeedback: result, timestamp: Date.now() });
           }
-        } catch (e) { console.warn('同步更新错题本失败', e); }
+        } catch (e) {}
       }
 
-      // 渲染 AI 反馈
-      // 由于原版这里有 renderLLMFeedback(result)，模块化后请确保有类似展示，如果没有可以直接调用你原来的。
-
-      // ⭐ 防止重复提交产生大量相同记录
+      // ⭐ 修正1：这里原来用了未定义的 allMatch，会导致报错。改为 ok
       const isDuplicate = ctx.data.historyLoad().some(r => 
-        r.problemText === problemText && 
-        r.studentAnswer === user && 
-        JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
-        r.isCorrect === allMatch
+        r.problemText === problemText && r.studentAnswer === user && 
+        JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === ok
       );
       
       if (!isDuplicate) {
-        ctx.data.historyAdd({ problemText, problemSource: '自定义', moduleId: 'm13', studentSteps, studentAnswer: user, isCorrect: ok, correctAnswer: result.answer.full, aiFeedback: result });
+        const record = { problemText, problemSource: '自定义', moduleId: 'm13', studentSteps, studentAnswer: user, isCorrect: ok, correctAnswer: result.answer.full, aiFeedback: result };
+        ctx.data.historyAdd(record);
         ctx.data.masteryRecord(problemText, ok);
+        
+        if (ok) {
+          if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText, record);
+          else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText, record);
+        }
       } 
 
-      // ⭐ 自定义题错误，写入错题本
       if (!ok && ctx.data.wbAdd) {
-        ctx.data.wbAdd({ id: 'llm', type: '自定义', text: problemText, studentAnswer: user, correctAnswer: result.answer.full, studentSteps: studentSteps, steps: result.steps || null, aiFeedback: result });
-      } else {
-        //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
-        // ⭐ 核心修复：调用全局重做成功逻辑
-        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
-        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
+        ctx.data.wbAdd({ id: 'llm', type: '自定义', text: problemText, studentAnswer: user, correctAnswer: result.answer.full, studentSteps, steps: result.steps || null, aiFeedback: result });
       }
+
+      showExplainModal(problemText, { studentAnswer: user, studentSteps });
     } catch (e) {
       const msg = e.message || '';
       if (msg.includes('超时')) setBadge('no', '⏰ 网络有点慢（300 秒未响应），请检查网络后重试');
