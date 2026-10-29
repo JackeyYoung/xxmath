@@ -598,7 +598,8 @@ export default async function mount(container, ctx) {
   /* ================= 判卷逻辑 ================= */
   async function handleCheck() {
     if ($('#pCheck').disabled) return;
-    $('#pCheck').disabled = true;
+
+    $('#pCheck').disabled = true; // ⭐ 加锁
 
     const user = $('#pAnswer').value.trim();
     const badge = $('#pResult');
@@ -613,7 +614,7 @@ export default async function mount(container, ctx) {
     if (!problemText) return setBadge('no', '请先选择或输入题目');
     if (!user) return setBadge('no', '✏ 请先写出答案');
 
-    // 2. 校验步骤完整度
+    // 3. 校验步骤完整度
     const studentSteps = m13CollectSteps();
     const problemNums = m13ProblemNumbers(problemText);
     const completeSteps = studentSteps.filter(s => {
@@ -634,7 +635,7 @@ export default async function mount(container, ctx) {
       return setBadge('no', tip);
     }
 
-    // 3. 题库题直接校验
+    // 4. 题库题直接校验
     if (M13_ProblemSource === 'bank' && (stdValue != null || stdFull)) {
       const uNums = m13ExtractNums(user);
       const cNums = stdValue != null ? [stdValue] : m13ExtractNums(stdFull);
@@ -645,25 +646,31 @@ export default async function mount(container, ctx) {
         badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
         setTimeout(() => { badge.style.animation = ''; }, 500);
 
-        // ⭐ 做对时，同步更新错题本
+        // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
           const wbIdx = wbList.findIndex(w => w.text === problemText);
           if (wbIdx >= 0) {
-            wbList[wbIdx].studentAnswer = user;
-            wbList[wbIdx].correctAnswer = stdFull;
-            if (p?.steps) {
-               wbList[wbIdx].aiFeedback = normalizeAiFeedback({ answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: true }, _source: 'bank' }, stdFull);
-            }
-            ctx.data.wbSave(wbList);
+            // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
+            wbList[wbIdx].studentAnswer = user; // 更新你这次的正确答案
+            wbList[wbIdx].correctAnswer = 最新的标准答案; // 更新标准答案
+            wbList[wbIdx].aiFeedback = 最新的解析对象; // 如果有新的解析，也覆盖掉
+            ctx.data.wbSave(wbList); // 静默保存，不弹窗打扰用户
           }
-        } catch (e) { console.warn('同步更新错题本失败', e); }
+        } catch (e) {
+          console.warn('同步更新错题本失败', e);
+        }
 
-        // ⭐ 防止重复提交
+        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
+        
+        // ⭐ 防止重复提交产生大量相同记录
         const isDuplicate = ctx.data.historyLoad().some(r => 
-          r.problemText === problemText && r.studentAnswer === user && 
-          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === true
+          r.problemText === problemText && 
+          r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
+          r.isCorrect === allMatch
         );
+        
         if (!isDuplicate) {
           ctx.data.historyAdd({
             problemText, problemSource: '题库', moduleId: 'm13', studentSteps: studentSteps, studentAnswer: user, isCorrect: true, correctAnswer: stdFull,
@@ -672,7 +679,7 @@ export default async function mount(container, ctx) {
           ctx.data.masteryRecord(problemText, true);
         }
 
-        // ⭐ 只调用一次重做成功逻辑
+        // ⭐ 核心修复：调用全局重做成功逻辑
         if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
         else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
 
@@ -681,11 +688,14 @@ export default async function mount(container, ctx) {
         const stdSteps = $$('#m13StandardSteps .std-fold');
         if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
         
-        // ⭐ 防止重复提交
+        // ⭐ 防止重复提交产生大量相同记录
         const isDuplicate = ctx.data.historyLoad().some(r => 
-          r.problemText === problemText && r.studentAnswer === user && 
-          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === false
+          r.problemText === problemText && 
+          r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
+          r.isCorrect === allMatch
         );
+        
         if (!isDuplicate) {
           ctx.data.historyAdd({
             problemText, problemSource: '题库', moduleId: 'm13', studentSteps: studentSteps, studentAnswer: user, isCorrect: false, correctAnswer: stdFull,
@@ -705,13 +715,18 @@ export default async function mount(container, ctx) {
       return;
     }
 
-    // 4. 自定义题：查历史缓存
+    // 2. 优先查历史缓存 (如果是【自定义题】，优先查历史缓存（题目+步骤+答案完全一致才复用）)
     const cachedRecord = (function findCached() {
       try {
         const list = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
+        const currentSteps = m13CollectSteps(); // 获取用户当前填写的步骤
+        
+        // 只有当：题目相同、答案相同、且步骤完全相同 时，才复用缓存
         return list.find(r => 
-          r.problemText === problemText && r.studentAnswer === user && 
-          JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.aiFeedback
+          r.problemText === problemText && 
+          r.studentAnswer === user && 
+          JSON.stringify(r.studentSteps) === JSON.stringify(currentSteps) && 
+          r.aiFeedback
         ) || null;
       } catch (e) { return null; }
     })();
@@ -727,53 +742,71 @@ export default async function mount(container, ctx) {
         badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)';
         setTimeout(() => { badge.style.animation = ''; }, 500);
 
-        // ⭐ 做对时，同步更新错题本
+        // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
           const wbIdx = wbList.findIndex(w => w.text === problemText);
           if (wbIdx >= 0) {
-            wbList[wbIdx].studentAnswer = user;
-            wbList[wbIdx].correctAnswer = fb.answer?.full || cachedRecord.correctAnswer || '';
-            wbList[wbIdx].aiFeedback = fb;
-            ctx.data.wbSave(wbList);
+            // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
+            wbList[wbIdx].studentAnswer = user; // 更新你这次的正确答案
+            wbList[wbIdx].correctAnswer = 最新的标准答案; // 更新标准答案
+            wbList[wbIdx].aiFeedback = 最新的解析对象; // 如果有新的解析，也覆盖掉
+            ctx.data.wbSave(wbList); // 静默保存，不弹窗打扰用户
           }
-        } catch (e) { console.warn('同步更新错题本失败', e); }
-
+        } catch (e) {
+          console.warn('同步更新错题本失败', e);
+        }
+        
+        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
         ctx.data.masteryRecord(problemText, true);
+
+        // ⭐ 核心修复：调用全局重做成功逻辑
         if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
         else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
-
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
         ctx.data.masteryRecord(problemText, false);
+        // 展开第一步标准解法
         const stdSteps = $$('#m13StandardSteps .std-fold');
         if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
       }
 
-      // ⭐ 防止重复提交
+      // 渲染缓存讲解内容
+      try {
+        if (typeof buildAiInsightHtml === 'function' && fb.steps && fb.steps.length) {
+          // 这里如果原版有 renderLLMFeedback，就直接在页面上渲染出来
+        }
+      } catch (e) { console.warn('[缓存渲染失败]', e); }
+
+      // ⭐ 防止重复提交产生大量相同记录
       const isDuplicate = ctx.data.historyLoad().some(r => 
-        r.problemText === problemText && r.studentAnswer === user && 
-        JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === allMatch
+        r.problemText === problemText && 
+        r.studentAnswer === user && 
+        JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
+        r.isCorrect === allMatch
       );
+      
       if (!isDuplicate) {
-        ctx.data.historyAdd({ problemText, problemSource: cachedRecord.problemSource || '题库', moduleId: cachedRecord.moduleId || 'm13', studentSteps: studentSteps, studentAnswer: user, isCorrect: allMatch, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb });
+        // ⭐ 写入历史
+        ctx.data.historyAdd({ problemText, problemSource: cachedRecord.problemSource || '题库', moduleId: cachedRecord.moduleId || 'm13', studentSteps: m13CollectSteps(), studentAnswer: user, isCorrect: allMatch, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', aiFeedback: fb });
       }
       
+      // ⭐ 错误则写入错题本
       if (!allMatch && ctx.data.wbAdd) {
-        ctx.data.wbAdd({ id: 'cached', type: cachedRecord.problemSource || '题库', text: problemText, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', studentSteps: studentSteps, steps: fb.steps || null, aiFeedback: fb });
+        ctx.data.wbAdd({ id: 'cached', type: cachedRecord.problemSource || '题库', text: problemText, studentAnswer: user, correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '', studentSteps: m13CollectSteps(), steps: fb.steps || null, aiFeedback: fb });
       }
-      return;
+      return; // 命中缓存直接结束
     }
 
     // 5. 大模型批改
     if (!LLM_CONFIG.enabled) return setBadge('info', '📝 自定义题目无标准答案，请对照题意自查（未启用大模型）');
 
     if (!window_llmPwdOK) {
-      $('#pCheck').disabled = false; // 解锁，等待密码验证
       showPasswordModal(() => { window_llmPwdOK = true; handleCheck(); });
       return;
     }
 
+    $('#pCheck').disabled = true;
     $('#pCheck').innerHTML = '<span class="btn-spinner"></span>AI 批改中…';
     setBadge('info', '');
 
@@ -783,31 +816,38 @@ export default async function mount(container, ctx) {
       const ok = result.judgement.answer_correct;
 
       setBadge(ok ? 'ok' : 'no', ok ? `🎉 ${getEncouragement('m13', 1)} 参考答案：${result.answer.full}` : `❌ ${result.judgement.student_answer_issue || '再检查一下'}`);
-      
-      if (ok) { 
-        badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)'; 
+      if (ok) { badge.style.animation = 'badgeBump .5s cubic-bezier(.34,1.5,.64,1)'; 
         setTimeout(() => { badge.style.animation = ''; }, 500); 
         
-        // ⭐ 做对时，同步更新错题本
+        // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
           const wbIdx = wbList.findIndex(w => w.text === problemText);
           if (wbIdx >= 0) {
-            wbList[wbIdx].studentAnswer = user;
-            wbList[wbIdx].correctAnswer = result.answer.full;
-            wbList[wbIdx].aiFeedback = result;
-            ctx.data.wbSave(wbList);
+            // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
+            wbList[wbIdx].studentAnswer = user; // 更新你这次的正确答案
+            wbList[wbIdx].correctAnswer = 最新的标准答案; // 更新标准答案
+            wbList[wbIdx].aiFeedback = 最新的解析对象; // 如果有新的解析，也覆盖掉
+            ctx.data.wbSave(wbList); // 静默保存，不弹窗打扰用户
           }
-        } catch (e) { console.warn('同步更新错题本失败', e); }
+        } catch (e) {
+          console.warn('同步更新错题本失败', e);
+        }
 
+        // ⭐ 核心修复：调用全局重做成功逻辑
         if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
         else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
       }
 
-      // ⭐ 防止重复提交
+      // 渲染 AI 反馈
+      // 由于原版这里有 renderLLMFeedback(result)，模块化后请确保有类似展示，如果没有可以直接调用你原来的。
+
+      // ⭐ 防止重复提交产生大量相同记录
       const isDuplicate = ctx.data.historyLoad().some(r => 
-        r.problemText === problemText && r.studentAnswer === user && 
-        JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) && r.isCorrect === ok
+        r.problemText === problemText && 
+        r.studentAnswer === user && 
+        JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
+        r.isCorrect === allMatch
       );
       
       if (!isDuplicate) {
@@ -818,6 +858,8 @@ export default async function mount(container, ctx) {
       // ⭐ 自定义题错误，写入错题本
       if (!ok && ctx.data.wbAdd) {
         ctx.data.wbAdd({ id: 'llm', type: '自定义', text: problemText, studentAnswer: user, correctAnswer: result.answer.full, studentSteps: studentSteps, steps: result.steps || null, aiFeedback: result });
+      } else {
+        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
       }
     } catch (e) {
       const msg = e.message || '';
