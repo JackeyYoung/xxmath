@@ -663,16 +663,17 @@ export default async function mount(container, ctx) {
         // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
-          const wbIdx = wbList.findIndex(w => w.text === problemText);
-          if (wbIdx >= 0) {
-            // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
-            wbList[wbIdx].studentAnswer = user;
-            wbList[wbIdx].correctAnswer = stdFull;
-            ctx.data.wbSave(wbList);
+          const existing = wbList.find(w => w.text === problemText);
+          if (existing && ctx.data.wbAdd) {
+            ctx.data.wbAdd({
+              ...existing,
+              studentAnswer: user, 
+              correctAnswer: stdFull, 
+              aiFeedback: p && p.steps ? normalizeAiFeedback({ answer: { full: stdFull }, steps: p.steps, judgement: { answer_correct: true }, _source: 'bank' }, stdFull) : existing.aiFeedback,
+              timestamp: Date.now()
+            });
           }
-        } catch (e) {
-          console.warn('同步更新错题本失败', e);
-        }
+        } catch (e) { console.warn('同步更新错题本失败', e); }
 
         //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
         
@@ -755,17 +756,17 @@ export default async function mount(container, ctx) {
         // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
-          const wbIdx = wbList.findIndex(w => w.text === problemText);
-          if (wbIdx >= 0) {
-            // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
-            wbList[wbIdx].studentAnswer = user;
-            wbList[wbIdx].correctAnswer = fb.answer?.full || cachedRecord.correctAnswer || '';
-            wbList[wbIdx].aiFeedback = fb;
-            ctx.data.wbSave(wbList);
+          const existing = wbList.find(w => w.text === problemText);
+          if (existing && ctx.data.wbAdd) {
+            ctx.data.wbAdd({
+              ...existing,
+              studentAnswer: user,
+              correctAnswer: fb.answer?.full || cachedRecord.correctAnswer || '',
+              aiFeedback: fb,
+              timestamp: Date.now()
+            });
           }
-        } catch (e) {
-          console.warn('同步更新错题本失败', e);
-        }
+        } catch (e) { console.warn('同步更新错题本失败', e); }
         
         //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
         ctx.data.masteryRecord(problemText, true);
@@ -833,17 +834,17 @@ export default async function mount(container, ctx) {
         // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
-          const wbIdx = wbList.findIndex(w => w.text === problemText);
-          if (wbIdx >= 0) {
-            // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
-            wbList[wbIdx].studentAnswer = user;
-            wbList[wbIdx].correctAnswer = result.answer.full;
-            wbList[wbIdx].aiFeedback = result; 
-            ctx.data.wbSave(wbList);
+          const existing = wbList.find(w => w.text === problemText);
+          if (existing && ctx.data.wbAdd) {
+            ctx.data.wbAdd({
+              ...existing,
+              studentAnswer: user,
+              correctAnswer: result.answer.full,
+              aiFeedback: result,
+              timestamp: Date.now()
+            });
           }
-        } catch (e) {
-          console.warn('同步更新错题本失败', e);
-        }
+        } catch (e) { console.warn('同步更新错题本失败', e); }
       }
 
       // 渲染 AI 反馈
