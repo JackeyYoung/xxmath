@@ -652,16 +652,15 @@ export default async function mount(container, ctx) {
           const wbIdx = wbList.findIndex(w => w.text === problemText);
           if (wbIdx >= 0) {
             // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
-            wbList[wbIdx].studentAnswer = user; // 更新你这次的正确答案
-            wbList[wbIdx].correctAnswer = 最新的标准答案; // 更新标准答案
-            wbList[wbIdx].aiFeedback = 最新的解析对象; // 如果有新的解析，也覆盖掉
-            ctx.data.wbSave(wbList); // 静默保存，不弹窗打扰用户
+            wbList[wbIdx].studentAnswer = user;
+            wbList[wbIdx].correctAnswer = stdFull;
+            ctx.data.wbSave(wbList);
           }
         } catch (e) {
           console.warn('同步更新错题本失败', e);
         }
 
-        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
+        //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
         
         // ⭐ 防止重复提交产生大量相同记录
         const isDuplicate = ctx.data.historyLoad().some(r => 
@@ -748,16 +747,15 @@ export default async function mount(container, ctx) {
           const wbIdx = wbList.findIndex(w => w.text === problemText);
           if (wbIdx >= 0) {
             // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
-            wbList[wbIdx].studentAnswer = user; // 更新你这次的正确答案
-            wbList[wbIdx].correctAnswer = 最新的标准答案; // 更新标准答案
-            wbList[wbIdx].aiFeedback = 最新的解析对象; // 如果有新的解析，也覆盖掉
-            ctx.data.wbSave(wbList); // 静默保存，不弹窗打扰用户
+            wbList[wbIdx].studentAnswer = user;
+            wbList[wbIdx].correctAnswer = fb.answer?.full || cachedRecord.correctAnswer || '';
+            ctx.data.wbSave(wbList);
           }
         } catch (e) {
           console.warn('同步更新错题本失败', e);
         }
         
-        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
+        //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText); // 原版用于联动分享
         ctx.data.masteryRecord(problemText, true);
 
         // ⭐ 核心修复：调用全局重做成功逻辑
@@ -802,6 +800,7 @@ export default async function mount(container, ctx) {
     if (!LLM_CONFIG.enabled) return setBadge('info', '📝 自定义题目无标准答案，请对照题意自查（未启用大模型）');
 
     if (!window_llmPwdOK) {
+      $('#pCheck').disabled = false; // 解锁，等待密码验证
       showPasswordModal(() => { window_llmPwdOK = true; handleCheck(); });
       return;
     }
@@ -825,18 +824,14 @@ export default async function mount(container, ctx) {
           const wbIdx = wbList.findIndex(w => w.text === problemText);
           if (wbIdx >= 0) {
             // 如果错题本里有这道题，就用最新的正确答案和解析覆盖它
-            wbList[wbIdx].studentAnswer = user; // 更新你这次的正确答案
-            wbList[wbIdx].correctAnswer = 最新的标准答案; // 更新标准答案
-            wbList[wbIdx].aiFeedback = 最新的解析对象; // 如果有新的解析，也覆盖掉
-            ctx.data.wbSave(wbList); // 静默保存，不弹窗打扰用户
+            wbList[wbIdx].studentAnswer = user;
+            wbList[wbIdx].correctAnswer = result.answer.full;
+            wbList[wbIdx].aiFeedback = result; 
+            ctx.data.wbSave(wbList);
           }
         } catch (e) {
           console.warn('同步更新错题本失败', e);
         }
-
-        // ⭐ 核心修复：调用全局重做成功逻辑
-        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
-        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
       }
 
       // 渲染 AI 反馈
@@ -859,7 +854,10 @@ export default async function mount(container, ctx) {
       if (!ok && ctx.data.wbAdd) {
         ctx.data.wbAdd({ id: 'llm', type: '自定义', text: problemText, studentAnswer: user, correctAnswer: result.answer.full, studentSteps: studentSteps, steps: result.steps || null, aiFeedback: result });
       } else {
-        if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
+        //if (ctx.data.handleRedoSuccess) ctx.data.handleRedoSuccess(problemText);
+        // ⭐ 核心修复：调用全局重做成功逻辑
+        if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
+        else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
       }
     } catch (e) {
       const msg = e.message || '';
