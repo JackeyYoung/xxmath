@@ -140,8 +140,23 @@ window.__handleRedoSuccess = handleRedoSuccess;
       const op = document.getElementById('m9op')?.value || '';
       const b = document.getElementById('m9b')?.value || '';
       problemText = `${a} ${op} ${b}`;
-    } else if (id === 'm13') {
+    } else  if (id === 'm13') {
       problemText = document.getElementById('problem-text')?.innerText?.trim() || '';
+      // ⭐ 核心修复：把用户填写的答案和步骤收集起来
+      const currentAnswer = document.getElementById('pAnswer')?.value.trim() || '';
+      const currentSteps = [];
+      document.querySelectorAll('#formulaSteps .formula-step').forEach(step => {
+        const rel = step.querySelector('input[data-field="rel"]')?.value || '';
+        const sub = step.querySelector('input[data-field="sub"]')?.value || '';
+        const res = step.querySelector('input[data-field="res"]')?.value || '';
+        if (rel || sub || res) currentSteps.push({ rel, sub, res });
+        if (problemText){
+          showExplainModal(problemText, {
+            studentAnswer: currentAnswer,
+            studentSteps: currentSteps
+          });
+        }
+      });
     } else {
       problemText = document.querySelector('#lesson-stage-main .card h2')?.textContent || '';
     }
@@ -151,8 +166,9 @@ window.__handleRedoSuccess = handleRedoSuccess;
       return;
     }
 
-    // 直接调用弹窗：自动查缓存/题库或 AI 现算
-    showExplainModal(problemText);
+    if (id === 'm1' || id === 'm9') {
+      showExplainModal(problemText);
+    }
   });
 })();
 

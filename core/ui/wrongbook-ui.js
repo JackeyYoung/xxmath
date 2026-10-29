@@ -44,7 +44,14 @@ export function initWrongBookUI(ctx) {
       const explainBtn = e.target.closest('.wrong-item-explain');
       if (explainBtn) {
         const text = decodeURIComponent(explainBtn.dataset.text);
-        await showExplainModal(text);
+        // ⭐ 核心修复：从错题本数据里捞出当时的学生作答
+        const wbList = wbLoad();
+        const record = wbList.find(r => r.text === text);
+        
+        await showExplainModal(text, {
+          studentAnswer: record?.studentAnswer || '',
+          studentSteps: record?.studentSteps || []
+        });
         return;
       }
 
