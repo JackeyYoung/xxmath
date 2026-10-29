@@ -1149,17 +1149,34 @@ export default async function mount(container, ctx) {
   */
 
   registerActiveModule('m13', {
-    redo: (text) => {
-      // ⭐ 核心修复：在重做前，去全量题库里找一下这道题
-      const bankItem = FULL_BANK.find(p => p.text === text);
+    redo: async (text) => {  // ⭐ 改为 async
+      // ⭐ 核心修复：如果题库还没加载完，强制等待它加载完
+      if (!isBankReady) {
+        const loadBtn = $('#pLoad');
+        if (loadBtn) {
+          loadBtn.innerHTML = '<span class="btn-spinner"></span>题库匹配中…';
+        }
+        await loadBank(); // 等待题库加载完毕
+        if (loadBtn) {
+          loadBtn.disabled = false;
+          loadBtn.textContent = loadBtn.dataset._origText || '📥 载入';
+        }
+      }
+
+      // 现在题库肯定有数据了，开始匹配
+      const cleanText = (str) => str.replace(/[\s\p{P}]/gu, '');
+      const targetText = cleanText(text);
       
+      // 全量匹配
+      let bankItem = FULL_BANK.find(p => cleanText(p.text) === targetText);
+
       if (bankItem) {
-        // 如果找到了，说明它是题库题，恢复题库身份和标准答案
         const ansFull = bankItem.answer ? (typeof bankItem.answer === 'string' ? bankItem.answer : bankItem.answer.full) : null;
+        // 精准设为题库来源
         m13LoadProblem(bankItem.text, ansFull, 'bank', bankItem);
         $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
       } else {
-        // 如果没找到，才是真正的自定义题
+        // 真正的自定义题
         m13LoadProblem(text, null, 'custom', null);
         $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
       }
@@ -1169,6 +1186,7 @@ export default async function mount(container, ctx) {
       $('#m13StepsLocked').style.display = 'block';
       $('#m13StandardSteps')?.classList.remove('open');
     },
+    
     showSolution: (text) => {
       // 这里保持你原来的逻辑不变...
       const cached = findCachedFeedback(text, M13_BANK);
