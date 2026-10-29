@@ -171,10 +171,24 @@ export default async function mount(container, ctx) {
         const ansFull = bankItem.answer ? (typeof bankItem.answer === 'string' ? bankItem.answer : bankItem.answer.full) : null;
         m13LoadProblem(bankItem.text, ansFull, 'bank', bankItem);
         $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
-      } else {
-        // 如果没找到，才是真正的自定义题
+        } else {
+        // 真正的自定义题
         m13LoadProblem(text, null, 'custom', null);
-        $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
+        
+        // ⭐ 核心新增：判断以前是否存过这道题的 AI 讲解
+        let hasHistory = false;
+        try {
+          const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
+          hasHistory = history.some(r => r.problemText === text && r.aiFeedback && r.aiFeedback.answer);
+        } catch (e) {}
+        
+        if (hasHistory) {
+          // 有缓存，不用花钱调 AI 了，直接让用户看历史
+          $('#m13UnlockBtn').textContent = '📖 查看之前的 AI 讲解';
+        } else {
+          // 真没做过，只能调 AI 现算
+          $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
+        }
       }
 
       m13InitSteps();
@@ -1077,18 +1091,19 @@ export default async function mount(container, ctx) {
     const problemText = $('#problem-text')?.innerText.trim();
     if (!problemText) return ctx.toast('请先输入题目', 'info');
 
-    // 降级 1：题库题自带 steps，直接渲染
+    // 降级 1：如果是题库题，且自带 steps，直接渲染在下方（免密秒出）
     if (M13_ProblemSource === 'bank' && M13_CurrentProblem?.steps?.length) {
       renderStandardSolution({
         steps: M13_CurrentProblem.steps,
         answer: { full: M13_CurrentProblem.answer?.full || M13_CurrentProblem.answer }
       });
       $('#m13StepsLocked').style.display = 'none';
-      // ⭐ 确保外层折叠（renderStandardSolution 已 remove('open')，这里不必再写）
       return;
     }
 
     // 降级 2 & 3：错题本统一弹窗
+    // 这个弹窗内部自带降级（查历史缓存 -> 查题库 -> 调AI）
+    // 所以哪怕按钮写着"现算"，点下去只要缓存里有，也会秒出。
     try {
       const { showExplainModal } = await import('../../../core/ui/wrongbook-ui.js');
       showExplainModal(problemText);
@@ -1186,7 +1201,7 @@ export default async function mount(container, ctx) {
       $('#m13StepsLocked').style.display = 'block';
       $('#m13StandardSteps')?.classList.remove('open');
     },
-    
+
     showSolution: (text) => {
       // 这里保持你原来的逻辑不变...
       const cached = findCachedFeedback(text, M13_BANK);
