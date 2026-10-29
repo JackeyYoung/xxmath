@@ -224,26 +224,61 @@ function renderExplainContent(result) {
     }).then(raw => {
       const newResult = normalizeAiFeedback(raw, null);
       newResult._problemText = result._problemText;
-      newResult._userContext = result._userContext; // 保持上下文不丢
-      
-      // ⭐ 核心修复：更新错题本并确保触发全局刷新
+      newResult._userContext = result._userContext; // 保持上下文接力
+
+      // ⭐ 核心修复 1：静默更新到错题本
       try {
         const wbList = wbLoad();
         const existing = wbList.find(w => w.text === result._problemText);
         if (existing) {
           wbAdd({
             ...existing,
-            aiFeedback: newResult,
+            aiFeedback: newResult, // ⭐ 这里用最新的结果
             timestamp: Date.now()
           });
-          // ⭐ 关键：手动触发数据变更事件，让错题本列表重新渲染
-          emit(EVT.DATA_CHANGED, { source: 'wrongbook' });
-          showToast('✅ 已更新新的 AI 讲解', 'success');
         }
       } catch (e) {
-        console.warn('更新 AI 重新讲解缓存失败', e);
+        console.warn('更新错题本 AI 缓存失败', e);
       }
 
+      // ⭐ 核心修复 2：静默更新到做题记录（历史记录）
+      try {
+        const hList = ctx?.data?.historyLoad ? ctx.data.historyLoad() : [];
+        if (hList && hList.length) {
+          // 找到这道题最近的一条记录
+          const recentRecord = hList.find(r => r.problemText === result._problemText);
+          if (recentRecord) {
+            // 这里我们直接修改该条记录（注意：history 库如果支持直接 wbSave 那种覆盖，最好用）
+            // 这里为了安全，我们重新 add 一条覆盖
+            ctx.data.historyAdd({
+              ...recentRecord,
+              aiFeedback: newResult,
+              timestamp: Date.now()
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('更新做题记录缓存失败', e);
+      }
+
+      // ⭐ 核心修复 3：如果当前在 M13 页面，强制刷新下方标准解题过程
+      const stdBox = document.getElementById('m13StandardStepsBody');
+      if (stdBox) {
+        const stepsHtml = (newResult.steps || []).map(s => `
+          <div class="std-fold"><div class="std-fold-hd"><span>第 ${s.step} 步</span><span class="arrow">▶</span></div>
+          <div class="std-fold-bd"><div class="std-line"><b>关系式：</b>${s.relation || '—'}</div><div class="std-line"><b>代入：</b>${s.substitution || '—'}</div><div class="std-line"><b>得数：</b>${s.result || '—'}</div></div></div>
+        `).join('');
+        stdBox.innerHTML = `${stepsHtml}<div class="std-fold"><div class="std-fold-hd"><span>✅ 最终答案</span><span class="arrow">▶</span></div><div class="std-fold-bd"><div class="std-answer">${newResult.answer?.full || '—'}</div></div></div>`;
+        
+        stdBox.querySelectorAll('.std-fold-hd').forEach(hd => {
+          hd.addEventListener('click', (e) => {
+            e.stopPropagation();
+            hd.parentElement.classList.toggle('open');
+          });
+        });
+      }
+
+      // 最后重新渲染弹窗内容
       renderExplainContent(newResult);
     }).catch(e => {
       modalBody.innerHTML = `<div style="color:var(--red-text);text-align:center;padding:20px;">AI 讲解获取失败：${e.message}</div>`;
