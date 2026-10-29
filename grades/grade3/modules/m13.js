@@ -1101,9 +1101,24 @@ export default async function mount(container, ctx) {
       return;
     }
 
-    // 降级 2 & 3：错题本统一弹窗
-    // 这个弹窗内部自带降级（查历史缓存 -> 查题库 -> 调AI）
-    // 所以哪怕按钮写着"现算"，点下去只要缓存里有，也会秒出。
+    // ⭐ 降级 2：对于自定义题，先尝试从历史记录里找最新的一条 AI 解析
+    let cachedFeedback = null;
+    try {
+      const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
+      const hit = history.find(r => r.problemText === problemText && r.aiFeedback && r.aiFeedback.answer);
+      if (hit) {
+        cachedFeedback = hit.aiFeedback;
+      }
+    } catch (e) {}
+
+    if (cachedFeedback) {
+      // 命中历史缓存，直接在当前页面下方渲染标准解法（不需要弹窗，体验极佳）
+      renderStandardSolution(cachedFeedback);
+      $('#m13StepsLocked').style.display = 'none';
+      return;
+    }
+
+    // ⭐ 降级 3：真没有缓存，才调起 AI 现算弹窗
     try {
       const { showExplainModal } = await import('../../../core/ui/wrongbook-ui.js');
       showExplainModal(problemText);
@@ -1164,38 +1179,47 @@ export default async function mount(container, ctx) {
   */
 
   registerActiveModule('m13', {
-    redo: async (text) => {  // ⭐ 改为 async
-      // ⭐ 核心修复：如果题库还没加载完，强制等待它加载完
+    redo: async (text) => { 
+      // 1. 等待题库加载完毕（防止时序冲突）
       if (!isBankReady) {
-        const loadBtn = $('#pLoad');
-        if (loadBtn) {
-          loadBtn.innerHTML = '<span class="btn-spinner"></span>题库匹配中…';
-        }
-        await loadBank(); // 等待题库加载完毕
-        if (loadBtn) {
-          loadBtn.disabled = false;
-          loadBtn.textContent = loadBtn.dataset._origText || '📥 载入';
-        }
+        await loadBank(); 
       }
 
-      // 现在题库肯定有数据了，开始匹配
+      // 2. 清洗文本，去题库里找源数据
       const cleanText = (str) => str.replace(/[\s\p{P}]/gu, '');
       const targetText = cleanText(text);
-      
-      // 全量匹配
       let bankItem = FULL_BANK.find(p => cleanText(p.text) === targetText);
 
+      // 3. 先去历史记录里找，有没有这道题以前的 AI 解析
+      let hasHistory = false;
+      try {
+        const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
+        hasHistory = history.some(r => r.problemText === text && r.aiFeedback && r.aiFeedback.answer);
+      } catch (e) {}
+
+      // 4. 装载题目
       if (bankItem) {
+        // 题库里有这题，恢复身份
         const ansFull = bankItem.answer ? (typeof bankItem.answer === 'string' ? bankItem.answer : bankItem.answer.full) : null;
-        // 精准设为题库来源
         m13LoadProblem(bankItem.text, ansFull, 'bank', bankItem);
-        $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
       } else {
-        // 真正的自定义题
+        // 题库里没有，当成自定义题加载
         m13LoadProblem(text, null, 'custom', null);
+      }
+
+      // 5. 智能决定按钮文案
+      if (bankItem && bankItem.steps && bankItem.steps.length > 0) {
+        // 有题库标准步骤，直接显示查看
+        $('#m13UnlockBtn').textContent = '📖 查看标准解题过程';
+      } else if (hasHistory) {
+        // 没标准步骤，但有历史 AI 解析，显示查看历史
+        $('#m13UnlockBtn').textContent = '📖 查看之前的 AI 讲解';
+      } else {
+        // 啥也没有，只能 AI 现算
         $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
       }
 
+      // 6. 重置 UI
       m13InitSteps();
       $('#m13StandardSteps').style.display = 'none';
       $('#m13StepsLocked').style.display = 'block';
