@@ -685,6 +685,17 @@ export default async function mount(container, ctx) {
           if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText, record);
         }
 
+        // ⭐ 打印 1
+        console.log('【M13】准备传给弹窗的作答:', {
+          studentAnswer: user,
+          studentSteps: studentSteps
+        });
+
+        showExplainModal(problemText, {
+          studentAnswer: user,
+          studentSteps: studentSteps
+        });
+
         showExplainModal(problemText, { studentAnswer: user, studentSteps: studentSteps });
       } else {
         setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);

@@ -112,6 +112,13 @@ export async function showExplainModal(text, userContext = null) {
   modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在思考…</div></div></div>`;
   
   try {
+    // ⭐ 打印 2
+    console.log('【弹窗】准备发给AI的参数:', {
+      problem: text,
+      studentAnswer: userContext?.studentAnswer,
+      steps: userContext?.studentSteps
+    });
+
     // ⭐ 如果用户有作答，就带上；如果没有，传空
     const raw = await callLLM({ 
       problem: text, 
@@ -203,6 +210,14 @@ function renderExplainContent(result) {
   document.getElementById('kojiMoreBtn')?.addEventListener('click', () => {
     document.querySelector('.koji-more-wrap')?.remove();
     modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在重新思考…</div></div></div>`;
+
+    const currentContext = result._userContext || {};
+    
+    // ⭐ 打印 3
+    console.log('【再讲一遍】准备发给AI的作答:', {
+      studentAnswer: currentContext.studentAnswer,
+      steps: currentContext.studentSteps
+    });
     
     // ⭐ 核心修复：把用户的作答（如果有）一并传递给 AI
     callLLM({ 
