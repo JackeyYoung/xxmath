@@ -7,6 +7,7 @@ import { buildAiInsightHtml } from './ai-insight.js';
 import { callLLM, normalizeAiFeedback } from '../llm.js';
 import { escapeHtmlStrict } from '../html.js';
 import { takeawayLoad } from '../takeaway.js';
+import { emit, EVT } from '../events.js';
 
 let _ctx = {};
 
@@ -205,7 +206,7 @@ function renderExplainContent(result) {
       newResult._problemText = result._problemText;
       newResult._userContext = result._userContext; // 保持上下文不丢
       
-      // 更新错题本缓存
+      // ⭐ 核心修复：更新错题本并确保触发全局刷新
       try {
         const wbList = wbLoad();
         const existing = wbList.find(w => w.text === result._problemText);
@@ -215,6 +216,9 @@ function renderExplainContent(result) {
             aiFeedback: newResult,
             timestamp: Date.now()
           });
+          // ⭐ 关键：手动触发数据变更事件，让错题本列表重新渲染
+          emit(EVT.DATA_CHANGED, { source: 'wrongbook' });
+          showToast('✅ 已更新新的 AI 讲解', 'success');
         }
       } catch (e) {
         console.warn('更新 AI 重新讲解缓存失败', e);
