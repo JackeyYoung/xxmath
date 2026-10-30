@@ -281,30 +281,10 @@ function handleRedo(text) {
   const mid = (wbLoad().find(r => r.text === text)?.moduleId) || 'm13';
   closeDrawer();
 
-  if (_ctx.navigate) _ctx.navigate('lesson', { lessonId: mid });
+  // ⭐ 核心修复：把任务直接挂到 window 上
+  window._pendingRedoText = text;
 
-  setTimeout(() => {
-    if (mid === 'm1') {
-      const custom = document.getElementById('m1Custom');
-      if (custom) { custom.value = text; document.getElementById('m1UseCustom')?.click(); }
-    } else if (mid === 'm9') {
-      const m = text.match(/^(\d+)\s*([+\-−×÷])\s*(\d+)$/);
-      if (m) {
-        document.getElementById('m9a').value = m[1];
-        document.getElementById('m9op').value = m[2];
-        document.getElementById('m9b').value = m[3];
-        document.getElementById('m9reset')?.click();
-      }
-    } else {
-      if (activeModules[mid] && activeModules[mid].redo) activeModules[mid].redo(text);
-    }
-    // 重做横幅
-    document.getElementById('redoBanner')?.remove();
-    const banner = document.createElement('div');
-    banner.id = 'redoBanner';
-    // 使用 amber 变量，自适应深浅色
-    banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:var(--amber-text);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.1);`;
-    banner.innerHTML = `🔁 正在重做错题，做对将累计掌握进度 <button onclick="this.parentElement.remove()" style="margin-left:10px;background:transparent;border:none;color:#fff;cursor:pointer;">×</button>`;
-    document.body.appendChild(banner);
-  }, 300);
+  if (_ctx.navigate) {
+    _ctx.navigate('lesson', { lessonId: mid });
+  }
 }

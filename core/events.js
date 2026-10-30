@@ -30,3 +30,14 @@ export const EVT = {
   GRADE_CHANGED: 'grade:changed',
   DATA_CHANGED:  'data:changed',   // history / wrongbook / takeaway 任一变化
 };
+
+// core/events.js
+export let pendingRedoTask = null;
+export function setPendingRedoTask(task) {
+  pendingRedoTask = task;
+}
+export function consumePendingRedoTask() {
+  const task = pendingRedoTask;
+  pendingRedoTask = null;
+  return task;
+}

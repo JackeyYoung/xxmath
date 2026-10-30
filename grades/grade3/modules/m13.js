@@ -9,6 +9,7 @@ import { getEncouragement } from '../../../core/ui/encourage.js';
 import { buildAiInsightHtml } from '../../../core/ui/ai-insight.js';
 import { findCachedFeedback } from '../../../core/feedback-resolver.js';
 import { showExplainModal } from '../../../core/ui/wrongbook-ui.js';
+import { consumePendingRedoTask } from '../../../core/events.js';
 
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 
@@ -1276,6 +1277,29 @@ export default async function mount(container, ctx) {
       }
     }
   });
+
+  // ⭐ 挂载完毕后，检查全局是否有重做任务
+  if (window._pendingRedoText) {
+    const textToRedo = window._pendingRedoText;
+    window._pendingRedoText = null; // 领走就清空，防止重复
+    
+    setTimeout(() => {
+      // 1. 执行 M13 内部的重做逻辑
+      m13LoadProblem(textToRedo, null, 'custom', null);
+      m13InitSteps();
+      $('#m13StandardSteps').style.display = 'none';
+      $('#m13StepsLocked').style.display = 'block';
+      $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
+      
+      // 2. 弹出重做横幅
+      document.getElementById('redoBanner')?.remove();
+      const banner = document.createElement('div');
+      banner.id = 'redoBanner';
+      banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:var(--amber-text);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.1);`;
+      banner.innerHTML = `🔁 正在重做错题，做对将累计掌握进度 <button onclick="this.parentElement.remove()" style="margin-left:10px;background:transparent;border:none;color:#fff;cursor:pointer;">×</button>`;
+      document.body.appendChild(banner);
+    }, 200);
+  }
 
   return () => {
     unregisterActiveModule('m13');

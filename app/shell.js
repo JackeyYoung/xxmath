@@ -38,6 +38,7 @@ import { buildAiInsightHtml } from '../core/ui/ai-insight.js';
 import { activityAdd } from '../core/activity.js';
 import { historyAdd, historyLoad, historySave } from '../core/history.js';
 import { wbAdd, wbSave } from '../core/wrongbook.js';
+import { consumePendingRedoTask } from '../core/events.js';
 
 // shell.js 顶部建立全局模块注册表（让模块自己报备重做）
 export const activeModules = {}; 
@@ -95,6 +96,7 @@ export function navigate(route, opts = {}) {
   if (bar) bar.classList.remove('show', 'ok', 'err');
 
   if (!ROUTES.includes(route)) return;
+
   currentRoute = route;
   if (opts.lessonId) currentLessonId = opts.lessonId;
 
@@ -652,6 +654,17 @@ function retriggerModuleRender(lessonId) {
   } catch (e) {
     console.warn('[shell] 重新渲染模块失败:', lessonId, e);
   }
+}
+
+// ⭐ 显示重做横幅
+function showRedoBanner() {
+  document.getElementById('redoBanner')?.remove();
+  const banner = document.createElement('div');
+  banner.id = 'redoBanner';
+  // 使用 amber 变量，自适应深浅色
+  banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:var(--amber-text);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.1);`;
+  banner.innerHTML = `🔁 正在重做错题，做对将累计掌握进度 <button onclick="this.parentElement.remove()" style="margin-left:10px;background:transparent;border:none;color:#fff;cursor:pointer;">×</button>`;
+  document.body.appendChild(banner);
 }
 
 const _levelHandlers = new Map(); // ⭐ 保存各模块的层级切换函数
