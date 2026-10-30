@@ -1133,13 +1133,17 @@ export default async function mount(container, ctx) {
     let cachedFeedback = null;
     try {
       const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
-      const hit = history.find(r => r.problemText === problemText && r.aiFeedback && r.aiFeedback.answer);
-      if (hits.length) {
+      // ⭐ 核心修复：用 filter 取出所有符合条件的记录，而不是用 find
+      const hits = history.filter(r => r.problemText === problemText && r.aiFeedback && r.aiFeedback.answer);
+      
+      if (hits.length > 0) {
         // ⭐ 按 timestamp 倒序，取最新的一条
         hits.sort((a, b) => b.timestamp - a.timestamp);
         cachedFeedback = hits[0].aiFeedback;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('查找历史解析失败', e);
+    }
 
     if (cachedFeedback) {
       // 命中历史缓存，直接在当前页面下方渲染标准解法（不需要弹窗，体验极佳）

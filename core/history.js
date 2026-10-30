@@ -34,16 +34,14 @@ export function historyLoad() {
   }
 }
 
-export function historyUpdate(problemText, newRecord) {
+export function historyUpdate(problemText, aiFeedback) {
   const list = historyLoad();
-  const idx = list.findIndex(r => r.problemText === problemText);
-  if (idx >= 0) {
-    // 用新的覆盖旧的，保留原本的 ID
-    list[idx] = { ...list[idx], ...newRecord };
-    // 如果你想更新后置顶，可以把它挪到数组最前面
-    const [updated] = list.splice(idx, 1);
-    list.unshift(updated);
-    historySave(list);
+  const index = list.findIndex(r => r.problemText === problemText);
+  if (index >= 0) {
+    list[index].aiFeedback = aiFeedback;
+    list[index].correctAnswer = aiFeedback.answer?.full || list[index].correctAnswer;
+    list[index].timestamp = Date.now();
+    historySave(list); // 触发全局事件，让做题记录自动刷新
   }
 }
 

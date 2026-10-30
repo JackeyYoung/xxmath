@@ -23,7 +23,7 @@ import {
 import { on, emit, EVT } from '../core/events.js';
 
 import {
-  historyLoad, historyAdd, historySave, historyRemove, historyClear
+  historyLoad, historyAdd, historySave, historyRemove, historyClear, historyUpdate 
 } from '../core/history.js';
 
 import {

@@ -8,6 +8,7 @@ import { callLLM, normalizeAiFeedback } from '../llm.js';
 import { escapeHtmlStrict } from '../html.js';
 import { takeawayLoad } from '../takeaway.js';
 import { emit, EVT } from '../events.js';
+import { historyLoad, historyUpdate } from '../history.js';
 
 let _ctx = {};
 
@@ -233,41 +234,17 @@ function renderExplainContent(result) {
         if (existing) {
           wbAdd({
             ...existing,
-            aiFeedback: newResult, // ⭐ 这里用最新的结果
-            timestamp: Date.now()
+            correctAnswer: newResult.answer?.full || existing.correctAnswer || '—', // ⭐ 加上这一行
+            aiFeedback: newResult
           });
         }
       } catch (e) {
         console.warn('更新错题本 AI 缓存失败', e);
       }
 
-      // ⭐ 核心修复 2：静默更新到做题记录（历史记录）- 先删后加，防止 ID 冲突
+      // ⭐ 静默更新到做题记录（历史记录）
       try {
-        if (ctx?.data?.historyLoad && ctx?.data?.historyAdd) {
-          const hList = ctx.data.historyLoad();
-          // 找出该题目所有旧的记录并清理（避免脏数据）
-          const recordsToDelete = hList.filter(r => r.problemText === result._problemText);
-          
-          // 如果你的 history 支持 historyRemove，就直接删；如果没有，就自己写覆盖逻辑
-          if (window.historyRemove) {
-             recordsToDelete.forEach(r => window.historyRemove(r.id));
-          } else {
-             // 如果没暴露 remove，就借位修改
-             // ... 这里假定你有 remove 机制，或者你可以在 history.js 里加一个 updateHistory 方法
-          }
-
-          // 然后插入新的记录
-          ctx.data.historyAdd({
-            problemText: result._problemText,
-            problemSource: '自定义',
-            moduleId: 'm13',
-            studentSteps: result._userContext?.studentSteps || [],
-            studentAnswer: result._userContext?.studentAnswer || '',
-            isCorrect: recentRecord?.isCorrect ?? false, // 保持对错状态
-            correctAnswer: newResult.answer?.full || '',
-            aiFeedback: newResult // ⭐ 这里用最新的结果
-          });
-        }
+        historyUpdate(result._problemText, newResult);
       } catch (e) {
         console.warn('更新做题记录缓存失败', e);
       }
