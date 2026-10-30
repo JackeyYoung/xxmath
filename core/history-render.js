@@ -81,10 +81,46 @@ export function historyRender(parentNode = document) {
         stepsHtml = '<div style="color:var(--muted);font-size:13px;font-style:italic;">未填写步骤</div>';
       }
 
+      // AI 反馈
+      let aiFeedbackHtml = '';
+      if (r.aiFeedback) {
+        const fb = r.aiFeedback;
+        const aiSteps = (fb.steps || []).map(s => `
+          <div class="history-step" style="border-left-color: var(--primary);">
+            <div class="history-step-title">标准第 ${s.step} 步</div>
+            <div class="history-step-text">关系式：${escapeHtmlStrict(s.relation || '—')}</div>
+            <div class="history-step-text">代入：${escapeHtmlStrict(s.substitution || '—')}</div>
+            <div class="history-step-result">得数：${escapeHtmlStrict(s.result || '—')}</div>
+          </div>
+        `).join('');
+
+        const issue = fb.judgement?.student_answer_issue;
+        const strengths = (fb.strengths || []).map(s => `<li>${escapeHtmlStrict(s)}</li>`).join('');
+        const gaps = (fb.gaps || []).map(s => `<li>${escapeHtmlStrict(s)}</li>`).join('');
+
+        aiFeedbackHtml = `
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border);">
+            <div class="history-section-title" style="color: var(--primary-d);">🤖 AI 评价与标准步骤</div>
+            
+            ${issue && issue !== '无' ? `<div style="color: var(--red-text); font-size: 13px; margin-bottom: 8px;">发现问题：${escapeHtmlStrict(issue)}</div>` : ''}
+            ${strengths ? `<div style="font-size: 13px; margin-bottom: 4px;"><b style="color: var(--green-text);">做对了：</b><ul style="margin: 4px 0 8px 18px;">${strengths}</ul></div>` : ''}
+            ${gaps ? `<div style="font-size: 13px; margin-bottom: 8px;"><b style="color: var(--amber-text);">漏掉了：</b><ul style="margin: 4px 0 8px 18px;">${gaps}</ul></div>` : ''}
+            
+            <div style="margin-top: 10px;">
+              <div style="font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px;">📖 标准解题步骤</div>
+              ${aiSteps || '<div style="font-size:12px;color:var(--muted);">无详细步骤</div>'}
+            </div>
+            
+            <div style="background: var(--primary-soft); color: var(--primary-d); padding: 8px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; margin-top: 10px;">
+              标准答案：${escapeHtmlStrict(fb.answer?.full || r.correctAnswer || '—')}
+            </div>
+          </div>
+        `;
+      }
+
+       // 一次性返回完整结构
       return `
         <div class="history-item ${r.isCorrect ? 'correct' : 'wrong'}">
-          
-          <!-- 头部 -->
           <div class="history-hd" data-toggle-item="true">
             <div class="history-hd-left">
               <span class="history-status-dot ${r.isCorrect ? 'correct' : 'wrong'}">${r.isCorrect ? '✓' : '✗'}</span>
@@ -92,23 +128,17 @@ export function historyRender(parentNode = document) {
             </div>
             <span class="history-arrow">▶</span>
           </div>
-          
-          <!-- 内容 -->
           <div class="history-bd">
             <div class="history-section-title">✏️ 我的解题过程</div>
             ${stepsHtml}
-            
-            <div class="history-answer-box">
-              我的答案：${escapeHtmlStrict(r.studentAnswer || '（空）')}
-            </div>
-            
-            <div class="history-action-bar">
+            <div class="history-answer-box">我的答案：${escapeHtmlStrict(r.studentAnswer || '（空）')}</div>
+            ${aiFeedbackHtml}
+            <div class="history-action-bar" style="margin-top:12px;">
               <button class="history-remove" data-remove-id="${r.id}">🗑 删除这条记录</button>
             </div>
           </div>
-        </div>
-      `;
-    }).join(''); // ⭐ 核心修复：补上 map 的闭合
+        </div>`;
+    }).join('');
     
 
     // 题目分组头部（这是 groupArr.map 的 return）
