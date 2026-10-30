@@ -174,7 +174,7 @@ export function historyRender(parentNode = document) {
     if (hd) {
       const btn = document.createElement('button');
       btn.className = 'timeline-toggle';
-      btn.style.cssText = 'margin-left:8px;padding:4px 12px;border:1.5px solid var(--primary);border-radius:8px;background:#fff;color:var(--primary-d);font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;';
+      btn.style.cssText = 'margin-left:8px;padding:4px 12px;border:1.5px solid var(--primary);border-radius:8px;background: var(--primary); color:var(--btn-text);font-size:11.5px;font-weight:700;font-family:inherit;cursor:pointer;';
       btn.textContent = '🕐 时间轴';
       hd.appendChild(btn);
 
