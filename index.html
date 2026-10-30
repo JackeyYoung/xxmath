@@ -743,6 +743,100 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 }
 
 /* ============================================================
+   ⭐ 一题一得 · 汇总面板 (Takeaway Gallery)
+   ============================================================ */
+.takeaway-gallery {
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--r-card);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+}
+
+.takeaway-gallery-hd {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.takeaway-gallery-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.takeaway-gallery-search {
+  flex: 1;
+  max-width: 240px;
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+  border-radius: var(--r-pill);
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+}
+
+.takeaway-gallery-search:focus {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+
+/* ============================================================
+   ⭐ 一题一得 · 汇总卡片自适应修复
+   ============================================================ */
+.takeaway-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  width: 100%; /* 确保列表容器占满父级 */
+}
+
+.takeaway-item {
+  width: 100%; /* ⭐ 核心修复：让卡片边框撑满格子，不会比外层窄 */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg);
+  border-radius: var(--r-sm);
+  padding: 14px 16px;
+  border-left: 3px solid var(--primary);
+  border-top: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.takeaway-item-problem {
+  font-size: 12.5px;
+  color: var(--muted);
+  font-weight: 600;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--border);
+  word-break: break-all;
+}
+
+.takeaway-item-note {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.takeaway-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
+  padding: 30px 10px;
+  font-style: italic;
+}
+
+/* ============================================================
    ⭐ 1. 密码框 (m13.js 等使用)
    ============================================================ */
 .pwd-modal-mask {
@@ -2261,6 +2355,54 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
 .m13-result-badge { font-size: 13px; font-weight: 700; padding: 8px 12px; border-radius: var(--r-sm); }
 .m13-result-badge.ok { background: var(--green-soft); color: var(--green-text); }
 .m13-result-badge.no { background: var(--red-soft); color: var(--red-text); }
+
+/* ============================================================
+   ⭐ M13 一题一得 · 下方提示与快捷词修复
+   ============================================================ */
+
+/* 1. 状态提示文字（保存成功 / 有未保存的修改） */
+.takeaway-hint {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  min-height: 16px;
+  transition: color 0.2s;
+}
+
+.takeaway-hint.dirty {
+  color: var(--amber-text); /* 有未保存修改时变成黄色提示 */
+}
+
+.takeaway-hint.saved {
+  color: var(--green-text); /* 已保存时变成绿色提示 */
+}
+
+/* 2. M13 快捷提示词标签云 */
+.takeaway-quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.takeaway-quick-btn {
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.takeaway-quick-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary-d);
+  background: var(--primary-soft);
+}
 
 /* ============================================================
    ⭐ M14 我的成长页面 完整排版与深色模式修复
@@ -4307,22 +4449,100 @@ body.input-focused .thumb-bar {
 /* ============================================================
    ⭐ 列表区
    ============================================================ */
-.weekly-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+/* ============================================================
+   ⭐ 本周周报 · 需要重点复习的题 / 列表排版优化
+   ============================================================ */
+
+/* 列表项基础样式 */
 .weekly-list-item {
   font-size: 13.5px;
   color: var(--text-soft);
   line-height: 1.6;
-}
-.weekly-list-more {
-  font-size: 12px;
-  color: var(--muted);
-  margin-top: 4px;
+  margin-bottom: 6px;
+  padding-left: 8px;
+  position: relative;
 }
 
+/* 用一个小圆点替代原本的 • 字符，更好看 */
+.weekly-list-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+/* 针对“需要重点复习的题”这一块，加个浅红色的警告底色 */
+.weekly-report-section.warning-section {
+  background: var(--red-soft);
+  border-left: 3px solid var(--red-text);
+}
+
+.weekly-report-section.warning-section h5 {
+  color: var(--red-text);
+}
+
+/* 针对“本周掌握的题”，加个浅绿色的成功底色 */
+.weekly-report-section.success-section {
+  background: var(--green-soft);
+  border-left: 3px solid var(--primary);
+}
+
+.weekly-report-section.success-section h5 {
+  color: var(--green-text);
+}
+
+/* 如果题目太长，可以加个省略号（可选） 
+.weekly-list-item-text {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+*/
+/* ============================================================
+   ⭐ 本周周报 · 我的心得精选 专属排版
+   ============================================================ */
+
+/* 心得区块的专属底色 */
+.weekly-report-section.takeaway-section {
+  background: var(--amber-soft);
+  border-left: 3px solid var(--amber-text);
+}
+
+.weekly-report-section.takeaway-section h5 {
+  color: var(--amber-text);
+}
+
+/* 心得条目：用引号 + 斜体，看起来像金句 */
+.weekly-takeaway-item {
+  font-size: 13.5px;
+  color: var(--amber-text);
+  line-height: 1.7;
+  font-style: italic;
+  font-weight: 600;
+  position: relative;
+  padding-left: 16px;
+  margin-bottom: 8px;
+}
+
+/* 左侧加个小引号装饰 */
+.weekly-takeaway-item::before {
+  content: "“";
+  position: absolute;
+  left: 0;
+  top: -2px;
+  font-size: 20px;
+  color: var(--amber-text);
+  opacity: 0.5;
+  font-family: serif;
+  font-weight: 800;
+}
 /* ============================================================
    ⭐ 建议区
    ============================================================ */
@@ -5460,6 +5680,218 @@ body.input-focused .thumb-bar {
     width: 100%;
     padding: 10px;
   }
+}
+
+/* ============================================================
+   ⭐ 已掌握卡片 (Mastery Card)
+   ============================================================ */
+.mastery-card-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, .6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10020;
+  padding: 20px;
+  animation: fadeIn .18s;
+}
+
+.mastery-card {
+  position: relative;
+  background: var(--card);
+  border-radius: var(--r-card);
+  width: 360px;
+  max-width: 92vw;
+  padding: 32px 24px 24px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .3);
+  overflow: hidden;
+}
+
+/* 顶部光晕 */
+.mastery-card-glow {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 120px;
+  background: linear-gradient(180deg, var(--primary-soft) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.mastery-card-inner {
+  position: relative;
+  z-index: 1;
+}
+
+.mastery-card-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  background: var(--primary);
+  color: #fff !important;
+  font-size: 13px;
+  font-weight: 800;
+  border-radius: var(--r-pill);
+  margin-bottom: 16px;
+}
+
+.mastery-card-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 24px;
+}
+
+.mastery-card-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  text-align: left;
+  margin-bottom: 6px;
+}
+
+.mastery-card-problem,
+.mastery-card-answer,
+.mastery-card-note {
+  background: var(--bg);
+  border-radius: var(--r-sm);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  text-align: left;
+}
+
+.mastery-card-text,
+.mastery-card-answer-text,
+.mastery-card-note-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-soft);
+  word-break: break-word;
+}
+
+.mastery-card-note {
+  background: var(--amber-soft);
+  border-left: 3px solid var(--amber-text);
+}
+
+.mastery-card-date {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 24px;
+}
+
+.mastery-card-btns {
+  display: flex;
+  gap: 12px;
+}
+
+.mastery-card-close,
+.mastery-card-share {
+  flex: 1;
+  padding: 12px;
+  border-radius: var(--r-pill);
+  font-size: 14px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all .15s;
+}
+
+.mastery-card-close {
+  background: var(--bg);
+  color: var(--text-soft);
+}
+
+.mastery-card-close:hover {
+  background: var(--border);
+}
+
+.mastery-card-share {
+  background: var(--primary);
+  color: #fff !important;
+}
+
+.mastery-card-share:hover {
+  background: var(--primary-d);
+}
+
+/* ============================================================
+   ⭐ 庆祝特效 (Celebrate / Stars / Confetti)
+   ============================================================ */
+
+/* 星星飞散 */
+.star-burst {
+  position: fixed;
+  font-size: 24px;
+  pointer-events: none;
+  z-index: 9999;
+  animation: starBurst 1.2s cubic-bezier(.1,.8,.3,1) forwards;
+}
+
+@keyframes starBurst {
+  0% { transform: translate(0, 0) scale(0.5); opacity: 1; }
+  100% { transform: translate(var(--dx2), 100px) scale(1.2); opacity: 0; }
+}
+
+/* 彩带（连对 5 题、10 题） */
+.confetti-piece {
+  position: fixed;
+  width: 10px;
+  height: 14px;
+  pointer-events: none;
+  z-index: 9998;
+  animation: confettiFall 2s linear forwards;
+}
+
+@keyframes confettiFall {
+  0% { transform: translateY(-10vh) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+}
+
+/* 连对横幅 */
+.combo-banner {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: #fff;
+  padding: 16px 32px;
+  border-radius: var(--r-pill);
+  font-size: 20px;
+  font-weight: 800;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  z-index: 10000;
+  animation: comboPop 1.8s cubic-bezier(.34,1.56,.64,1) forwards;
+  white-space: nowrap;
+}
+
+@keyframes comboPop {
+  0% { opacity: 0; transform: translate(-50%, 20px) scale(0.8); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+  20% { transform: translate(-50%, -50%) scale(1); }
+  80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -80%) scale(0.9); }
+}
+/* ============================================================
+   ⭐ 重做横幅 (Redo Banner)
+   ============================================================ */
+#redoBanner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  background: var(--amber-text);
+  color: #fff;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  animation: slideDown .3s ease;
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
 }
 </style>
 </head>

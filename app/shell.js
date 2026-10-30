@@ -1823,3 +1823,12 @@ function renderSettings() {
     alert(log.map(e => `[${new Date(e.at).toLocaleTimeString('zh-CN')}] ${e.scope}: ${e.message}`).join('\n'));
   });
 }
+
+//history 和 wrongbook“双写”,监听里加“兜底刷新”:避免更新时间差异导致数据不一致
+on(EVT.DATA_CHANGED, (payload) => {
+  // 目前你已经是双写，所以任何一个库变化，都刷新一下 UI
+  if (payload.source === 'wrongbook' || payload.source === 'history') {
+    try { wbRender(); } catch(e) {} 
+    try { window._refreshGrowthCards?.(); } catch(e) {}
+  }
+});

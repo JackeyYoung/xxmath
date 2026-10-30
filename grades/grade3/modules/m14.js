@@ -8,6 +8,7 @@ import { downloadBlob } from '../../../core/download.js';
 import { getStudentName } from '../../../core/student.js';
 import { historyRender } from '../../../core/history-render.js';
 import { on, EVT } from '../../../core/events.js';
+import { takeawayListAll } from '../../../core/takeaway.js';
 
 export const meta = { title: '我的成长', icon: '📊' };
 
@@ -208,23 +209,9 @@ export default async function mount(container, ctx) {
   function renderTakeawayGalleryInline() {
     const box = $('#takeawayGalleryBox');
     if (!box) return;
-    let fp = 0;
-    try {
-      lsKeysByPrefix('grade3_takeaway_').forEach(k => {
-        const v = lsGet(k);
-        if (v && v.trim()) fp += v.length + k.length;
-      });
-    } catch (e) {}
-    if (box.dataset._fp === String(fp)) return;
-    box.dataset._fp = String(fp);
-
-    const items = [];
-    try {
-      lsKeysByPrefix('grade3_takeaway_').forEach(k => {
-        const v = lsGet(k);
-        if (v && v.trim()) items.push({ key: k, note: v.trim() });
-      });
-    } catch (e) {}
+    
+    // 用新的 takeawayListAll
+    const items = takeawayListAll(); 
 
     if (!items.length) {
       box.innerHTML = `<div class="takeaway-gallery"><div class="takeaway-gallery-hd"><div class="takeaway-gallery-title">💡 一题一得 · 汇总</div></div><div class="takeaway-empty">还没有心得，做题时在"一题一得"里记一句吧 ✍️</div></div>`;
@@ -235,7 +222,7 @@ export default async function mount(container, ctx) {
       <div class="takeaway-gallery">
         <div class="takeaway-gallery-hd">
           <div class="takeaway-gallery-title">💡 一题一得 · 汇总（${items.length} 条）</div>
-          <input type="search" class="takeaway-gallery-search" id="takeawaySearch" placeholder="🔍 搜索关键词…">
+          <input type="search" class="takeaway-gallery-search" id="takeawaySearch" placeholder="🔍 搜索题目或心得…">
         </div>
         <div class="takeaway-list" id="takeawayList"></div>
       </div>
@@ -245,14 +232,23 @@ export default async function mount(container, ctx) {
 
     const renderList = (filter) => {
       const f = (filter || '').trim().toLowerCase();
-      const filtered = f ? items.filter(x => x.note.toLowerCase().includes(f)) : items;
+      const filtered = f 
+        ? items.filter(x => x.note.toLowerCase().includes(f) || x.problemText.toLowerCase().includes(f)) 
+        : items;
+        
       if (!filtered.length) {
         listEl.innerHTML = `<div class="takeaway-empty" style="grid-column:1/-1;">没有匹配的心得</div>`;
         return;
       }
+      
       listEl.innerHTML = filtered.map(x => `
         <div class="takeaway-item">
-          <div class="takeaway-item-note">${escapeHtmlStrict(x.note)}</div>
+          <!-- ⭐ 新增：展示题目出处 -->
+          <div class="takeaway-item-problem" title="${escapeHtmlStrict(x.problemText)}">
+            📝 ${escapeHtmlStrict(x.problemText.slice(0, 30))}${x.problemText.length > 30 ? '…' : ''}
+          </div>
+          <!-- 展示心得 -->
+          <div class="takeaway-item-note">💡 ${escapeHtmlStrict(x.note)}</div>
         </div>
       `).join('');
     };

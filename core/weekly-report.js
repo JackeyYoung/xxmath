@@ -6,6 +6,7 @@ import { escapeHtmlStrict } from './html.js';
 import { autoTagsFor } from './wrongbook-tags.js';
 import { getStudyStreak } from './dashboard-render.js';
 import { getStudentName } from './student.js';
+import { takeawayListAll } from './takeaway.js';
 
 export function buildWeeklyReport() {
   const now = Date.now();
@@ -30,17 +31,8 @@ export function buildWeeklyReport() {
   });
   const topWrong = Object.entries(wrongCount).sort((a, b) => b[1] - a[1]).slice(0, 3);
 
-  const takeaways = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (k && k.startsWith('grade3_takeaway_')) {
-        const v = localStorage.getItem(k);
-        if (v && v.trim()) takeaways.push(v.trim());
-      }
-    }
-  } catch (e) {}
-  const topTakeaways = takeaways.slice(-3).reverse();
+  const takeaways = takeawayListAll().map(item => item.note);
+  const topTakeaways = takeaways.slice(0, 3); // 取最近 3 条
 
   const tagCount = {};
   history.filter(r => !r.isCorrect).forEach(r => {
@@ -109,29 +101,29 @@ export function buildWeeklyReport() {
       ${msgHtml}
       
       ${weekMastered.length ? `
-        <div class="weekly-report-section">
+        <div class="weekly-report-section success-section">
           <h5>🏆 本周掌握的题</h5>
           <div class="weekly-list">
-            ${weekMastered.slice(0, 5).map(r => `<div class="weekly-list-item">• ${escapeHtmlStrict(r.text.slice(0, 40))}…</div>`).join('')}
+            ${weekMastered.slice(0, 5).map(r => `<div class="weekly-list-item"> ${escapeHtmlStrict(r.text.slice(0, 40))}…</div>`).join('')}
             ${weekMastered.length > 5 ? `<div class="weekly-list-more">还有 ${weekMastered.length - 5} 题…</div>` : ''}
           </div>
         </div>
       ` : ''}
       
       ${topWrong.length ? `
-        <div class="weekly-report-section">
+        <div class="weekly-report-section warning-section">
           <h5>⚠️ 需要重点复习的题</h5>
           <div class="weekly-list">
-            ${topWrong.map(([t, c]) => `<div class="weekly-list-item">• ${escapeHtmlStrict(t.slice(0, 40))}…（错 ${c} 次）</div>`).join('')}
+            ${topWrong.map(([t, c]) => `<div class="weekly-list-item"> ${escapeHtmlStrict(t.slice(0, 40))}…（错 ${c} 次）</div>`).join('')}
           </div>
         </div>
       ` : ''}
       
       ${topTakeaways.length ? `
-        <div class="weekly-report-section">
+        <div class="weekly-report-section takeaway-section">
           <h5>💡 我的心得精选</h5>
           <div class="weekly-list">
-            ${topTakeaways.map(t => `<div class="weekly-list-item">• ${escapeHtmlStrict(t)}</div>`).join('')}
+            ${topTakeaways.map(t => `<div class="weekly-takeaway-item">${escapeHtmlStrict(t)}</div>`).join('')}
           </div>
         </div>
       ` : ''}
