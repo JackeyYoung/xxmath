@@ -22,6 +22,7 @@
 
 import { defineComponent, shallowReactive, ref, nextTick, onMounted, onUnmounted } from '../../../js/vendor/vue.esm-browser.prod.js';
 import { loadGsap } from '../../../js/vendor/gsap-esm.js';
+import { GOLDEN, EASE, DUR } from '../../../core/ui/golden-motion.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getEncouragement } from '../../../core/ui/encourage.js';
 
@@ -184,15 +185,15 @@ const M1Interactive = defineComponent({
     function transitionLinkToHistory(arcP, dropP, guideD, onDone) {
       dropP.setAttribute('d', guideD);
       const dlen = dropP.getTotalLength ? dropP.getTotalLength() : 80;
-      gsap.set(dropP, { strokeDasharray: dlen, strokeDashoffset: dlen, opacity: 1, stroke: '#F5C542', strokeWidth: 4 });
+      gsap.set(dropP, { strokeDasharray: dlen, strokeDashoffset: dlen, opacity: 1, stroke: GOLDEN.lineFocus, strokeWidth: 4 });
 
       const tl = gsap.timeline({ onComplete: onDone });
       // 漏斗在黄色状态下生长
       tl.to(dropP, { strokeDashoffset: 0, duration: 0.26, ease: 'power2.out' });
       // 整条线一起转灰变细（同一 tween 控两个元素 → 不会分叉）
       tl.to([arcP, dropP], {
-        duration: 0.34, ease: 'power2.inOut',
-        stroke: '#64748b', strokeWidth: 2, opacity: 0.75,   /* 与历史文字同灰 */
+        duration: DUR.land, ease: 'power2.inOut',
+        stroke: GOLDEN.lineHistory, strokeWidth: 2, opacity: 0.75,   /* 与历史文字同灰 */
       }, '-=0.04');
     }
 
@@ -205,7 +206,7 @@ const M1Interactive = defineComponent({
       if (finalCellEl) {
         tl.fromTo(finalCellEl,
           { scale: 0.4, opacity: 0, y: 10 },
-          { scale: 1, opacity: 1, y: 0, duration: 0.85, ease: 'elastic.out(1, 0.5)' }, 0.10);
+          { scale: 1, opacity: 1, y: 0, duration: 0.85, ease: EASE.pop }, 0.10);
       }
       if (inputEl.value && inputEl.value.blur) inputEl.value.blur();
     }
@@ -293,7 +294,7 @@ const M1Interactive = defineComponent({
         `M ${lx} ${yTop} C ${lx} ${yTop + 22}, ${rx} ${yTop + 22}, ${rx} ${yTop}`
         + ` M ${midX} ${yLow} L ${midX} ${yLow + tickLen}`);
       const len = activeP.getTotalLength ? activeP.getTotalLength() : 200;
-      gsap.set(activeP, { strokeDasharray: len, strokeDashoffset: len, opacity: 1, strokeWidth: 4, stroke: '#F5C542' });
+      gsap.set(activeP, { strokeDasharray: len, strokeDashoffset: len, opacity: 1, strokeWidth: 4, stroke: GOLDEN.lineFocus });
 
       const dx = (rx - lx) / 2;
 
@@ -313,20 +314,20 @@ const M1Interactive = defineComponent({
       // ② 停顿 0.1s（不许提前撞数字）
       tl.to({}, { duration: 0.10 });
       // ② 呼吸式降噪：平滑降到 0.4（power1.inOut，不对抗视线）
-      if (others.length) tl.to(others, { opacity: 0.4, duration: 0.30, ease: 'power1.inOut' }, 0.05);
+      if (others.length) tl.to(others, { opacity: 0.4, duration: 0.30, ease: EASE.breathe }, 0.05);
 
       // ③ 重力吸收：向中心汇聚并缩小，但**缩小后停住**（数字要留着当历史）。
       //    power3.in = 越靠近越快，像被吸进去；随后 x 回落原位、scale 保留 0.8。
-      tl.to(leftEl, { x: dx, scale: 0.8, duration: 0.34, ease: 'power3.in' })
-        .to(rightEl, { x: -dx, scale: 0.8, duration: 0.34, ease: 'power3.in' }, '<')
-        .to(opEl, { scale: 0.8, opacity: 0.3, duration: 0.30, ease: 'power3.in' }, '<')
+      tl.to(leftEl, { x: dx, scale: 0.8, duration: DUR.land, ease: EASE.absorb })
+        .to(rightEl, { x: -dx, scale: 0.8, duration: DUR.land, ease: EASE.absorb }, '<')
+        .to(opEl, { scale: 0.8, opacity: 0.3, duration: 0.30, ease: EASE.absorb }, '<')
       // 回落：回到原位的 0.8 大小（不回到 1，保持"被消耗"的体量）
       .to([leftEl, rightEl], { x: 0, duration: 0.22, ease: 'power2.out' }, '>-0.06');
       // ④ 强制留白 0.25s —— 吸收完全结束后才允许下行出现
       tl.to({}, { duration: 0.25 });
       // ④ 上方原式整体变暗到 0.3
       // 历史行只轻微压暗到 0.92，主要靠 Token 自身的中灰表达"已算过"
-      if (rowEl) tl.to(rowEl, { opacity: 0.92, duration: 0.26, ease: 'power1.inOut' }, '-=0.06');
+      if (rowEl) tl.to(rowEl, { opacity: 0.92, duration: 0.26, ease: EASE.breathe }, '-=0.06');
     }
 
     /* ---------- 数据推进 + ⑤⑥ ---------- */
@@ -414,9 +415,9 @@ const M1Interactive = defineComponent({
           } else if (false) {
             // 真 morph：U 型 → 漏斗，同时变成"历史样式"（暗、细）
             gsap.to(activeP, {
-              duration: 0.40, ease: 'power2.inOut',
+              duration: DUR.draw, ease: 'power2.inOut',
               morphSVG: { shape: guideD, shapeIndex: 'auto' },
-              strokeWidth: 2, stroke: '#94a3b8', opacity: 0.85,
+              strokeWidth: 2, stroke: GOLDEN.historyMid, opacity: 0.85,
               onComplete: pushLink,
             });
           } else if (gsap && activeP) {
@@ -483,7 +484,7 @@ const M1Interactive = defineComponent({
       if (gsap && gsap.globalTimeline) { try { gsap.globalTimeline.clear(); } catch (e) {} }
     });
 
-    return { s: store, outer, path, drop, inputEl, CELL_W, CELL_H, GAP, consumedClass, clickOp, submit, reset };
+    return { s: store, outer, path, drop, inputEl, GOLDEN, CELL_W, CELL_H, GAP, consumedClass, clickOp, submit, reset };
   },
 
   template: `
@@ -514,13 +515,13 @@ const M1Interactive = defineComponent({
              fontSize: (t.type === 'op' ? '28px' : (t.fromResult ? '38px' : '34px')),
              fontWeight: 800,
              /* ② 强对比：历史态中灰 / 焦点亮黄 / 新结果纯白 + 绿色微光 */
-             color: t.evaluated ? '#64748b'
-                  : (t.fromResult ? '#FFFFFF'
-                  : (ri === s.rows.length - 1 ? '#F5C542' : 'var(--text)')),
+             color: t.evaluated ? GOLDEN.history
+                  : (t.fromResult ? GOLDEN.result
+                  : (ri === s.rows.length - 1 ? GOLDEN.focus : 'var(--text)')),
              textShadow: t.fromResult ? '0 0 10px rgba(41, 204, 87, 0.30)'
                        : (!t.evaluated && ri === s.rows.length - 1 ? '0 0 12px rgba(245, 197, 66, 0.45)' : 'none'),
              borderRadius:'16px', userSelect:'none', willChange:'transform, opacity',
-             opacity: t.evaluated ? 0.8 : 1,   /* 不低于 0.5，历史要看得清 */
+             opacity: t.evaluated ? GOLDEN.opacityHistory : 1,
              cursor: (t.type === 'op' && !t.evaluated && ri === s.rows.length - 1) ? 'pointer' : 'default',
            }"
            @click="t.type === 'op' && ri === s.rows.length - 1 && !t.evaluated && clickOp(i)">
@@ -531,9 +532,9 @@ const M1Interactive = defineComponent({
 
     <svg class="m1i-svg" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;overflow:visible;">
       <path v-for="lk in s.links" :key="lk.id" :d="lk.d"
-            fill="none" stroke="#64748b" stroke-width="2" stroke-linecap="round" opacity="0.85" />
-      <path ref="path" d="" fill="none" stroke="#F5C542" stroke-width="4" stroke-linecap="round" style="opacity:0;" />
-      <path ref="drop" d="" fill="none" stroke="#F5C542" stroke-width="4" stroke-linecap="round" style="opacity:0;" />
+            fill="none" :stroke="GOLDEN.lineHistory" stroke-width="2" stroke-linecap="round" opacity="0.85" />
+      <path ref="path" d="" fill="none" :stroke="GOLDEN.lineFocus" stroke-width="4" stroke-linecap="round" style="opacity:0;" />
+      <path ref="drop" d="" fill="none" :stroke="GOLDEN.lineFocus" stroke-width="4" stroke-linecap="round" style="opacity:0;" />
     </svg>
   </div>
 
