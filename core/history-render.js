@@ -1,11 +1,19 @@
+/* S3：优先在 #wrongBookDrawer 内查找（本模块写的就是抽屉内容），找不到退回全局。 */
+const _wbScopeQ = (id) => {
+  const root = document.getElementById('wrongBookDrawer');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* core/history-render.js */
 import { historyLoad, historyRemove } from './history.js';
+import { showConfirm } from './ui/dialog.js';
 import { escapeHtmlStrict } from './html.js';
 import { showToast } from './toast.js';
 
 export function historyRender(parentNode = document) {
   const listEl = parentNode === document 
-    ? document.getElementById('historyList') 
+    ? _wbScopeQ('historyList') 
     : parentNode.querySelector('#historyList');
   
   if (!listEl) return;
@@ -42,7 +50,7 @@ export function historyRender(parentNode = document) {
     };
   }).sort((a, b) => b.latestTime - a.latestTime);
 
-  const countEl = document.getElementById('historyCount');
+  const countEl = _wbScopeQ('historyCount');
   if (countEl) countEl.textContent = `共 ${groupArr.length} 道 / ${list.length} 次`;
 
   // 渲染 HTML
@@ -168,7 +176,7 @@ export function historyRender(parentNode = document) {
   }).join(''); // ⭐ 核心修复：补上 groupArr.map 的闭合
 
   // ================= 时间轴视图切换逻辑 =================
-  const historySection = document.getElementById('historySection');
+  const historySection = _wbScopeQ('historySection');
   if (historySection && !historySection.querySelector('.timeline-toggle')) {
     const hd = historySection.querySelector('.collapsible-hd');
     if (hd) {
@@ -246,16 +254,16 @@ export function historyRender(parentNode = document) {
 if (!window.__historyBound) {
   window.__historyBound = true;
 
-  document.addEventListener('click', e => {
+document.addEventListener('click', async e => {
     // 1. 删除按钮
     const removeBtn = e.target.closest('.history-remove');
     if (removeBtn) {
       e.stopPropagation();
       const id = removeBtn.dataset.removeId;
-      if (id && confirm('确定要删除这条记录吗？')) {
+if (id && (await showConfirm('确定要删除这条记录吗？', { danger: true, okText: '删除' }))) {
         historyRemove(id);
         // 删除后，找到当前最底层的 historyList 重绘
-        const listEl = document.getElementById('historyList');
+        const listEl = _wbScopeQ('historyList');
         if (listEl && listEl.dataset.lastRender) {
           listEl.dataset.lastRender = '0'; // 强制清除防抖
           historyRender();

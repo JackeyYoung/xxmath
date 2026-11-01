@@ -9,6 +9,7 @@ const DEFAULT_MODULE_ID = 'm13';   // 兜底：未指定模块时归到解题思
 import { lsGet, lsSet } from './storage.js';
 import { getHistoryKey } from './keys.js';
 import { emit, EVT } from './events.js';
+import { problemId } from './problem-id.js';
 
 
 /* core/history.js —— 修改 historyLoad */
@@ -36,7 +37,9 @@ export function historyLoad() {
 
 export function historyUpdate(problemText, aiFeedback) {
   const list = historyLoad();
-  const index = list.findIndex(r => r.problemText === problemText);
+  // ⭐ S9：按 problemId 找，原文只有空白差异也能命中
+  const pid = problemId(problemText);
+  const index = list.findIndex(r => (r.problemId || problemId(r.problemText)) === pid);
   if (index >= 0) {
     list[index].aiFeedback = aiFeedback;
     list[index].correctAnswer = aiFeedback.answer?.full || list[index].correctAnswer;
@@ -62,6 +65,8 @@ export function historyAdd(record) {
     timestamp: Date.now(),
     // ⭐ 新增：模块归属，Home 页按此统计
     moduleId: record.moduleId || DEFAULT_MODULE_ID,
+    // ⭐ S9：写入时固化 problemId（放在 ...record 之前，允许调用方覆盖）
+    problemId: problemId(record.problemText),
     ...record,
   });
   if (list.length > HISTORY_MAX) list.length = HISTORY_MAX;

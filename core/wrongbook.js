@@ -5,6 +5,7 @@
 import { lsGet, lsSet } from './storage.js';
 import { getWrongBookKey } from './keys.js';
 import { emit, EVT } from './events.js';
+import { problemId } from './problem-id.js';
 
 export function wbLoad() {
   try {
@@ -27,14 +28,18 @@ export function wbSave(list) {
 
 export function wbAdd(record) {
   const list = wbLoad();
-  const filtered = list.filter(r => r.text !== record.text);
-  filtered.unshift({ ...record, timestamp: Date.now() });
+  // ⭐ S9：按 problemId 去重（原来用原文 ===，只是空白不同就会重复入库）
+  const pid = record.problemId || problemId(record.text);
+  const filtered = list.filter(r => (r.problemId || problemId(r.text)) !== pid);
+  filtered.unshift({ ...record, problemId: pid, timestamp: Date.now() });
   if (filtered.length > 100) filtered.length = 100;
   wbSave(filtered);
 }
 
 export function wbRemove(text) {
-  wbSave(wbLoad().filter(r => r.text !== text));
+  // ⭐ S9：按 problemId 删除
+  const pid = problemId(text);
+  wbSave(wbLoad().filter(r => (r.problemId || problemId(r.text)) !== pid));
 }
 
 export function wbClear() {
@@ -44,7 +49,9 @@ export function wbClear() {
 /* 做对后累计掌握进度 */
 export function markRedoSuccess(problemText) {
   const list = wbLoad();
-  const idx = list.findIndex(r => r.text === problemText);
+  // ⭐ S9：按 problemId 找，原文只有空白差异也能命中
+  const pid = problemId(problemText);
+  const idx = list.findIndex(r => (r.problemId || problemId(r.text)) === pid);
   if (idx < 0) return { removed: false, masteredCount: 0 };
 
   const rec = list[idx];

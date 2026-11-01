@@ -1,8 +1,10 @@
 /* m11.js 方向 */
+import { getTemplate } from '../../../core/ui/template.js';
+
 export const meta = { title: '位置方向', icon: '📍' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m11');
+  const tpl = getTemplate('tpl-m11');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));

@@ -54,6 +54,7 @@ export const LOCAL_ONLY_KEYS = new Set([
   'grade3_sound_on',                // 音效开关
   'grade3_timer_challenge',         // 计时挑战记录
   'grade3_current_grade',           // 当前年级选择
+  'grade3_migrated_problem_id_v1',  // S9：迁移标记只在本地，每台设备各迁一次
 ]);
 
 /*家长“鼓励按钮”*/
@@ -64,3 +65,6 @@ export const getTargetKey = () => getGradeKey('targets_v1');
 
 //周报里加“本周一句话”
 export const getWeeklyNoteKey = () => getGradeKey('weekly_notes_v1');
+
+/* 9.7：家长区 4 位 PIN */
+export const getParentPinKey = () => getGradeKey('parent_pin');

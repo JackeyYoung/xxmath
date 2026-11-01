@@ -42,11 +42,6 @@ describe('errors', () => {
   });
 });
 
-import { describe, it, expect, vi } from 'vitest';
-import {
-  installGlobalErrorHandlers, getErrorLog, logError,
-} from '../errors.js';
-
 describe('errors · installGlobalErrorHandlers', () => {
   it('window error 事件被记录', () => {
     installGlobalErrorHandlers();

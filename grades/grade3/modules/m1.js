@@ -1,6 +1,9 @@
 /* grades/grade3/modules/m1.js
    混合运算模块，完整版
 */
+import { getTemplate } from '../../../core/ui/template.js';
+
+import { lsSet } from '../../../core/storage.js';
 import { parseExpression, tokensToString, cleanParens, tokensToMarkedHtml } from '../scoring/m1.js';
 import { COMBO } from '../../../core/ui/celebrate.js';
 import { getEncouragement } from '../../../core/ui/encourage.js';
@@ -43,8 +46,25 @@ export const meta = {
 };
 
 export default async function mount(container, ctx) {
+  // ── 交互版开关（B 线实验：连击变形）────────────────────────────
+  // 地址里带 m1i 就用新版交互，例如： http://localhost:8000/#lesson/m1?m1i
+  // 不带则完全是原来的逻辑，一行都不受影响。
+  // 想长期启用：把下面这个 if 整块删掉，改成
+  //     export { default } from './m1-interactive.js';
+  try {
+    const flags = String(location.search || '') + String(location.hash || '');
+    if (!/(?:^|[?#&/])m1old(?:$|[&#/])/.test(flags)) {   // 默认交互版；带 m1old 回退旧交互
+      const mod = await import('./m1-interactive.js');
+      console.info('[m1] 已启用交互版（连击变形）');
+      return mod.default(container, ctx);
+    }
+  } catch (e) {
+    console.warn('[m1] 交互版加载失败，回退到原交互', e);
+  }
+  // ────────────────────────────────────────────────────────────
+
   // 1. 挂载模板
-  const tpl = document.getElementById('tpl-m1');
+  const tpl = getTemplate('tpl-m1');
   if (!tpl) {
     console.error('[m1] 找不到 tpl-m1 模板');
     return;
@@ -283,7 +303,7 @@ export default async function mount(container, ctx) {
           try {
             const d = new Date();
             const todayStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-            localStorage.setItem('grade3_priority_passed_date', todayStr);
+lsSet('grade3_priority_passed_date', todayStr);   // S8：走存储层
           } catch (e) {}
           setTimeout(() => {
             box.style.display = 'none';
@@ -340,6 +360,14 @@ export default async function mount(container, ctx) {
     const left = toks[i - 1], right = toks[i + 1];
     if (!left || !right || left.type !== 'num' || right.type !== 'num') return;
 
+    // ⭐ 修复：除零必须在写入任何状态之前拦掉。原来先写了 waitingOpIdx / pendingLeft，
+    //    再 return，pendingResult 保持 null → 学生输入 0 时 Math.abs(0 - null) < 0.001 成立，
+    //    会被判「正确」并提交一个 val:null 的步骤（等于把错题判成对的）。
+    if (op === '÷' && right.val === 0) {
+      m1SetFeedback('❌ 不能除以 0 哦', 'error');
+      return;
+    }
+
     M1.waitingOpIdx = i;
     M1.pendingOp = op;
     M1.pendingLeft = left.val;
@@ -349,7 +377,6 @@ export default async function mount(container, ctx) {
     let val;
     if (op === '×') val = left.val * right.val;
     else if (op === '÷') {
-      if (right.val === 0) { m1SetFeedback('❌ 不能除以 0 哦', 'error'); return; }
       val = left.val / right.val;
     } else if (op === '+') val = left.val + right.val;
     else if (op === '-') val = left.val - right.val;
@@ -472,7 +499,7 @@ export default async function mount(container, ctx) {
       if (M1.done) {
         const finalVal = M1.tokens[0].val;
         m1SetFeedback(`🎉 全部算完！结果是 ${fmtNum(finalVal)}。`, 'ok');
-        emitUI('CORRECT', { moduleId: 'm1' });
+// M10：改由壳层在 historyAdd 里统一发（带坐标），这里不再重复发
         if (ctx.data && ctx.data.historyAdd) {
           ctx.data.historyAdd({
             problemText: M1.original, problemSource: 'm1', moduleId: 'm1',
@@ -553,22 +580,29 @@ export default async function mount(container, ctx) {
         if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
         if (type === 2) return `${rnd(30, 90)} - ${rnd(5, 15)} - ${rnd(5, 15)}`;
         if (type === 3) { const b = rnd(2, 9), q = rnd(2, 9); return `${b * q} ÷ ${b} + ${rnd(10, 50)}`; }
-        if (type === 4) return `${rnd(2, 9)} × ${rnd(2, 9)} - ${rnd(2, 9)}`;
+        // ⭐ M7：原来可能生成 2×2 − 9 = −5；乘积下限提到 9，减数取 1~9，结果恒 ≥0
+        if (type === 4) return `${rnd(3, 9)} × ${rnd(3, 9)} - ${rnd(1, 9)}`;
         if (type === 5) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(2, 9)} × ${rnd(2, 9)}`;
-        return `${rnd(10, 99)} - ${rnd(2, 9)} × ${rnd(2, 9)}`;
+        // ⭐ M7：原来可能生成 10 − 9×9 = −71（三年级不该出现负数）
+        const nb = rnd(2, 9), nc = rnd(2, 9), np = nb * nc;
+        return `${np + rnd(10, 90)} - ${nb} × ${nc}`;
       },
       'with-paren': () => {
         const type = rnd(1, 3);
         if (type === 1) { const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9); return `(${a} + ${b}) × ${c}`; }
         if (type === 2) { const b = rnd(2, 9), q = rnd(2, 9), a = rnd(1, 5); return `(${b * q + a} - ${a}) ÷ ${b}`; }
-        const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9), d = rnd(2, 9);
+        const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9);
+        // ⭐ M7：d 不能超过 (a+b)×c，否则会算出 8 − 9 = −1 这类负数
+        const d = rnd(1, Math.min(9, (a + b) * c));
         return `(${a} + ${b}) × ${c} - ${d}`;
       },
       'mul-div': () => {
         const type = rnd(1, 3);
         if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
         if (type === 2) { const b = rnd(2, 9), q = rnd(2, 9); return `${b * q} ÷ ${b} + ${rnd(10, 50)}`; }
-        return `${rnd(10, 99)} - ${rnd(2, 9)} × ${rnd(2, 9)}`;
+        // ⭐ M7：先算乘积，被减数取「乘积 + 10~90」，保证中间结果不为负
+        const mb = rnd(2, 9), mc = rnd(2, 9), mp = mb * mc;
+        return `${mp + rnd(10, 90)} - ${mb} × ${mc}`;
       },
       'add-sub': () => {
         const type = rnd(1, 3);

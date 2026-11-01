@@ -1,6 +1,9 @@
 /* grades/grade3/scoring/m13.js
    解题思维：数字提取 + 代入式校验（纯函数）
+
+   9.7：家长口令改走 core/parent-pin.js（4 位 PIN，未设 PIN 时退回旧规则）。
 */
+import { verifyParentSecret } from '../../../core/parent-pin.js';
 /**
  * 将中文数字字符串转换为阿拉伯数字
  * 支持：一、十、百、千、万，支持“两”，支持“零”
@@ -43,6 +46,10 @@ function replaceChineseNumbers(text) {
   if (!text) return '';
   // 匹配连续的中文数字（包含十百千万两零）
   return text.replace(/[零一二两三四五六七八九十百千万]+/g, (match) => {
+    // ⭐ 修复：单字「一/两/三」在中文里大多是普通词（一共、两个、三人），
+    //    原来会把「一共有 8 个」变成「1共有 8 个」，给判分注入幽灵数字 1。
+    //    只把「两字以上」或「含十百千万」的组合当作数词。
+    if (match.length < 2 && !/[十百千万]/.test(match)) return match;
     const parsed = parseChineseNumber(match);
     // 如果解析出来大于 0，就替换；解析失败则原样返回
     return parsed > 0 ? parsed.toString() : match;
@@ -72,7 +79,10 @@ export function isValidSubstitution(sub, problemNums) {
 */
 
 export function problemNumbers(problemText) {
-  const raw = String(problemText || '');
+  // ⭐ 修复：题面里的中文数字（如「十五个」）原来完全不转换 → problemNums 为空，
+  //    而 isValidSubstitution 会转换学生输入 → 中文数字题永远被判「代入无效」。
+  //    两侧必须同一口径。
+  const raw = replaceChineseNumbers(String(problemText || ''));
   const nums = raw.match(/\d+(?:\.\d+)?/g) || [];
   return [...new Set(nums.map(n => parseFloat(n)).filter(n => !isNaN(n)))];
 }
@@ -100,9 +110,9 @@ export function isValidSubstitution(sub, problemNums) {
   return hit >= 1; 
 }
 
-export function checkPassword(input) {
-  const d = new Date();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return input === (mm + dd + 'pcw');
+/* 9.7：家长区口令。原来固定是「当前月日 + pcw」，等于没有密码。
+   现在优先校验家长设置的 4 位 PIN；没设 PIN 时退回旧规则（避免升级后把人锁在门外）。
+   实现搬到 core/parent-pin.js，这里只保留对外签名，调用方（m13.js）无需改动。 */
+export function checkPassword(input, now = new Date()) {
+  return verifyParentSecret(input, now);
 }

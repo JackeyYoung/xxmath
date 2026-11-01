@@ -1,10 +1,14 @@
 /* grades/grade3/modules/m9.js */
+import { getTemplate } from '../../../core/ui/template.js';
+
 import * as M9Score from '../scoring/m9.js';
 import { COMBO } from '../../../core/ui/celebrate.js';
 import { getEncouragement } from '../../../core/ui/encourage.js';
 import { takeawayLoad } from '../../../core/takeaway.js';
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
+import { GOLDEN, EASE, DUR, cellStyle } from '../../../core/ui/golden-motion.js';
+import { loadGsap } from '../../../js/vendor/gsap-esm.js';
 
 export const meta = { 
   title: '竖式运算', 
@@ -18,7 +22,7 @@ export const meta = {
 };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m9');
+  const tpl = getTemplate('tpl-m9');
   if (!tpl) {
     console.error('找不到 tpl-m9 模板');
     return;
@@ -109,6 +113,97 @@ export default async function mount(container, ctx) {
     }
   }
 
+  /* ===== 黄金视觉标准（第 1 步：仅视觉，不动 M9.step） ===== */
+  let _gsap = null;
+  loadGsap().then((g) => { _gsap = g || null; }).catch(() => { _gsap = null; });
+
+  /** 状态 → 内联 style 串（m9 用字符串拼 HTML，只能这样注入） */
+  function vcStyleAttr(state, extra = {}) {
+    // dim = 整列「尚未轮到」：用中灰 + 0.6（0.4 在暗底上几乎消失）
+    if (state === 'dim') {
+      return ' style="color:' + GOLDEN.history + ';opacity:' + GOLDEN.opacityDimFar + ';"';
+    }
+    const st = cellStyle({ state, fromResult: !!extra.fromResult });
+    const sh = (st.textShadow && st.textShadow !== 'none') ? 'text-shadow:' + st.textShadow + ';' : '';
+    return ' style="color:' + st.color + ';opacity:' + st.opacity + ';' + sh + '"';
+  }
+
+  function vcKeyAttr(key) {
+    return ' data-vc-key="' + key + '"';
+  }
+
+  /* 加减法：索引 i 从左往右，curI 是当前列（随 step 增大而左移）
+     i > curI → 已算过（history）；i === curI → 当前（focus）；i < curI → 未轮到（dim） */
+  function addState(i, curI) {
+    if (M9.step < 0) return 'normal';
+    if (i > curI) return 'history';
+    if (i === curI) return 'focus';
+    return 'dim';
+  }
+
+  /* 乘法：col 从右往左数，与 M9.step 同一坐标系 */
+  function mulState(col) {
+    if (M9.step < 0) return 'normal';
+    if (col < M9.step) return 'history';
+    if (col === M9.step) return 'focus';
+    return 'dim';
+  }
+
+  /**
+   * 落位动画（一次性）：让"落在余数右边的被除数位"从上方原位置砸下来。
+   * **只动目标格**，不碰被除数那一格（它已被渲染成浅灰占位），
+   * 因此不会和重绘打架。
+   */
+  /* 整个函数替换 */
+  function m9BringDown(container) {
+    if (!_gsap || !container) return;
+    const landedEl = container.querySelector('[data-vc-key^="landed-"]');
+    if (!landedEl) return;
+
+    const idx = landedEl.getAttribute('data-vc-key').split('-')[1];
+    if (M9._landedIdx === Number(idx)) return;   // 这一位已经飞过了
+
+    const src = container.querySelector('[data-vc-key="dividend-' + idx + '"]');
+    if (!src) return;
+
+    const a = src.getBoundingClientRect();
+    const b = landedEl.getBoundingClientRect();
+    const dy = a.top - b.top;                   // 从上方原位出发（负值）
+
+    _gsap.fromTo(landedEl,
+      { y: dy, opacity: 0.85 },
+      { y: 0, opacity: 1, duration: 0.42, ease: 'back.out(1.2)',
+        onComplete: () => {
+          _gsap.to(landedEl, { scale: 1.12, duration: 0.12, ease: 'power2.out',
+            onComplete: () => _gsap.to(landedEl, { scale: 1, duration: 0.18, ease: 'back.out(2)' }) });
+          M9._landedIdx = Number(idx);
+        } });
+  }
+
+  /** 落地弹跳：数字砸进格子（重绘后调用，因此不改输入处理逻辑） */
+  function m9LandPop(container) {
+    if (!_gsap || !container || !M9._popKey) return;
+    const key = M9._popKey;
+    M9._popKey = null;
+    const el = container.querySelector('[data-vc-key="' + key + '"]');
+    if (!el) return;
+
+    _gsap.fromTo(el,
+      { y: -26, scale: 0.7, opacity: 1 },
+      { y: 0, scale: 1, opacity: 1, duration: DUR.land, ease: EASE.absorb,
+        onComplete: () => {
+          // 落地微回弹
+          _gsap.to(el, { y: -4, duration: 0.14, ease: EASE.land,
+            onComplete: () => _gsap.set(el, { clearProps: 'transform' }) });
+
+          // 纯白 + 白光「闪一下」，然后 0.3s 平滑退到历史灰
+          _gsap.fromTo(el,
+            { color: '#FFFFFF', textShadow: '0 0 8px #fff' },
+            { color: GOLDEN.historyDeep, textShadow: '0 0 0 rgba(255,255,255,0)',
+              duration: 0.30, ease: 'power2.inOut', delay: 0.18 });
+        } });
+  }
+
   /* ---------- 渲染（完整保留） ---------- */
   function renderAddSub() {
     const maxLen = getAddSubMaxLen();
@@ -138,9 +233,9 @@ export default async function mount(container, ctx) {
       if (hasCarryVal && isCurrent) {
         html += `<div class="vc-cell carry input-cell"><input type="text" class="vc-input vc-input-carry" id="m9InlineInput" inputmode="numeric" maxlength="1" autocomplete="off"></div>`;
       } else if (filled) {
-        html += `<div class="vc-cell carry">${filled}</div>`;
+        html += `<div class="vc-cell carry"${vcStyleAttr('history')}${vcKeyAttr(carryKey)}>${filled}</div>`;
       } else {
-        html += `<div class="vc-cell carry"></div>`;
+        html += `<div class="vc-cell carry"${vcStyleAttr('dim')}></div>`;
       }
     }
     html += '</div>';
@@ -158,7 +253,7 @@ export default async function mount(container, ctx) {
         html += `<div class="vc-cell"></div>`;
       } else {
         const hl = (curPos >= 0 && i === curI) ? ' highlight' : '';
-        html += `<div class="vc-cell${hl}">${aD[i]}</div>`;
+        html += `<div class="vc-cell${hl}"${vcStyleAttr(addState(i, curI))}>${aD[i]}</div>`;
       }
     }
     html += '</div>';
@@ -170,7 +265,7 @@ export default async function mount(container, ctx) {
         html += `<div class="vc-cell"></div>`;
       } else {
         const hl = (curPos >= 0 && i === curI) ? ' highlight' : '';
-        html += `<div class="vc-cell${hl}">${bD[i]}</div>`;
+        html += `<div class="vc-cell${hl}"${vcStyleAttr(addState(i, curI))}>${bD[i]}</div>`;
       }
     }
     html += '</div>';
@@ -186,9 +281,9 @@ export default async function mount(container, ctx) {
       if (isCurrent) {
         html += `<div class="vc-cell input-cell"><input type="text" class="vc-input" id="m9InlineInput" inputmode="numeric" maxlength="1" autocomplete="off"></div>`;
       } else if (filled) {
-        html += `<div class="vc-cell">${filled}</div>`;
+        const isLatest = M9._lastFilledKey === resultKey; html += `<div class="vc-cell"${vcStyleAttr(isLatest ? 'focus' : 'history', { fromResult: isLatest })}${vcKeyAttr(resultKey)}>${filled}</div>`;
       } else {
-        html += `<div class="vc-cell"></div>`;
+        html += `<div class="vc-cell"${vcStyleAttr(addState(i, curI) === 'history' ? 'dim' : addState(i, curI))}></div>`;
       }
     }
     html += '</div></div>';
@@ -213,9 +308,9 @@ export default async function mount(container, ctx) {
       if (hasCarryVal && isCurrent) {
         html += `<div class="vc-cell carry input-cell"><input type="text" class="vc-input vc-input-carry" id="m9InlineInput" inputmode="numeric" maxlength="1" autocomplete="off"></div>`;
       } else if (filled) {
-        html += `<div class="vc-cell carry">${filled}</div>`;
+        html += `<div class="vc-cell carry"${vcStyleAttr('history')}${vcKeyAttr(carryKey)}>${filled}</div>`;
       } else {
-        html += `<div class="vc-cell carry"></div>`;
+        html += `<div class="vc-cell carry"${vcStyleAttr('dim')}></div>`;
       }
     }
     html += '</div>';
@@ -224,13 +319,13 @@ export default async function mount(container, ctx) {
     for (let col = displayCols - 1; col >= 0; col--) {
       const hl = (col === M9.step && M9.step < aLen) ? ' highlight' : '';
       const val = (col < aLen) ? aRev[col] : '';
-      html += `<div class="vc-cell${hl}">${val}</div>`;
+      html += `<div class="vc-cell${hl}"${vcStyleAttr(mulState(col))}>${val}</div>`;
     }
     html += '</div>';
 
     html += '<div class="vc-row"><div class="vc-cell op">×</div><div class="vc-cell"></div><div class="vc-cell"></div><div class="vc-cell"></div>';
     const hlB = (M9.step >= 0) ? ' highlight' : '';
-    html += `<div class="vc-cell${hlB}">${b}</div></div>`;
+    html += `<div class="vc-cell${hlB}"${vcStyleAttr(M9.step >= 0 ? 'history' : 'normal')}>${b}</div></div>`;
 
     html += '<div class="vc-line"></div>';
 
@@ -243,13 +338,39 @@ export default async function mount(container, ctx) {
       if (isCurrent) {
         html += `<div class="vc-cell input-cell"><input type="text" class="vc-input" id="m9InlineInput" inputmode="numeric" maxlength="1" autocomplete="off"></div>`;
       } else if (filled) {
-        html += `<div class="vc-cell">${filled}</div>`;
+        const isLatest = M9._lastFilledKey === resultKey; html += `<div class="vc-cell"${vcStyleAttr(isLatest ? 'focus' : 'history', { fromResult: isLatest })}${vcKeyAttr(resultKey)}>${filled}</div>`;
       } else {
-        html += `<div class="vc-cell"></div>`;
+        html += `<div class="vc-cell"${vcStyleAttr(mulState(col) === 'history' ? 'dim' : mulState(col))}></div>`;
       }
     }
     html += '</div></div>';
     return html;
+  }
+
+  /** 只返回 CSS 声明（不含 style=），用于已经存在 style 属性的元素 */
+  function vcStyleInline(state, extra = {}) {
+    if (state === 'dim') {
+      return 'color:' + GOLDEN.history + ';opacity:' + GOLDEN.opacityDimFar + ';';
+    }
+    const st = cellStyle({ state, fromResult: !!extra.fromResult });
+    const sh = (st.textShadow && st.textShadow !== 'none') ? 'text-shadow:' + st.textShadow + ';' : '';
+    return 'color:' + st.color + ';opacity:' + st.opacity + ';' + sh;
+  }
+
+  /**
+   * 除法的「商」列状态。
+   * 注意：不能用 mulState(col) —— 商的 idx 是"第几个商位"（从 0 开始），
+   * 不是列坐标；而且商位是**乱序填**的（先填高位），所以判据是 idx vs M9.step。
+   *
+   * @param {number} idx    第几个商位
+   * @param {string} filled 该位已填的内容（未填为 undefined）
+   */
+  function divStateQuotient(idx, filled) {
+    const cur = M9.step;
+    if (cur < 0) return 'normal';
+    if (filled || idx < cur) return 'history';   // 已填 = 已算过（优先于"当前"）
+    if (idx === cur) return 'focus';             // 当前待填：黄字 + 黄光
+    return 'dim';                                // 后面还没轮到：中灰 0.6
   }
 
   function renderDiv() {
@@ -260,7 +381,7 @@ export default async function mount(container, ctx) {
     const n = aStr.length;
     const aD = aStr.split('').map(Number);
     if (a < b) {
-      return `<div class="vertical-calc" style="padding:20px;text-align:center;"><div style="font-size:24px;font-weight:800;color:#1e293b;margin-bottom:12px;">${a} ÷ ${b} = 0 余 ${a}</div><div style="font-size:14px;color:#64748b;">被除数比除数小，商是 0，余数就是被除数本身</div></div>`;
+      return `<div class="vertical-calc" style="padding:20px;text-align:center;"><div style="font-size:24px;font-weight:800;color:var(--text);margin-bottom:12px;">${a} ÷ ${b} = 0 余 ${a}</div><div style="font-size:14px;color:var(--muted);">被除数比除数小，商是 0，余数就是被除数本身</div></div>`;
     }
 
     const steps = [];
@@ -279,6 +400,20 @@ export default async function mount(container, ctx) {
 
     const cells = [];
     const curStep = M9.step;
+    // renderDiv 里，const curStep = M9.step; 的下面
+    const maxSteps = m9GetMaxSteps();
+    // 除法最后一步填完后 M9.step 不会再 +1，所以必须同时查 filled：三个 key 都有就是算完了
+    const allDone = steps.every((_, i) =>
+      M9.filled['quotient-' + i] !== undefined &&
+      M9.filled['product-' + i] !== undefined &&
+      M9.filled['remainder-' + i] !== undefined);
+    const isFinale = (M9.step >= steps.length) || allDone;          // 终局：全部算完
+    // 唯一活跃步：只有它能亮黄。为 -1 时谁都不亮。
+    const activeStep = (M9.step < 0 || isFinale) ? -1 : M9.step; const workRow = activeStep - 1;
+
+    // 只要当前步 > 0，说明这一步用的被除数位「刚刚从上面落下来」
+    const landIdx = (curStep > 0 && steps[curStep]) ? steps[curStep].end : -1;
+    console.log('[div] curStep=', curStep, '| steps=', steps.map(s => ({ start: s.start, end: s.end })), '| landIdx=', landIdx);
 
     steps.forEach((s, idx) => {
       const col = 2 + s.end + 1;
@@ -286,14 +421,22 @@ export default async function mount(container, ctx) {
       const filled = M9.filled[key];
       const isCurrent = M9.waitingFor === 'quotient' && idx === curStep;
 
-      if (isCurrent) cells.push({ row: 1, col, cls: 'input-cell', input: true });
-      else if (filled) cells.push({ row: 1, col, text: filled, cls: 'vc-div-q' });
+      if (isCurrent) cells.push({ row: 1, col, cls: 'input-cell', input: true, maxlength: 1 });
+      else if (filled) cells.push({ row: 1, col, text: filled, cls: 'vc-div-q', st: 'historyMid' });
       else cells.push({ row: 1, col, text: '', cls: '' });
     });
 
     cells.push({ row: 2, col: 1, text: b, cls: 'vc-div-divisor' });
     cells.push({ row: 2, col: 2, text: '', cls: 'vc-div-sep' });
-    for (let i = 0; i < n; i++) cells.push({ row: 2, col: 3 + i, text: aD[i], cls: '' });
+    /* 改成（只多一个 key 字段） */
+    /* 再改成 */
+    for (let i = 0; i < n; i++) {
+      cells.push({
+        row: 2, col: 3 + i, text: aD[i], cls: '',
+        key: 'dividend-' + i,
+        st: (i === landIdx) ? 'historyDeep' : undefined,   // 落下去 → 浅灰占位
+      });
+    }
 
     let curRow = 3;
     steps.forEach((s, idx) => {
@@ -304,13 +447,19 @@ export default async function mount(container, ctx) {
       const prodFilled = M9.filled[prodKey];
       const isCurrentProd = M9.waitingFor === 'product' && idx === curStep;
 
+      /* 改成 */
       if (isCurrentProd) {
+        // 正在填：输入框就是高亮，同组其余格不设颜色
         for (let i = 0; i < prodDigits.length; i++) {
           if (i === prodDigits.length - 1) cells.push({ row: curRow, col: prodStartCol + i, cls: 'input-cell', input: true });
           else cells.push({ row: curRow, col: prodStartCol + i, text: '', cls: '' });
         }
       } else if (prodFilled) {
-        for (let i = 0; i < prodDigits.length; i++) cells.push({ row: curRow, col: prodStartCol + i, text: prodDigits[i], cls: 'vc-div-highlight' });
+        // 当前工作行上方的乘积还在用 → 中灰；更早的 → 死亡褪色
+        const st = (idx === workRow) ? 'historyMid' : 'historyDeep';
+        for (let i = 0; i < prodDigits.length; i++) {
+          cells.push({ row: curRow, col: prodStartCol + i, text: prodDigits[i], cls: '', st });
+        }
       } else {
         for (let i = 0; i < prodDigits.length; i++) cells.push({ row: curRow, col: prodStartCol + i, text: '', cls: '' });
       }
@@ -334,7 +483,16 @@ export default async function mount(container, ctx) {
           for (let i = 0; i < fullLen - 1; i++) cells.push({ row: curRow, col: remStartCol + i, text: '', cls: '' });
           cells.push({ row: curRow, col: remStartCol + fullLen - 1, cls: 'input-cell', input: true, maxlength: fullLen });
         } else if (remFilled) {
-          for (let i = 0; i < remDigits.length; i++) cells.push({ row: curRow, col: remStartCol + i, text: remDigits[i], cls: '' });
+          const st = (idx === workRow) ? 'focus' : 'historyDeep';
+          for (let i = 0; i < remDigits.length; i++) {
+            cells.push({ row: curRow, col: remStartCol + i, text: remDigits[i], cls: '',
+                         key: remKey + '-' + i, st });
+          }
+          // 落下来的被除数位：和这行的余数同属"当前工作数"，一起黄
+          if (landIdx >= 0 && landIdx === s.end + 1) {   // 常驻：落下来的位一直留着
+            cells.push({ row: curRow, col: 3 + landIdx, text: aD[landIdx], cls: '',
+                         key: 'landed-' + landIdx, st: (idx === workRow) ? 'focus' : 'historyDeep' });
+          }
         } else {
           for (let i = 0; i < remDigits.length; i++) cells.push({ row: curRow, col: remStartCol + i, text: '', cls: '' });
         }
@@ -358,14 +516,21 @@ export default async function mount(container, ctx) {
           else cells.push({ row: curRow, col: startCol + i, text: '', cls: '' });
         }
       } else if (finalFilled) {
-        for (let i = 0; i < digits.length; i++) cells.push({ row: curRow, col: startCol + i, text: digits[i], cls: 'vc-div-highlight' });
+        // 终局：最后一个余数用纯白 + 绿色发光，其余全部保持最暗
+        const st = isFinale ? 'result' : 'historyDeep';
+        for (let i = 0; i < digits.length; i++) {
+          cells.push({ row: curRow, col: startCol + i, text: digits[i], cls: '', st });
+        }
       }
     }
 
     let html = `<div class="vc-div-grid" style="grid-template-columns: 40px 24px ${'48px '.repeat(n)}; grid-auto-rows: 50px;">`;
     cells.forEach(c => {
       const inner = c.input ? `<input type="text" class="vc-input" id="m9InlineInput" inputmode="numeric" maxlength="${c.maxlength || 3}" enterkeyhint="next" autocomplete="off">` : (c.text !== undefined ? c.text : '');
-      html += `<div style="grid-row:${c.row};grid-column:${c.col};" class="${c.cls || ''}">${inner}</div>`;
+      const extraStyle = (!c.input && c.st) ? vcStyleInline(c.st) : '';
+      /* 改成 */
+      const keyAttr = c.key ? ' data-vc-key="' + c.key + '"' : '';
+      html += `<div style="grid-row:${c.row};grid-column:${c.col};${extraStyle}"${keyAttr} class="${c.cls || ''}">${inner}</div>`;
     });
     html += '</div>';
     return html;
@@ -378,6 +543,7 @@ export default async function mount(container, ctx) {
     else html = renderDiv();
 
     display.innerHTML = html;
+    m9LandPop(display);          // ← 加这一行
 
     if (M9.step < 0) {
       setFeedback('点击「下一步」，开始计算');
@@ -396,6 +562,9 @@ export default async function mount(container, ctx) {
       stepBtn.disabled = !!M9.waitingFor;
       stepBtn.style.opacity = M9.waitingFor ? '.5' : '';
     }
+
+    m9LandPop(display);
+    m9BringDown(display);       // ← 加这一行
   }
 
   /* ============ 竖式 · 先估算 ============ */
@@ -501,6 +670,10 @@ export default async function mount(container, ctx) {
       M9.step++;
       if (M9.step > m9GetMaxSteps()) {
         M9.step--;
+        // ⭐ 先算出最终结果，供下面的 historyAdd / 掌握度复用。
+        // 旧实现直接引用 `final`，但它只在 submitInline 的回调作用域里声明过
+        // → 这里必抛 ReferenceError，导致做题记录与掌握度静默丢失。
+        const final = calcFinalResult();
         setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
         ctx.data.historyAdd({
           problemText: `${M9.a} ${M9.op} ${M9.b}`,
@@ -614,18 +787,23 @@ export default async function mount(container, ctx) {
       setFeedback(getEncouragement('m9', COMBO.count), 'ok');
 
       M9.filled[key] = raw;
+      M9._popKey = key;          // 交给 m9LandPop 做落地弹跳
+      M9._lastFilledKey = key;   // 供渲染判定「纯白 + 绿光」
       M9.waitingFor = null;
       input.blur();
 
       setTimeout(() => {
         M9.submitting = false;
+        /* 改成 */
         if (isStepComplete()) {
+          const justWasRemainder = (M9.waitingFor === 'remainder');
           M9.step++;
+          if (justWasRemainder && M9.op === '÷') M9._bringDownNext = true;   // 下一步做落位
           if (M9.step > m9GetMaxSteps()) {
             M9.step--; M9.waitingFor = null; m9Render();
             setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
             // 答对时：
-            emitUI('CORRECT', { moduleId: 'm9' });
+// M10：改由壳层在 historyAdd 里统一发（带坐标），这里不再重复发
             const final = calcFinalResult();
             ctx.data.historyAdd({
               problemText: `${M9.a} ${M9.op} ${M9.b}`, problemSource: 'm9', moduleId: 'm9',
@@ -668,9 +846,20 @@ export default async function mount(container, ctx) {
     else { b = Math.max(0, Math.min(999, b)); bInput.max = 999; bInput.min = 0; }
     M9.b = b;
 
+    // ⭐ 修复：减法必须保证被减数 ≥ 减数，否则 computeAnswerMap 会按借位输出错位的「竖式」
+    //    （如 100 − 999 会得到 result-0="9" 这类无意义列），等于教错学生。
+    let adjustHint = '';
+    if (M9.op === '−' && M9.b > M9.a) {
+      M9.b = M9.a;
+      adjustHint = `💡 被减数要 ≥ 减数，减数已调整为 ${M9.b}`;
+    }
+
     if (M9.op === '÷' && M9.a < M9.b) {
       aInput.value = M9.a; bInput.value = M9.b;
       M9.step = -1; M9.waitingFor = null; M9.filled = {};
+      M9.broughtDown = new Set();   // 预留：后续持久化用；本轮只创建，不参与渲染
+      M9._bringDownNext = false;    // 一次性标记：下一步要不要做落位动画
+      M9._landedIdx = -1;           // 一次性：刚落下来的被除数位索引（-1 = 无）
       ANSWER = computeAnswerMap(); M9_ESTIMATE.passed = false; m9HideEstimateBox();
       setFeedback(`💡 ${M9.a} ÷ ${M9.b} = 0 余 ${M9.a}（被除数比除数小）`, 'ok');
       m9Render(); return;
@@ -678,8 +867,11 @@ export default async function mount(container, ctx) {
 
     aInput.value = M9.a; bInput.value = M9.b;
     M9.step = -1; M9.waitingFor = null; M9.filled = {};
+    M9.broughtDown = new Set();   // 预留：后续持久化用；本轮只创建，不参与渲染
+    M9._bringDownNext = false;    // 一次性标记：下一步要不要做落位动画
+    M9._landedIdx = -1;           // 一次性：刚落下来的被除数位索引（-1 = 无）
     ANSWER = computeAnswerMap(); M9_ESTIMATE.passed = false; m9HideEstimateBox();
-    setFeedback('点击「下一步」，开始计算');
+    setFeedback(adjustHint || '点击「下一步」，开始计算');
     m9Render();
   }
 

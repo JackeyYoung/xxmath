@@ -1,5 +1,6 @@
 /* core/student.js */
 import { lsGet, lsSet, lsRemove } from './storage.js';
+import { showAlert } from './ui/dialog.js';
 import { STUDENT_KEY } from './keys.js';
 import { showToast } from './ui/toast.js';
 
@@ -27,17 +28,34 @@ export function showStudentModal() {
 
   const mask = document.createElement('div');
   mask.className = 'student-modal-mask';
-  mask.innerHTML = `
-    <div class="student-modal">
-      <h3>👦 请告诉我你的名字</h3>
-      <p>做过的题会保存到你的名下（可选）</p>
-      <input type="text" id="studentNameInput" maxlength="12" placeholder="例：小明" autocomplete="off" value="${getStudentName()}">
-      <div class="student-btns">
-        <button class="student-cancel" id="studentCancel">取消</button>
-        <button class="student-ok" id="studentOk">确定</button>
-      </div>
-    </div>
-  `;
+  // M3/L6：DOM 构建替代模板字符串。原来的 value="${getStudentName()}" 会把名字
+  // 未经转义直接拼进 HTML 属性（名字里带引号即可注入），这里改为直接赋值。
+  const card = document.createElement('div');
+  card.className = 'student-modal';
+  const h3 = document.createElement('h3');
+  h3.textContent = '👦 请告诉我你的名字';
+  const p = document.createElement('p');
+  p.textContent = '做过的题会保存到你的名下（可选）';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.id = 'studentNameInput';
+  nameInput.maxLength = 12;
+  nameInput.placeholder = '例：小明';
+  nameInput.autocomplete = 'off';
+  nameInput.value = getStudentName();        // ← 安全：不进 HTML 解析器
+  const btns = document.createElement('div');
+  btns.className = 'student-btns';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'student-cancel';
+  cancelBtn.id = 'studentCancel';
+  cancelBtn.textContent = '取消';
+  const okBtn = document.createElement('button');
+  okBtn.className = 'student-ok';
+  okBtn.id = 'studentOk';
+  okBtn.textContent = '确定';
+  btns.append(cancelBtn, okBtn);
+  card.append(h3, p, nameInput, btns);
+  mask.append(card);
   document.body.appendChild(mask);
   document.body.classList.add('modal-open');
 
@@ -46,7 +64,7 @@ export function showStudentModal() {
 
   function doOk() {
     const name = input.value.trim();
-    if (!name) { alert('请输入名字'); return; }
+if (!name) { showAlert('请输入名字'); return; }
     setStudentName(name);
     document.body.classList.remove('modal-open');
     mask.remove();

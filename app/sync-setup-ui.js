@@ -1,7 +1,18 @@
+/* S3：弹窗内部的元素优先在 #syncSetupMask 里找，找不到再退回全局查询。
+   好处：即使别处出现同名 id，也不会抢到弹窗外的节点。
+   最坏情况（弹窗未打开）等价于改动前的全局查询，所以行为不变。 */
+const _syncSetupQ = (id) => {
+  const root = document.getElementById('syncSetupMask');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* app/sync-setup-ui.js
    CloudBase 配置 + 邮箱验证码登录 UI
 */
 
+import { showAlert, showConfirm } from '../core/ui/dialog.js';
+import { reloadApp } from '../core/reload.js';
 import {
   isCloudBaseConfigured,
   setCloudBaseConfig,
@@ -39,7 +50,7 @@ export function openSyncSetupModal() {
 }
 
 function _renderContent() {
-  const modal = document.getElementById('syncSetupModal');
+  const modal = _syncSetupQ('syncSetupModal');
   if (!modal) return;
 
   const configured = isCloudBaseConfigured();
@@ -83,13 +94,13 @@ function _htmlSetupForm() {
 }
 
 function _bindSetupForm() {
-  document.getElementById('sbCancel').onclick = () => {
+  _syncSetupQ('sbCancel').onclick = () => {
     document.getElementById('syncSetupMask')?.remove();
   };
 
-  document.getElementById('sbSave').onclick = () => {
-    const envId = document.getElementById('tcbEnvId').value.trim();
-    const err = document.getElementById('sbErr');
+_syncSetupQ('sbSave').onclick = async () => {
+    const envId = _syncSetupQ('tcbEnvId').value.trim();
+    const err = _syncSetupQ('sbErr');
 
     if (!envId || envId.length < 10) {
       err.textContent = '环境 ID 看起来不对（应该 > 10 位）';
@@ -97,7 +108,7 @@ function _bindSetupForm() {
     }
 
     setCloudBaseConfig(envId);
-    location.reload();
+await reloadApp('save-env');
   };
 }
 
@@ -117,16 +128,16 @@ function _htmlEmailStep() {
 }
 
 function _bindEmailStep() {
-  document.getElementById('loginSendCode').onclick = async () => {
-    const email = document.getElementById('loginEmail').value.trim();
-    const err = document.getElementById('loginErr');
+  _syncSetupQ('loginSendCode').onclick = async () => {
+    const email = _syncSetupQ('loginEmail').value.trim();
+    const err = _syncSetupQ('loginErr');
 
     if (!email || !email.includes('@')) {
       err.textContent = '请输入有效邮箱';
       return;
     }
 
-    const btn = document.getElementById('loginSendCode');
+    const btn = _syncSetupQ('loginSendCode');
     btn.disabled = true;
     btn.textContent = '发送中…';
     err.textContent = '';
@@ -164,23 +175,23 @@ function _htmlCodeStep(email) {
 }
 
 function _bindCodeStep(email) {
-  setTimeout(() => document.getElementById('loginCode')?.focus(), 100);
+  setTimeout(() => _syncSetupQ('loginCode')?.focus(), 100);
 
-  document.getElementById('loginBack').onclick = () => {
+  _syncSetupQ('loginBack').onclick = () => {
     loginStep = 'input-email';
     _renderContent();
   };
 
-  document.getElementById('loginVerify').onclick = async () => {
-    const code = document.getElementById('loginCode').value.trim();
-    const err = document.getElementById('loginErr');
+  _syncSetupQ('loginVerify').onclick = async () => {
+    const code = _syncSetupQ('loginCode').value.trim();
+    const err = _syncSetupQ('loginErr');
 
     if (!/^\d{6}$/.test(code)) {
       err.textContent = '请输入 6 位数字验证码';
       return;
     }
 
-    const btn = document.getElementById('loginVerify');
+    const btn = _syncSetupQ('loginVerify');
     btn.disabled = true;
     btn.textContent = '验证中…';
     err.textContent = '';
@@ -192,7 +203,7 @@ function _bindCodeStep(email) {
       resumeSync();
       
       document.getElementById('syncSetupMask')?.remove();
-      location.reload();
+await reloadApp('login-done');
       
     } catch (e) {
       console.error('[验证码校验失败]', e);
@@ -234,11 +245,11 @@ function _htmlAccountPanel(user) {
 }
 
 function _bindAccountPanel() {
-  const accToLogin = document.getElementById('accToLogin');
+  const accToLogin = _syncSetupQ('accToLogin');
   if (accToLogin) {
     accToLogin.onclick = () => {
       loginStep = 'input-email';
-      const modal = document.getElementById('syncSetupModal');
+      const modal = _syncSetupQ('syncSetupModal');
       if (modal) {
         modal.innerHTML = _htmlEmailStep();
         _bindEmailStep();
@@ -246,10 +257,10 @@ function _bindAccountPanel() {
     };
   }
 
-  const accSync = document.getElementById('accSync');
+  const accSync = _syncSetupQ('accSync');
   if (accSync) {
     accSync.onclick = async () => {
-      const btn = document.getElementById('accSync');
+      const btn = _syncSetupQ('accSync');
       btn.textContent = '同步中…';
       btn.disabled = true;
       try {
@@ -270,16 +281,16 @@ function _bindAccountPanel() {
     };
   }
 
-  const accLogout = document.getElementById('accLogout');
+  const accLogout = _syncSetupQ('accLogout');
   if (accLogout) {
     accLogout.onclick = async () => {
-      if (!confirm('退出后本设备的云端同步会停止，本地数据保留。\n\n确定退出？')) return;
+if (!(await showConfirm('退出后本设备的云端同步会停止，本地数据保留。\n\n确定退出？'))) return;
       try {
         await signOut();
         document.getElementById('syncSetupMask')?.remove();
-        location.reload();
+await reloadApp('logout');
       } catch (e) {
-        alert('退出失败：' + e.message);
+showAlert('退出失败：' + e.message);
       }
     };
   }

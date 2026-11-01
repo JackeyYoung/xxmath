@@ -1,5 +1,6 @@
 /* core/session-backup.js */
 import { lsGet, lsSet, lsKeysByPrefix, flushStorage } from './storage.js';
+import { reloadApp } from './reload.js';
 import { SESSION_BACKUP_KEY } from './keys.js';
 
 const LS_KEYS = [
@@ -56,7 +57,7 @@ function checkRestore() {
       _restoringFromSession = true;
       try { await restoreFromSession(); await flushStorage(); }
       finally { _restoringFromSession = false; }
-      location.reload();
+await reloadApp('restore-session');
     });
     document.getElementById('backupNo').addEventListener('click', () => {
       sessionStorage.removeItem(SESSION_BACKUP_KEY);
@@ -66,7 +67,22 @@ function checkRestore() {
 }
 
 export function installSessionBackup() {
-  setInterval(backupToSession, 30000);
+  // ⭐ S7：后台不做周期写盘；隐藏/卸载时立刻备份一次（iOS 不派发 beforeunload，靠 pagehide 兜底）
+  const timer = setInterval(() => { if (!document.hidden) backupToSession(); }, 30000);
+  const onVisibilityChange = () => { if (document.hidden) backupToSession(); };
+  const onPageHide = () => backupToSession();
+
+  document.addEventListener('visibilitychange', onVisibilityChange);
+  window.addEventListener('pagehide', onPageHide);
   window.addEventListener('beforeunload', backupToSession);
+
   checkRestore();
+
+  // 返回 disposer：便于统一回收（此前是永久 setInterval + 永久监听）
+  return () => {
+    clearInterval(timer);
+    document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.removeEventListener('pagehide', onPageHide);
+    window.removeEventListener('beforeunload', backupToSession);
+  };
 }

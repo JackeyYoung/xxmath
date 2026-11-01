@@ -31,7 +31,7 @@ function showKojiBubble(text) {
   bubble.style.cssText = `
     position: fixed; bottom: max(88px, calc(env(safe-area-inset-bottom) + 88px));
     right: max(144px, calc(env(safe-area-inset-right) + 144px));
-    background: #fff; border: 2px solid #8b5cf6; border-radius: 14px;
+    background:var(--card); border: 2px solid #8b5cf6; border-radius: 14px;
     padding: 10px 14px; font-size: 13px; font-weight: 600;
     color: #5b21b6; box-shadow: 0 8px 24px rgba(139, 92, 246, .25);
     z-index: 999; max-width: 220px; animation: fadeUp .3s ease; cursor: pointer;
@@ -60,9 +60,13 @@ export function installUIListeners() {
   setKojiState('idle');
 
   // 监听答对
-  onUI('CORRECT', ({ x, y }) => {
+  onUI('CORRECT', ({ x, y } = {}) => {
     if (SFX.isEnabled()) SFX.correct();
-    if (typeof x === 'number' && typeof y === 'number') onCorrect(x, y);
+    // ⭐ 修复：13 个模块里只有 m1/m9 发 CORRECT，且都不带坐标 → 撒花/连对横幅永远不触发。
+    //    没有坐标时退化到视口中上部，至少让庆祝动效生效。
+    const cx = typeof x === 'number' ? x : window.innerWidth / 2;
+    const cy = typeof y === 'number' ? y : window.innerHeight / 3;
+    onCorrect(cx, cy);
 
     // Koji 连对退后逻辑
     correctCount++; errorCount = 0;

@@ -83,26 +83,43 @@ export function getStorageHealth() {
 
 /* ---------- 同步读 ---------- */
 export function lsGet(key) {
-  return _memCache.has(key) ? _memCache.get(key) : null;
+  if (_memCache.has(key)) return _memCache.get(key);
+
+  // S8：内存里没有时回落到 localStorage。
+  // 原因：initStorage() 之前、或旧版本直接 localStorage.setItem 写的数据，内存里都没有；
+  // 若不回落，`lsGet(k)` 与 `localStorage.getItem(k)` 会给出不同结果（同一份数据两条读路径）。
+  // 回落后顺手放进内存，后续读取就都走缓存。
+  if (isPersistKey(key)) {
+    try {
+      const v = localStorage.getItem(key);
+      if (v !== null) { _memCache.set(key, v); return v; }
+    } catch (e) { /* 隐私模式 / 配额异常：当作没有 */ }
+  }
+  return null;
+}
+
+/* ---------- 云端同步判定（单一出口，便于单测） ----------
+   只有「需要持久化 + 非本地专用 + 未显式跳过」的 key 才该推云端。
+   旧实现把这个判断写在 if (!store) 分支 return 之后（死代码，永远不执行），
+   而真正生效的两处 schedulePush 都没查 LOCAL_ONLY_KEYS
+   → grade3_sound_on / grade3_current_grade 这类「只存本地」的 key 也会被推到云端。 */
+export function shouldSyncKey(key, opts = {}) {
+  return !opts.skipSync && !LOCAL_ONLY_KEYS.has(key);
 }
 
 /* ---------- 同步写（内存立即 + 磁盘排队） ---------- */
-// 修改 lsSet
 export function lsSet(key, value, opts = {}) {
   if (!isPersistKey(key)) return;
   _memCache.set(key, value);
   _localUpdatedAt.set(key, Date.now());
 
+  if (shouldSyncKey(key, opts)) schedulePush(key, value);
+
   const store = getStore();
   if (!store) {
+    // 无 localForage：降级写 localStorage（同步判定已在上面统一做过）
     try { localStorage.setItem(key, value); } catch (e) { _emitStorageError(key, e); }
-    // ⭐ 加同步
-    if (!opts.skipSync) schedulePush(key, value);
     return;
-
-  // ⭐ 同步判断
-  const shouldSync = !opts.skipSync && !LOCAL_ONLY_KEYS.has(key);
-  if (shouldSync) schedulePush(key, value);
   }
 
   const prev = _writeQueues.get(key) || Promise.resolve();
@@ -114,9 +131,6 @@ export function lsSet(key, value, opts = {}) {
       if (_writeQueues.get(key) === next) _writeQueues.delete(key);
     });
   _writeQueues.set(key, next);
-
-  // ⭐ 加同步
-  if (!opts.skipSync) schedulePush(key, value);
 }
 
 /* ---------- 同步删 ---------- */
@@ -128,7 +142,7 @@ export function lsRemove(key, opts = {}) {
   const store = getStore();
   if (!store) {
     try { localStorage.removeItem(key); } catch (e) { _emitStorageError(key, e); }
-    if (!opts.skipSync) scheduleDelete(key);
+    if (shouldSyncKey(key, opts)) scheduleDelete(key);
     return;
   }
 
@@ -142,20 +156,23 @@ export function lsRemove(key, opts = {}) {
     });
   _writeQueues.set(key, next);
 
-  if (!opts.skipSync) scheduleDelete(key);
+  if (shouldSyncKey(key, opts)) scheduleDelete(key);
 
-  // ⭐ 同步判断
-  const shouldSync = !opts.skipSync && !LOCAL_ONLY_KEYS.has(key);
-  if (shouldSync) schedulePush(key, value);
+  // 删除只需同步「删除」事件，不要再 push 值。
+  // 旧实现在这里写成 schedulePush(key, value)，而 lsRemove 的形参里没有 value
+  // → 严格模式下必抛 ReferenceError，导致调用方后续逻辑（如 renderStudentCard）不执行。
 }
 
 /* 新增：应用云端数据到本地（跳过同步回推） */
 export function applyCloudValue(key, value, cloudUpdatedAt) {
-  // 如果有云端时间，同步到本地时间戳里
-  if (cloudUpdatedAt) {
-    _localUpdatedAt.set(key, new Date(cloudUpdatedAt).getTime());
-  }
+  // ⭐ S8：顺序必须反过来 —— lsSet 内部会把 _localUpdatedAt 置成 Date.now()，
+  //    若先写云端时间戳再调 lsSet，它立刻被覆盖 → merge 永远认为「本地更新」，
+  //    表现为每次同步都把自己的值重新推上去、云端的新值永远拉不下来。
   lsSet(key, value, { skipSync: true });
+  if (cloudUpdatedAt) {
+    const t = new Date(cloudUpdatedAt).getTime();
+    if (Number.isFinite(t)) _localUpdatedAt.set(key, t);
+  }
 }
 
 /* ---------- 前缀遍历 ---------- */
@@ -169,9 +186,14 @@ export function lsKeysByPrefix(prefix) {
 
 /* ---------- 等待挂起写入落盘 ---------- */
 export async function flushStorage() {
-  const pending = [..._writeQueues.values()];
-  if (!pending.length) return;
-  await Promise.allSettled(pending);
+  // ⭐ 修复：原来只 await 一次快照，await 期间新入队的写入不会被等待（切后台可能丢数据）。
+  //    改成循环到队列清空（最多 10 轮，防止写入风暴时死循环）。
+  for (let i = 0; i < 10; i++) {
+    const pending = [..._writeQueues.values()];
+    if (!pending.length) return;
+    await Promise.allSettled(pending);
+    if (_writeQueues.size === 0) return;
+  }
 }
 
 /* ---------- 初始化：从 localForage 拉到内存 ---------- */

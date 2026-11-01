@@ -1,0 +1,21 @@
+# L3：统一编辑器约定（换行/缩进/尾随空格）
+# 注意：仓库里历史文件换行不统一（CRLF/LF 混用），
+# 这里只约束「新写入」的规范，不要求批量转换历史文件。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{html,css}]
+indent_size = 2
+
+[*.json]
+indent_size = 2

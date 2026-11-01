@@ -1,5 +1,14 @@
+/* S3：优先在 #wrongBookDrawer 内查找，找不到退回全局（最坏情况等价于改动前）。
+   好处：显式 const 不会提升到模块级，所以用 IIFE 包一层避免与文件内同名变量冲突。 */
+const _wbQ = (id) => {
+  const root = document.getElementById('wrongBookDrawer');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* core/ui/wrongbook-ui.js */
 import { wbLoad, wbRemove, wbClear, wbSave, wbAdd  } from '../wrongbook.js';
+import { sameProblem } from '../problem-id.js';
 import { findCachedFeedback } from '../feedback-resolver.js';
 import { activeModules } from '../../app/shell.js';
 import { showToast } from './toast.js';
@@ -14,10 +23,10 @@ let _ctx = {};
 
 export function initWrongBookUI(ctx) {
   _ctx = ctx;
-  const btn    = document.getElementById('wrongBookBtn');
+  const btn    = _wbQ('wrongBookBtn');
   const drawer = document.getElementById('wrongBookDrawer');
-  const mask   = document.getElementById('wrongBookMask');
-  const close  = document.getElementById('wrongBookClose');
+  const mask   = _wbQ('wrongBookMask');
+  const close  = _wbQ('wrongBookClose');
   if (!btn || !drawer) return;
 
   btn.addEventListener('click', () => {
@@ -31,13 +40,13 @@ export function initWrongBookUI(ctx) {
   mask.addEventListener('click', () => closeDrawer());
 
   // ⭐ 核心：事件委托统一处理
-  const listEl = document.getElementById('wrongBookList');
+  const listEl = _wbQ('wrongBookList');
   if (listEl) {
     listEl.addEventListener('click', async e => {
       // 1. 删除
       const removeBtn = e.target.closest('.wrong-item-remove');
       if (removeBtn) {
-        const text = decodeURIComponent(removeBtn.dataset.text);
+const text = removeBtn.dataset.text;
         wbRemove(text);
         return;
       }
@@ -45,10 +54,10 @@ export function initWrongBookUI(ctx) {
       // 2. 讲解（核心修复点）
       const explainBtn = e.target.closest('.wrong-item-explain');
       if (explainBtn) {
-        const text = decodeURIComponent(explainBtn.dataset.text);
+const text = explainBtn.dataset.text;
         // ⭐ 核心修复：从错题本数据里捞出当时的学生作答
         const wbList = wbLoad();
-        const record = wbList.find(r => r.text === text);
+        const record = wbList.find(r => sameProblem(r.text, text));
         
         await showExplainModal(text, {
           studentAnswer: record?.studentAnswer || '',
@@ -60,7 +69,7 @@ export function initWrongBookUI(ctx) {
       // 3. 重做
       const redoBtn = e.target.closest('.wrong-item-redo');
       if (redoBtn) {
-        const text = decodeURIComponent(redoBtn.dataset.text);
+const text = redoBtn.dataset.text;   // L6：属性已是 HTML 转义，dataset 自动解码，不再 URL 往返
         handleRedo(text);
         return;
       }
@@ -70,7 +79,7 @@ export function initWrongBookUI(ctx) {
 
 function closeDrawer() {
   document.getElementById('wrongBookDrawer').classList.remove('open');
-  document.getElementById('wrongBookMask').classList.remove('open');
+  _wbQ('wrongBookMask').classList.remove('open');
   if (typeof _ctx.lockBodyScroll === 'function') _ctx.lockBodyScroll(false);
 }
 
@@ -78,12 +87,12 @@ function closeDrawer() {
 // 核心：讲解弹窗逻辑（题库 -> 缓存 -> AI）
 // ==========================================
 export async function showExplainModal(text, userContext = null) {
-  const modalMask = document.getElementById('explainModalMask');
-  const modalBody = document.getElementById('explainModalBody');
+  const modalMask = _wbQ('explainModalMask');
+  const modalBody = _wbQ('explainModalBody');
   if (!modalMask || !modalBody) return;
   
   // 复原右上角的关闭按钮绑定（防止被解绑）
-  document.getElementById('explainModalClose').onclick = () => {
+  _wbQ('explainModalClose').onclick = () => {
     modalMask.style.display = 'none';
     document.body.classList.remove('modal-open'); // ⭐ 解除滚动锁定
   };
@@ -110,12 +119,7 @@ export async function showExplainModal(text, userContext = null) {
   modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在思考…</div></div></div>`;
   
   try {
-    // ⭐ 打印 2
-    console.log('【弹窗】准备发给AI的参数:', {
-      problem: text,
-      studentAnswer: userContext?.studentAnswer,
-      steps: userContext?.studentSteps
-    });
+// L5：原此处 console.log 会把题面+学生作答打进控制台（生产包泄漏），已移除
 
     // ⭐ 如果用户有作答，就带上；如果没有，传空
     const raw = await callLLM({ 
@@ -131,7 +135,7 @@ export async function showExplainModal(text, userContext = null) {
     // 回写缓存
     try {
       const list = wbLoad();
-      const idx = list.findIndex(r => r.text === text);
+      const idx = list.findIndex(r => sameProblem(r.text, text));
       if (idx >= 0) { list[idx].aiFeedback = result; wbSave(list); }
     } catch(e) {}
     
@@ -142,7 +146,7 @@ export async function showExplainModal(text, userContext = null) {
 }
 
 function renderExplainContent(result) {
-  const modalBody = document.getElementById('explainModalBody');
+  const modalBody = _wbQ('explainModalBody');
   const insight = buildAiInsightHtml(result, { open: true });
   
   const stepsHtml = (result.steps || []).map(s => `
@@ -201,21 +205,17 @@ function renderExplainContent(result) {
   });
 
   // 重新绑定弹窗底部按钮
-  document.getElementById('kojiCloseBtn')?.addEventListener('click', () => {
-    document.getElementById('explainModalMask').style.display = 'none';
+  _wbQ('kojiCloseBtn')?.addEventListener('click', () => {
+    _wbQ('explainModalMask').style.display = 'none';
   });
   
-  document.getElementById('kojiMoreBtn')?.addEventListener('click', () => {
+  _wbQ('kojiMoreBtn')?.addEventListener('click', () => {
     document.querySelector('.koji-more-wrap')?.remove();
     modalBody.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在重新思考…</div></div></div>`;
 
     const currentContext = result._userContext || {};
     
-    // ⭐ 打印 3
-    console.log('【再讲一遍】准备发给AI的作答:', {
-      studentAnswer: currentContext.studentAnswer,
-      steps: currentContext.studentSteps
-    });
+// L5：原此处 console.log 会把学生作答打进控制台（生产包泄漏），已移除
     
     // ⭐ 核心修复：把用户的作答（如果有）一并传递给 AI
     callLLM({ 
@@ -230,7 +230,7 @@ function renderExplainContent(result) {
       // ⭐ 核心修复 1：静默更新到错题本
       try {
         const wbList = wbLoad();
-        const existing = wbList.find(w => w.text === result._problemText);
+        const existing = wbList.find(w => sameProblem(w.text, result._problemText));
         if (existing) {
           wbAdd({
             ...existing,
@@ -250,7 +250,7 @@ function renderExplainContent(result) {
       }
 
       // ⭐ 核心修复 3：如果当前在 M13 页面，强制刷新下方标准解题过程
-      const stdBox = document.getElementById('m13StandardStepsBody');
+      const stdBox = _wbQ('m13StandardStepsBody');
       if (stdBox) {
         const stepsHtml = (newResult.steps || []).map(s => `
           <div class="std-fold"><div class="std-fold-hd"><span>第 ${s.step} 步</span><span class="arrow">▶</span></div>
@@ -278,7 +278,7 @@ function renderExplainContent(result) {
 // 重做逻辑
 // ==========================================
 function handleRedo(text) {
-  const mid = (wbLoad().find(r => r.text === text)?.moduleId) || 'm13';
+  const mid = (wbLoad().find(r => sameProblem(r.text, text))?.moduleId) || 'm13';
   closeDrawer();
 
   // ⭐ 核心修复：把任务直接挂到 window 上

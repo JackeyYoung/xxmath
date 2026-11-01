@@ -1,5 +1,6 @@
 /* core/share-card.js */
 import { escapeHtmlStrict } from './html.js';
+import { showAlert } from './ui/dialog.js';
 import { takeawayLoad } from './takeaway.js';
 
 export function showShareCard(record) {
@@ -40,6 +41,6 @@ export function showShareCard(record) {
   document.getElementById('shareCardClose').addEventListener('click', () => mask.remove());
   mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });
   document.getElementById('shareCardPrint').addEventListener('click', () => {
-    alert('提示：可用手机截图，或长按保存。');
+showAlert('提示：可用手机截图，或长按保存。');
   });
 }

@@ -1,0 +1,8 @@
+{
+  "name": "cloudbase-cleanup",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "9.2 云同步脏数据一次性清洗（CloudBase 云函数）",
+  "main": "index.js"
+}

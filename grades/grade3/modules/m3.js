@@ -1,8 +1,12 @@
 /* m3.js 分数披萨 */
+import { getTemplate } from '../../../core/ui/template.js';
+
+import { createJudge } from '../../../core/lesson/judge.js';
+
 export const meta = { title: '分数披萨', icon: '🍕' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m3');
+  const tpl = getTemplate('tpl-m3');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
@@ -139,7 +143,9 @@ export default async function mount(container, ctx) {
       btn.onclick = () => {
         const user = btn.dataset.cmp;
         el.querySelectorAll('.frac-cmp-btn').forEach(b => b.classList.remove('correct', 'wrong'));
-        if (user === correct) {
+// M4：判分统一走 createJudge（原来这里是手写的 === 比较）
+        const _jr = createJudge({ answer: correct }).submit(user);
+        if (_jr.ok) {
           btn.classList.add('correct');
           fb.textContent = `✓ 对！${n1}/${d1} ${correct === 'gt' ? '>' : correct === 'lt' ? '<' : '='} ${n2}/${d2}`;
           fb.className = 'priority-feedback ok';
@@ -207,10 +213,11 @@ export default async function mount(container, ctx) {
       const denInput = $('#fracDen');
 
       const submit = () => {
-        const userNum = parseInt(numInput.value, 10);
-        const userDen = parseInt(denInput.value, 10);
-        if (isNaN(userNum) || isNaN(userDen)) {
-          fb.textContent = '❌ 请填写分子和分母';
+        // ⭐ 修复：parseInt('1.5') → 1，学生填小数会被静默截断并可能判对。改成严格整数校验。
+        const userNum = Number(numInput.value.trim());
+        const userDen = Number(denInput.value.trim());
+        if (!Number.isInteger(userNum) || !Number.isInteger(userDen) || userDen === 0) {
+          fb.textContent = '❌ 请填写整数分子和分母（分母不能为 0）';
           fb.className = 'priority-feedback error';
           return;
         }

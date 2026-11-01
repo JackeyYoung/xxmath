@@ -2,9 +2,9 @@
    全局 Toast 提示
 */
 export function showToast(msg, type) {
-  if (document.querySelector('.toast-showing')) {
-    document.querySelector('.toast-showing').remove();
-  }
+  // ⭐ 修复：两套 toast（本文件的 .toast-showing 与 core/ui/toast.js 的 .m3-toast）
+  //    各自只清理自己那一类 → 两条会叠在同一个 top:60px 上。这里统一清掉。
+  document.querySelectorAll('.toast-showing, .m3-toast').forEach(t => t.remove());
 
   const toast = document.createElement('div');
   toast.className = 'toast-showing';
