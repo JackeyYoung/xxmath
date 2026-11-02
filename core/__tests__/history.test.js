@@ -33,7 +33,13 @@ describe('history', () => {
 
   it('historySave + historyLoad 往返', () => {
     historySave([{ id: 'x', problemText: 'q' }]);
-    expect(historyLoad()).toEqual([{ id: 'x', problemText: 'q' }]);
+    // ⭐ historyLoad 会给没有 moduleId 的旧记录补默认值 m13
+    expect(historyLoad()).toEqual([{ id: 'x', problemText: 'q', moduleId: 'm13' }]);
+  });
+
+  it('historyLoad 保留已有 moduleId', () => {
+    historySave([{ id: 'x', problemText: 'q', moduleId: 'm4' }]);
+    expect(historyLoad()[0].moduleId).toBe('m4');
   });
 
   it('historyAdd 添加记录并生成 id + timestamp', () => {

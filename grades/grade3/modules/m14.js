@@ -352,6 +352,7 @@ export default async function mount(container, ctx) {
     if (rafId1) cancelAnimationFrame(rafId1);
     if (rafId2) cancelAnimationFrame(rafId2);
     if (typeof offDataChanged === 'function') offDataChanged(); // 解绑事件
+    window._refreshGrowthCards = null;   // ⭐ 卸载后置空，避免外部调用到旧闭包
     container.innerHTML = '';
   };
 }

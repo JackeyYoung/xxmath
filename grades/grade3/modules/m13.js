@@ -570,14 +570,15 @@ export default async function mount(container, ctx) {
 
     const start = performance.now();
     const timeEl = document.getElementById('stdTime');
-    const timer = setInterval(() => { if (timeEl) timeEl.textContent = ((performance.now() - start) / 1000).toFixed(1) + 's'; }, 100);
+    clearInterval(stdTimer);
+    stdTimer = setInterval(() => { if (timeEl) timeEl.textContent = ((performance.now() - start) / 1000).toFixed(1) + 's'; }, 100);
 
     try {
       const raw = await callLLMStandardSolution(problemText);
-      clearInterval(timer);
+      clearInterval(stdTimer);
       renderStandardSolution(normalizeAiFeedback(raw, null));
     } catch (e) {
-      clearInterval(timer);
+      clearInterval(stdTimer);
       body.innerHTML = `<div style="text-align:center;padding:24px 20px;"><div style="color:var(--red-text);font-weight:700;margin-bottom:12px;">❌ 获取标准解法失败：${e.message || '请稍后重试'}</div><button class="btn" id="m13RetryStdBtn">🔄 重新获取</button></div>`;
       document.getElementById('m13RetryStdBtn')?.addEventListener('click', () => m13FetchStandardSolution());
       lock.style.display = 'block';
@@ -1066,6 +1067,7 @@ export default async function mount(container, ctx) {
   const takeawayBtn = $('#pTakeawaySave');
   const takeawayHint = $('#pTakeawayHint');
   let saveTimer = null, savedValue = '', savedFromProblem = '';
+  let stdTimer = 0;   // ⭐ AI 标准解法的计时器句柄，卸载时清理
 
   function updateTakeawayBtnState() {
     const cur = takeawayInput.value.trim();
@@ -1303,7 +1305,10 @@ export default async function mount(container, ctx) {
 
   return () => {
     unregisterActiveModule('m13');
+    clearTimeout(saveTimer);      // ⭐ 防抖保存待执行句柄
+    clearInterval(stdTimer);      // ⭐ 在途的 AI 计时器
     document.body.classList.remove('modal-open');
+    document.getElementById('redoBanner')?.remove();   // ⭐ body 上的重做横幅残留
     container.innerHTML = '';
   };
 }

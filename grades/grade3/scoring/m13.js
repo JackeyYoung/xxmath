@@ -72,7 +72,15 @@ export function isValidSubstitution(sub, problemNums) {
 */
 
 export function problemNumbers(problemText) {
-  const raw = String(problemText || '');
+  // ⭐ 把题目里的汉字数字（如"一百四十"）转成阿拉伯数字，与 isValidSubstitution 对称；
+  //    只转换含数量级单位（十/百/千/万）的词，避免"一共 / 第一"被误转成 1
+  const raw = String(problemText || '').replace(
+    /[零一二两三四五六七八九十]*[十百千万][零一二两三四五六七八九十百千万]*/g,
+    m => {
+      const parsed = parseChineseNumber(m);
+      return parsed > 0 ? String(parsed) : m;
+    }
+  );
   const nums = raw.match(/\d+(?:\.\d+)?/g) || [];
   return [...new Set(nums.map(n => parseFloat(n)).filter(n => !isNaN(n)))];
 }

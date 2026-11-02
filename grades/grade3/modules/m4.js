@@ -16,9 +16,6 @@ export default async function mount(container, ctx) {
   let m4Quiz = null;
 
   function fmt(n) { if (!isFinite(n)) return '—'; if (n === 0) return '0'; return n.toFixed(6).replace(/\.?0+$/, ''); }
-  
-  // TODO: 拷贝 main.js 里的 m4Update 和 m4NewQuiz 函数到这里
-  // m4Update 里的 recordActivity 改为 ctx.data.activityAdd
 
   function m4Update(isUserAction = false) {
     const val = parseFloat($('#m4val').value), unit = $('#m4unit').value;

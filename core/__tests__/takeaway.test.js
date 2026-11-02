@@ -9,7 +9,7 @@ vi.mock('../storage.js', () => ({
 }));
 
 vi.mock('../keys.js', () => ({
-  TAKEAWAY_KEY_PREFIX: 'grade3_takeaway_',
+  getGradeKey: (prefix) => `grade3_${prefix}`,
 }));
 
 vi.mock('../events.js', () => ({
@@ -18,26 +18,12 @@ vi.mock('../events.js', () => ({
 }));
 
 const {
-  takeawayKey, takeawaySave, takeawayLoad, takeawayListAll,
+  takeawaySave, takeawayLoad, takeawayListAll,
 } = await import('../takeaway.js');
 
 describe('takeaway', () => {
   beforeEach(() => {
     mockMem.clear();
-  });
-
-  it('takeawayKey：相同文本 → 相同 key', () => {
-    expect(takeawayKey('hello')).toBe(takeawayKey('hello'));
-  });
-
-  it('takeawayKey：不同文本 → 不同 key（大多数情况）', () => {
-    expect(takeawayKey('a')).not.toBe(takeawayKey('b'));
-  });
-
-  it('takeawayKey：空文本 → null', () => {
-    expect(takeawayKey('')).toBeNull();
-    expect(takeawayKey(null)).toBeNull();
-    expect(takeawayKey('   ')).toBeNull();
   });
 
   it('save + load 往返', () => {

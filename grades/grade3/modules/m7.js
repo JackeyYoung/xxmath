@@ -20,8 +20,9 @@ export default async function mount(container, ctx) {
   const CN_HOUR = ['十二','一','二','三','四','五','六','七','八','九','十','十一'];
   let m7AudioCtx = null;
   let m7Dragging = false;
+  let m7SwRafId = 0;      // ⭐ 秒表 rAF 帧句柄
+  let m7Stopped = false;  // ⭐ 卸载标志：rAF/监听一律停火
 
-  // TODO: 复制 main.js 里的 m7InitAudio, m7PlayTick, m7Draw, m7UpdateDigital, M7_CALC_TYPES, m7NewCalcChallenge, m7ClockTick, m7FmtStopwatch, m7UpdateSwDisplay, m7SwFrame, m7SwStart, m7SwReset, m7FromPoint
 
   function m7InitAudio() {
     if (!m7AudioCtx) {
@@ -345,6 +346,7 @@ export default async function mount(container, ctx) {
   }
 
   function m7SwFrame(now) {
+    if (m7Stopped) return;   // ⭐ 卸载后立即停帧
     if (M7.mode === 'clock' || !M7.swRunning) { M7.swLastFrame = now; return; }
     const dt = now - M7.swLastFrame;
     M7.swLastFrame = now;
@@ -368,7 +370,7 @@ export default async function mount(container, ctx) {
       m7PlayTick(false);
     }
     m7UpdateSwDisplay();
-    requestAnimationFrame(m7SwFrame);
+    m7SwRafId = requestAnimationFrame(m7SwFrame);
   }
 
   function m7SwStart() {
@@ -379,7 +381,7 @@ export default async function mount(container, ctx) {
     $('#swHint').innerHTML = M7.mode === 'up'
       ? '⏱ 正在计时…每秒响一次滴答声。'
       : '⏳ 倒计时进行中…';
-    requestAnimationFrame(m7SwFrame);
+    m7SwRafId = requestAnimationFrame(m7SwFrame);
   }
 
   function m7SwReset() {
@@ -479,23 +481,29 @@ export default async function mount(container, ctx) {
     return Math.round(ang / (Math.PI*2) * 60) % 60;
   }
 
-  $('#m7canvas')?.addEventListener('mousedown', e => {
+  // ⭐ Pointer Events：一套代码同时支持鼠标与手指拖拽（需配合 touch-action:none）
+  const m7Canvas = $('#m7canvas');
+  if (m7Canvas) m7Canvas.style.touchAction = 'none';
+  const onM7PointerDown = e => {
     m7Dragging = true;
     M7.minute = m7FromPoint(e.clientX, e.clientY);
     M7.second = 0;
     m7Draw(); m7UpdateDigital();
     // ⭐ 新增：拖分针
     ctx.data.recordActivity('m7', `拖分针到 ${M7.minute} 分`, '', 1000);
-  });
-  window.addEventListener('mousemove', e => {
+  };
+  const onM7PointerMove = e => {
     if (!m7Dragging) return;
     const newMin = m7FromPoint(e.clientX, e.clientY);
     if (M7.minute > 45 && newMin < 15) M7.hour = (M7.hour % 12) + 1;
     else if (M7.minute < 15 && newMin > 45) M7.hour = ((M7.hour - 2 + 12) % 12) + 1;
     M7.minute = newMin; M7.second = 0;
     m7Draw(); m7UpdateDigital();
-  });
-  window.addEventListener('mouseup', () => { m7Dragging = false; });
+  };
+  const onM7PointerUp = () => { m7Dragging = false; };
+  m7Canvas?.addEventListener('pointerdown', onM7PointerDown);
+  window.addEventListener('pointermove', onM7PointerMove);
+  window.addEventListener('pointerup', onM7PointerUp);
 
   $('#m7toggle')?.addEventListener('click', () => {
     M7.running = !M7.running;
@@ -520,8 +528,15 @@ export default async function mount(container, ctx) {
   m7UpdateDigital(); 
   m7NewCalcChallenge();
 
-  return () => { 
-    clearInterval(timer); 
-    container.innerHTML = ''; 
+  return () => {
+    // ⭐ 完整清理：定时器、rAF、window 监听、AudioContext
+    m7Stopped = true;
+    clearInterval(timer);
+    if (m7SwRafId) cancelAnimationFrame(m7SwRafId);
+    window.removeEventListener('pointermove', onM7PointerMove);
+    window.removeEventListener('pointerup', onM7PointerUp);
+    try { m7AudioCtx?.close(); } catch (e) {}
+    m7AudioCtx = null;
+    container.innerHTML = '';
   };
 }

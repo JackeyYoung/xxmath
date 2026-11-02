@@ -96,13 +96,9 @@ export function lsSet(key, value, opts = {}) {
   const store = getStore();
   if (!store) {
     try { localStorage.setItem(key, value); } catch (e) { _emitStorageError(key, e); }
-    // ⭐ 加同步
-    if (!opts.skipSync) schedulePush(key, value);
+    // ⭐ 同步判断
+    if (!opts.skipSync && !LOCAL_ONLY_KEYS.has(key)) schedulePush(key, value);
     return;
-
-  // ⭐ 同步判断
-  const shouldSync = !opts.skipSync && !LOCAL_ONLY_KEYS.has(key);
-  if (shouldSync) schedulePush(key, value);
   }
 
   const prev = _writeQueues.get(key) || Promise.resolve();
@@ -115,8 +111,8 @@ export function lsSet(key, value, opts = {}) {
     });
   _writeQueues.set(key, next);
 
-  // ⭐ 加同步
-  if (!opts.skipSync) schedulePush(key, value);
+  // ⭐ 同步判断
+  if (!opts.skipSync && !LOCAL_ONLY_KEYS.has(key)) schedulePush(key, value);
 }
 
 /* ---------- 同步删 ---------- */
@@ -128,7 +124,7 @@ export function lsRemove(key, opts = {}) {
   const store = getStore();
   if (!store) {
     try { localStorage.removeItem(key); } catch (e) { _emitStorageError(key, e); }
-    if (!opts.skipSync) scheduleDelete(key);
+    if (!opts.skipSync && !LOCAL_ONLY_KEYS.has(key)) scheduleDelete(key);
     return;
   }
 
@@ -142,11 +138,8 @@ export function lsRemove(key, opts = {}) {
     });
   _writeQueues.set(key, next);
 
-  if (!opts.skipSync) scheduleDelete(key);
-
-  // ⭐ 同步判断
-  const shouldSync = !opts.skipSync && !LOCAL_ONLY_KEYS.has(key);
-  if (shouldSync) schedulePush(key, value);
+  // ⭐ 同步判断（删除走 scheduleDelete，不再残留 schedulePush）
+  if (!opts.skipSync && !LOCAL_ONLY_KEYS.has(key)) scheduleDelete(key);
 }
 
 /* 新增：应用云端数据到本地（跳过同步回推） */

@@ -26,7 +26,10 @@ import {
   ensureAnonymousLogin,
 } from '../core/sync/auth.js';
 
-import { loadGrade } from '../grades/registry.js'; 
+import { loadGrade, registerGrade } from '../grades/registry.js';
+
+// ⭐ 注册年级 loader（mountLesson 的模块单一事实源走 loadGrade）
+registerGrade('3', () => import('../grades/grade3/index.js'));
 
 import { lsGet, lsSet } from '../core/storage.js';
 import { showToast } from '../core/toast.js';
@@ -50,6 +53,8 @@ export function unregisterActiveModule(id) {
 }
 
 let _currentCleanup = null;
+let _mountSeq = 0;          // ⭐ 挂载序号：新挂载使所有在途挂载失效
+let _activityFlush = null;  // ⭐ 当前模块的防抖 activity 冲刷器（替代 window.__flushActivity）
 
 /* ============================================================
    1. 年级配置（为多年级扩展做准备）
@@ -128,7 +133,7 @@ export function navigate(route, opts = {}) {
   target.classList.add('active');
 
   if (route === 'home') {
-    window.__flushActivity?.();   // ⭐ 回首页前 flush
+    _activityFlush?.();   // ⭐ 回首页前 flush 模块防抖 activity
     renderHome();
     history.pushState({ route: 'home' }, '', '#home');
   } else if (route === 'lesson') {
@@ -606,67 +611,6 @@ const LESSON_META = {
   m13: { title: '解题思维', icon: '💡', steps: 4 },
 };
 
-/* ⭐ 搬进 stage 后，重新跑一次模块自己的渲染入口 */
-function retriggerModuleRender(lessonId) {
-  try {
-    switch (lessonId) {
-      case 'm1':
-        // M1 的 m1Render 是闭包，优先用挂到 window 的引用
-        if (typeof window.__m1Rerender === 'function') {
-          window.__m1Rerender();
-        } else {
-          // 兜底：点一下"重来一次"按钮，触发 m1LoadExpression
-          document.getElementById('m1reset')?.click();
-        }
-        break;
-      case 'm2':
-        if (typeof window.m2Draw === 'function') { window.m2Draw(); window.m2Calc(); }
-        break;
-      case 'm3':
-        if (typeof window.m3Reset === 'function') window.m3Reset();
-        break;
-      case 'm5':
-        if (typeof window.m5Render === 'function') window.m5Render();
-        break;
-      case 'm6':
-        if (typeof window.m6Update === 'function') window.m6Update();
-        break;
-      case 'm7':
-        if (typeof window.m7Draw === 'function') { window.m7Draw(); window.m7UpdateDigital(); }
-        break;
-      case 'm9':
-        if (typeof window.m9Render === 'function') window.m9Render();
-        break;
-      case 'm10':
-        if (typeof window.m10Render === 'function') window.m10Render();
-        break;
-      case 'm11':
-        if (typeof window.m11Render === 'function') window.m11Render();
-        break;
-      case 'm12':
-        if (typeof window.m12Update === 'function') window.m12Update();
-        break;
-      case 'm13':
-        if (typeof window.m13RenderSteps === 'function') window.m13RenderSteps();
-        break;
-      // m4/m8/m14 不需要额外渲染
-    }
-  } catch (e) {
-    console.warn('[shell] 重新渲染模块失败:', lessonId, e);
-  }
-}
-
-// ⭐ 显示重做横幅
-function showRedoBanner() {
-  document.getElementById('redoBanner')?.remove();
-  const banner = document.createElement('div');
-  banner.id = 'redoBanner';
-  // 使用 amber 变量，自适应深浅色
-  banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:var(--amber-text);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.1);`;
-  banner.innerHTML = `🔁 正在重做错题，做对将累计掌握进度 <button onclick="this.parentElement.remove()" style="margin-left:10px;background:transparent;border:none;color:#fff;cursor:pointer;">×</button>`;
-  document.body.appendChild(banner);
-}
-
 const _levelHandlers = new Map(); // ⭐ 保存各模块的层级切换函数
 
 function mountLesson(lessonId) {
@@ -678,13 +622,17 @@ function mountLesson(lessonId) {
   const stage = document.getElementById('lesson-stage-main') || document.getElementById('modulePool');
   if (!stage) return;
 
-  stage.innerHTML = '';
-
-  if (_currentCleanup && typeof _currentCleanup === 'function') {
+  // ⭐ 新挂载使所有在途挂载失效，并把上一模块的防抖 activity 落盘
+  const seq = ++_mountSeq;
+  if (typeof _activityFlush === 'function') { try { _activityFlush(); } catch (e) {} }
+  _activityFlush = null;
+  if (typeof _currentCleanup === 'function') {
     try { _currentCleanup(); } catch (e) { console.warn('卸载模块失败', e); }
   }
   _currentCleanup = null;
   _levelHandlers.clear(); // 清理上一模块的 handler
+
+  stage.innerHTML = '';
 
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById('page-lesson')?.classList.add('active');
@@ -698,29 +646,17 @@ function mountLesson(lessonId) {
   `;
   document.getElementById('lessonBack')?.addEventListener('click', () => navigate('home'));
 
-  const loader = {
-    m1: () => import('../grades/grade3/modules/m1.js'),
-    m2: () => import('../grades/grade3/modules/m2.js'),
-    m3: () => import('../grades/grade3/modules/m3.js'),
-    m4: () => import('../grades/grade3/modules/m4.js'),
-    m5: () => import('../grades/grade3/modules/m5.js'),
-    m6: () => import('../grades/grade3/modules/m6.js'),
-    m7: () => import('../grades/grade3/modules/m7.js'),
-    m8: () => import('../grades/grade3/modules/m8.js'),
-    m9: () => import('../grades/grade3/modules/m9.js'),
-    m10: () => import('../grades/grade3/modules/m10.js'),
-    m11: () => import('../grades/grade3/modules/m11.js'),
-    m12: () => import('../grades/grade3/modules/m12.js'),
-    m13: () => import('../grades/grade3/modules/m13.js')
-  }[lessonId];
-
-  if (!loader) {
-    stage.innerHTML = `<div style="padding:40px;text-align:center;color:#64748b;">模块 ${lessonId} 尚未拆分</div>`;
-    return;
-  }
-
-  // ⭐ 必须在这里包裹 Promise，否则拿不到 mod 和 mount
-  loader().then(mod => {
+  // ⭐ 单一事实源：loader 取自年级配置（grades/grade3/index.js），不再在此重复登记
+  loadGrade(getGradeConfig().id || '3').then(cfg => {
+    if (seq !== _mountSeq) return null;
+    const loader = cfg && cfg.modules && cfg.modules[lessonId];
+    if (!loader) {
+      stage.innerHTML = `<div style="padding:40px;text-align:center;color:#64748b;">模块 ${lessonId} 尚未拆分</div>`;
+      return null;
+    }
+    return loader();
+  }).then(mod => {
+    if (!mod || seq !== _mountSeq) return;
     const mount = mod.default;
     if (typeof mount !== 'function') {
       console.error(`模块 ${lessonId} 没有 default 导出`);
@@ -737,6 +673,14 @@ function mountLesson(lessonId) {
         activityAdd(moduleId, _actPending[moduleId]);
         delete _actPending[moduleId];
       }, delay);
+    }
+    // ⭐ 立即落盘未满 delay 的 activity（切页/卸载前调用）
+    function flushActivity() {
+      Object.keys(_actTimers).forEach(id => { clearTimeout(_actTimers[id]); delete _actTimers[id]; });
+      Object.keys(_actPending).forEach(id => {
+        activityAdd(id, _actPending[id]);
+        delete _actPending[id];
+      });
     }
 
     // 构造注入模块的上下文
@@ -761,8 +705,16 @@ function mountLesson(lessonId) {
       }
     };
 
-    // 1. 只挂载一次！
-    _currentCleanup = mount(stage, ctx);
+    // 1. 挂载！async mount 返回 Promise<cleanup>，统一解包并登记
+    Promise.resolve(mount(stage, ctx)).then(cleanup => {
+      if (seq !== _mountSeq) {
+        // 等待期间用户已切走 → 立即用拿到的 cleanup 自行卸载
+        if (typeof cleanup === 'function') { try { cleanup(); } catch (e) {} }
+        return;
+      }
+      _currentCleanup = typeof cleanup === 'function' ? cleanup : null;
+      _activityFlush = flushActivity;
+    }).catch(e => console.error(`[shell] 模块 ${lessonId} 挂载失败`, e));
 
     // 2. 渲染层级切换按钮
     const levelWrap = document.getElementById('lessonLevels');
@@ -1113,10 +1065,13 @@ function renderGrowth() {
   if (!stage) return;
 
   // ⭐ 必须加上这句
-  stage.innerHTML = ''; 
+  stage.innerHTML = '';
 
-  // 1. 卸载旧模块
-  if (_currentCleanup && typeof _currentCleanup === 'function') {
+  // 1. 新挂载使在途挂载失效 + 卸载旧模块 + flush 防抖 activity
+  const seq = ++_mountSeq;
+  if (typeof _activityFlush === 'function') { try { _activityFlush(); } catch (e) {} }
+  _activityFlush = null;
+  if (typeof _currentCleanup === 'function') {
     try { _currentCleanup(); } catch (e) { console.warn('[Growth] 卸载失败', e); }
   }
   _currentCleanup = null;
@@ -1139,7 +1094,8 @@ function renderGrowth() {
   }
 
   // 4. 动态加载并挂载 m14 模块
-  import('../grades/grade3/modules/m14.js').then(mod => {
+  import('../grades/grade3/modules/m14.js').then(async mod => {
+    if (seq !== _mountSeq) return;
     const mount = mod.default;
     if (typeof mount !== 'function') return;
 
@@ -1164,7 +1120,13 @@ function renderGrowth() {
     };
 
     // 执行模块挂载（m14 内部会自动渲染所有数据）
-    _currentCleanup = mount(stage, ctx);
+    // ⭐ async mount 返回 Promise<cleanup>，统一解包并登记
+    const cleanup = await mount(stage, ctx);
+    if (seq !== _mountSeq) {
+      if (typeof cleanup === 'function') { try { cleanup(); } catch (e) {} }
+      return;
+    }
+    _currentCleanup = typeof cleanup === 'function' ? cleanup : null;
 
     // ==========================================
     // 5. 挂载完成后，处理“本周学习总结”的插入逻辑

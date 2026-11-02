@@ -113,7 +113,7 @@ function showDailyComplete({ total, correct, rate }) {
   document.body.appendChild(mask);
   document.getElementById('dailyCompleteRest').addEventListener('click', () => {
     mask.remove();
-    import('../../app/shell.js').then(({ navigate }) => navigate('home'));
+    import('../app/shell.js').then(({ navigate }) => navigate('home'));
   });
   document.getElementById('dailyCompleteMore').addEventListener('click', () => mask.remove());
   mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });

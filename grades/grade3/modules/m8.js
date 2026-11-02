@@ -10,8 +10,6 @@ export default async function mount(container, ctx) {
 
   const M8 = { base: 3, times: 3, maxBase: 5, maxTimes: 20 };
 
-  // TODO: 拷贝 main.js 中的 m8Render
-  // 拷贝 main.js 中的 m8Render
   function m8Render() {
     const { base, times } = M8;
     const total = base * times;

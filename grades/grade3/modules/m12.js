@@ -13,8 +13,6 @@ export default async function mount(container, ctx) {
   ];
   function fmt(n) { if (!isFinite(n)) return '—'; if (n === 0) return '0'; return n.toFixed(6).replace(/\.?0+$/, ''); }
 
-  // TODO: 拷贝 main.js 中的 m12Update
-  // 注意 recordActivity 改为 ctx.data.recordActivity
   function m12Update(isUserAction = false) {
     const val = parseFloat($('#m12val').value), unit = $('#m12unit').value;
     const wrap = $('#m12results');

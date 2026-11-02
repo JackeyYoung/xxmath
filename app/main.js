@@ -81,7 +81,7 @@ updateTitle();
 installGlobalErrorHandlers();
 
 // ========== 2. 全局逻辑（如活动记录、错题重做） ==========
-window.__flushActivity = function () {};
+// ⭐ 防抖 activity 的 flush 已收敛到 shell.js 的 _activityFlush，不再挂全局空函数
 
 // ⭐ 错题本重做成功逻辑（全局单例）
 function handleRedoSuccess(problemText) {
@@ -142,7 +142,7 @@ window.__handleRedoSuccess = handleRedoSuccess;
       problemText = `${a} ${op} ${b}`;
     } else  if (id === 'm13') {
       problemText = document.getElementById('problem-text')?.innerText?.trim() || '';
-      // ⭐ 核心修复：把用户填写的答案和步骤收集起来
+      // ⭐ 核心修复：先收集用户填写的答案和步骤，循环外只弹一次
       const currentAnswer = document.getElementById('pAnswer')?.value.trim() || '';
       const currentSteps = [];
       document.querySelectorAll('#formulaSteps .formula-step').forEach(step => {
@@ -150,13 +150,13 @@ window.__handleRedoSuccess = handleRedoSuccess;
         const sub = step.querySelector('input[data-field="sub"]')?.value || '';
         const res = step.querySelector('input[data-field="res"]')?.value || '';
         if (rel || sub || res) currentSteps.push({ rel, sub, res });
-        if (problemText){
-          showExplainModal(problemText, {
-            studentAnswer: currentAnswer,
-            studentSteps: currentSteps
-          });
-        }
       });
+      if (problemText) {
+        showExplainModal(problemText, {
+          studentAnswer: currentAnswer,
+          studentSteps: currentSteps
+        });
+      }
     } else {
       problemText = document.querySelector('#lesson-stage-main .card h2')?.textContent || '';
     }

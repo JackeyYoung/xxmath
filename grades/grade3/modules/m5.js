@@ -122,8 +122,6 @@ export default async function mount(container, ctx) {
     }
   ];
 
-  // TODO: 复制 main.js 里的 m5Render, m5NewChallenge 函数过来
-  // 把 recordActivity 改为 ctx.data.recordActivity
 
   function m5Render(isUserAction = false) {
     const w = +$('#m5w').value, h = +$('#m5h').value;
