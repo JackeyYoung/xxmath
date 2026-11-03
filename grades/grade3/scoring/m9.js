@@ -50,6 +50,7 @@ export function computeAnswerMap({ a, b, op }) {
   }
 
   if (op === '÷') {
+    if (!b) return map;   // ⭐ 除数 0：无法按位拆解，返回空 map（上层展示"?"）
     const aStr = String(a);
     const n = aStr.length;
     const aD = aStr.split('').map(Number);
@@ -103,11 +104,34 @@ export function getMaxSteps({ a, b, op }) {
   return 2;
 }
 
+/* 除法的逐步推导（纯函数）：每一步的列区间、商、乘积、余数。
+   renderDiv 与判卷共用这一份推导，杜绝双实现漂移。 */
+export function divisionSteps(a, b) {
+  if (!b || a < b) return [];
+  const aD = String(a).split('').map(Number);
+  const n = aD.length;
+  const steps = [];
+  let rem = 0, startPos = 0, started = false;
+  for (let i = 0; i < n; i++) {
+    const curVal = rem * 10 + aD[i];
+    const q = Math.floor(curVal / b);
+    const prod = q * b;
+    const newRem = curVal - prod;
+    if (i === 0 && q === 0 && !started) { rem = curVal; continue; }
+    if (!started) { startPos = i; started = true; }
+    steps.push({ start: startPos, end: i, q, prod, rem: newRem });
+    startPos = i + 1;
+    rem = newRem;
+  }
+  return steps;
+}
+
 export function calcFinalResult({ a, b, op }) {
   if (op === '+') return a + b;
   if (op === '−') return a - b;
   if (op === '×') return a * b;
   if (op === '÷') {
+    if (!b) return '?';   // ⭐ 除数 0：不再产出 "Infinity 余 NaN"
     const q = Math.floor(a / b);
     const r = a % b;
     return r === 0 ? q : `${q} 余 ${r}`;
