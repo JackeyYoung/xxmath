@@ -86,6 +86,16 @@ export function canClickOp(tokens, i) {
     if (hasMulDivAtSameDepth) return { ok: false, reason: 'muldiv-first' };
   }
 
+  // 左结合：同级运算符（同为乘除，或同为加减）若相邻（共享同一操作数），
+  // 必须先算最左的那个，否则 15-9-8 点第二个 '-' 会右结合成 15-(9-8)=14；
+  // 8÷4×2 同理（(8÷4)×2=4 而非 8÷(4×2)=1）。相邻 = 中间只隔一个操作数。
+  const tier = (op === '×' || op === '÷') ? 'muldiv' : 'addsub';
+  const leftOp = tokens[i - 2];
+  if (leftOp && leftOp.type === 'op' && depths[i - 2] === depth) {
+    const leftTier = (leftOp.val === '×' || leftOp.val === '÷') ? 'muldiv' : 'addsub';
+    if (leftTier === tier) return { ok: false, reason: 'left-first' };
+  }
+
   const left = tokens[i - 1], right = tokens[i + 1];
   if (!left || !right || left.type !== 'num' || right.type !== 'num') {
     return { ok: false, reason: 'not-ready' };

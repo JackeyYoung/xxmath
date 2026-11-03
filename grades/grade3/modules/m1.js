@@ -515,6 +515,7 @@ export default async function mount(container, ctx) {
   const WRONG_REASON = {
     'inner-paren': '❌ 先算括号里的哦！括号优先级最高。',
     'muldiv-first': '❌ 先算乘除哦！',
+    'left-first': '❌ 从左到右依次计算哦！',
     'not-ready': '',
     'not-op': '',
   };
