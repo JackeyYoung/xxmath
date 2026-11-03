@@ -427,9 +427,19 @@ export default async function mount(container, ctx) {
       const cEl = grid.cells.get(`c-${i}`);
       setCellText(cEl, M9.filled[carryKey] ?? '');
       setTier(cEl, M9.filled[carryKey] != null ? 'consumed' : 'init');
-      // 被加数 / 加数：初始常量，绝不黄色；当前列给细下划线引导
+      // 被减数：借位后本列要如实变化，否则中间过程"被减数虚大"（如 298-199 的十位仍显 9，
+      //   实为 8-9）。被右侧列借走 → 减 1；本列向左借入 → 加 10（个位单格只显个位）。
       const aEl = grid.cells.get(`a-${i}`);
-      setCellText(aEl, aStr[i] === '0' && i < maxLen - String(M9.a).length ? '' : aStr[i]);
+      const aLeadingEmpty = aStr[i] === '0' && i < maxLen - String(M9.a).length;
+      let aText = aLeadingEmpty ? '' : aStr[i];
+      if (!aLeadingEmpty && M9.op === '−') {
+        let v = Number(aStr[i]);
+        if (M9.filled[`carry-${i + 1}`] != null) v -= 1;
+        if (M9.filled[`carry-${i}`] != null) v += 10;
+        v %= 10;
+        aText = String(v);
+      }
+      setCellText(aEl, aText);
       const bEl = grid.cells.get(`b-${i}`);
       setCellText(bEl, bStr[i] === '0' && i < maxLen - String(M9.b).length ? '' : bStr[i]);
       const isCurCol = i === curI && !done;
@@ -1011,6 +1021,9 @@ export default async function mount(container, ctx) {
   }
   function onOutsidePointer(e) {
     if (e.target.closest?.('.vkp')) return;
+    // ⭐ 点按钮/输入框/抽屉等交互控件时不触发"点外确认"，交给控件自己的动作；
+    //    否则点「随机/↻/⚙」会先 submitBuffer，其 700ms 后的延时 prompt 会把键盘再弹回来
+    if (e.target.closest?.('button, input, select, .b1-sheet, .b1-mask')) return;
     if (M9.answerBuf.trim()) submitBuffer();
   }
 

@@ -112,10 +112,32 @@ describe('m1 · computeDepths', () => {
 });
 
 describe('m1 · canClickOp', () => {
-  it('纯加减：任意运算符都可点', () => {
+  it('纯加减：同级运算符从左到右，只有最左可点', () => {
     const t = parseExpression('1 + 2 + 3');
-    expect(canClickOp(t, 1).ok).toBe(true);
-    expect(canClickOp(t, 3).ok).toBe(true);
+    expect(canClickOp(t, 1).ok).toBe(true);     // 最左 + 可点
+    expect(canClickOp(t, 3).ok).toBe(false);    // 第二个 + 被左结合锁定
+    expect(canClickOp(t, 3).reason).toBe('left-first');
+  });
+
+  it('减法左结合：15-9-8 只能点第一个 -', () => {
+    const t = parseExpression('15 - 9 - 8');
+    expect(canClickOp(t, 1).ok).toBe(true);     // 15-9
+    expect(canClickOp(t, 3).ok).toBe(false);    // 9-8 会右结合成 14，锁定
+    expect(canClickOp(t, 3).reason).toBe('left-first');
+  });
+
+  it('乘除左结合：8÷4×2 只能点第一个 ÷', () => {
+    const t = parseExpression('8 ÷ 4 × 2');
+    expect(canClickOp(t, 1).ok).toBe(true);     // 8÷4
+    expect(canClickOp(t, 3).ok).toBe(false);    // 4×2 会右结合，锁定
+    expect(canClickOp(t, 3).reason).toBe('left-first');
+  });
+
+  it('不相邻的同级运算符互不影响：6×8-20÷4 的 × 和 ÷ 都可点', () => {
+    const t = parseExpression('6 × 8 - 20 ÷ 4');
+    expect(canClickOp(t, 1).ok).toBe(true);     // 6×8
+    expect(canClickOp(t, 5).ok).toBe(true);     // 20÷4（与 × 不相邻）
+    expect(canClickOp(t, 3).ok).toBe(false);    // - 因乘除优先锁定
   });
 
   it('混合：加减不可点，乘除可点', () => {
