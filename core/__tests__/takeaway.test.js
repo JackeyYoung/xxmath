@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { problemId } from '../problem-id.js';   // ⭐ arch 拆出的文本级 key 纯函数（零依赖，无需 mock）
 
 const mockMem = new Map();
 vi.mock('../storage.js', () => ({
@@ -9,7 +10,8 @@ vi.mock('../storage.js', () => ({
 }));
 
 vi.mock('../keys.js', () => ({
-  TAKEAWAY_KEY_PREFIX: 'grade3_takeaway_',
+  // ⭐ arch 版 takeaway.js 走年级隔离键：mock 必须补 getGradeKey（否则 getTakeawayMapKey 内直接炸）
+  getGradeKey: (k) => `grade3_${k}`,
 }));
 
 vi.mock('../events.js', () => ({
@@ -18,7 +20,7 @@ vi.mock('../events.js', () => ({
 }));
 
 const {
-  takeawayKey, takeawaySave, takeawayLoad, takeawayListAll,
+  takeawaySave, takeawayLoad, takeawayListAll,
 } = await import('../takeaway.js');
 
 describe('takeaway', () => {
@@ -26,18 +28,18 @@ describe('takeaway', () => {
     mockMem.clear();
   });
 
-  it('takeawayKey：相同文本 → 相同 key', () => {
-    expect(takeawayKey('hello')).toBe(takeawayKey('hello'));
+  it('problemId：相同文本 → 相同 key', () => {
+    expect(problemId('hello')).toBe(problemId('hello'));
   });
 
-  it('takeawayKey：不同文本 → 不同 key（大多数情况）', () => {
-    expect(takeawayKey('a')).not.toBe(takeawayKey('b'));
+  it('problemId：不同文本 → 不同 key（大多数情况）', () => {
+    expect(problemId('a')).not.toBe(problemId('b'));
   });
 
-  it('takeawayKey：空文本 → null', () => {
-    expect(takeawayKey('')).toBeNull();
-    expect(takeawayKey(null)).toBeNull();
-    expect(takeawayKey('   ')).toBeNull();
+  it('problemId：空文本 → 空串（falsy 即视为无 key）', () => {
+    expect(problemId('')).toBe('');
+    expect(problemId(null)).toBe('');
+    expect(problemId('   ')).toBe('');
   });
 
   it('save + load 往返', () => {
