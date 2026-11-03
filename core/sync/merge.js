@@ -18,11 +18,12 @@ export function mergeCloudIntoLocal(cloudMap, getLocal, setLocal, toPush) {
 
   cloudMap.forEach((cloudItem, key) => {
     const local = getLocal(key);
-    const cloudTime = new Date(cloudItem.updated_at).getTime();
     const localTime = local?.localUpdatedAt || 0;
-
-    // ⭐ 调试日志：看看同步时间戳到底是怎样的
-    console.log(`[Merge] key=${key}, cloudTime=${cloudTime}, localTime=${localTime}`);
+    // ⭐ 修复：updated_at 缺失/非法时 cloudTime 是 NaN，原来两个分支都不命中
+    //    → 该 key 既不拉取也不回推，被静默跳过。这里归一成 0（视为「云端无时间」，按最旧处理）。
+    //    同时删掉逐 key 打印学生数据与时间戳的调试日志。
+    const parsed = new Date(cloudItem?.updated_at ?? 0).getTime();
+    const cloudTime = Number.isFinite(parsed) ? parsed : 0;
 
     if (!local) {
       setLocal(key, cloudItem.value);

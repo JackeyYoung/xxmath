@@ -113,7 +113,8 @@ function showDailyComplete({ total, correct, rate }) {
   document.body.appendChild(mask);
   document.getElementById('dailyCompleteRest').addEventListener('click', () => {
     mask.remove();
-    import('../app/shell.js').then(({ navigate }) => navigate('home'));
+    // 注意：本文件在 core/ 下，到 app/ 只退一级（原来写成 ../../ 会解析到项目根之外）
+    import('../app/shell.js').then(({ navigate }) => navigate('home')).catch(() => {});
   });
   document.getElementById('dailyCompleteMore').addEventListener('click', () => mask.remove());
   mask.addEventListener('click', e => { if (e.target === mask) mask.remove(); });

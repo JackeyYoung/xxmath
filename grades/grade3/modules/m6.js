@@ -1,8 +1,10 @@
 /* m6.js 小数 */
+import { getTemplate } from '../../../core/ui/template.js';
+
 export const meta = { title: '小数认识', icon: '💰' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m6');
+  const tpl = getTemplate('tpl-m6');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));

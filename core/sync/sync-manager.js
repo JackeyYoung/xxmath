@@ -4,6 +4,7 @@
 
 import {
   isCloudBaseConfigured,
+  ensureCloudbaseSDK,
 } from './cloudbase-client.js';
 import {
   ensureAnonymousLogin,
@@ -62,6 +63,15 @@ export async function initSync() {
 
   try {
     _setState(SyncState.SYNCING);
+
+    // ⭐ S11：948 KB SDK 按需加载（未配置环境 ID 时根本走不到这里）
+    const sdkReady = await ensureCloudbaseSDK();
+    if (!sdkReady) {
+      _lastErrorKind = 'sdk';
+      _setState(SyncState.ERROR, { error: new Error('CloudBase SDK 加载失败'), kind: 'sdk' });
+      return false;
+    }
+
     const user = await ensureAnonymousLogin();
     if (!user) {
       _setState(SyncState.ERROR, { error: new Error('登录失败'), kind: 'auth' });

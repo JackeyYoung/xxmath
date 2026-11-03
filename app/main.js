@@ -1,3 +1,12 @@
+/* S3：优先在 #page-lesson 内查找，找不到退回全局（最坏情况等价于改动前）。
+   课页元素（m1expr / m9a / problem-text / pAnswer / redoBanner）受益；
+   挂在 body 上的弹窗元素（parentSet* / parentMsg*）会自动走全局兜底。 */
+const _lessonQ = (id) => {
+  const root = document.getElementById('page-lesson');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* app/main.js —— 纯净版，只负责启动和全局绑定 */
 
 // ========== 1. 基础依赖 ==========
@@ -7,6 +16,8 @@ import {
   initStorage, migrateFromLocalStorage,
   flushStorage, getStorageHealth, getLocalUpdatedAt, applyCloudValue
 } from '../core/storage.js';
+import { migrateProblemIds } from '../core/migrate-problem-id.js';
+import { sameProblem } from '../core/problem-id.js';
 
 import { 
   getStudentName, installStudentInit, renderStudentCard, showStudentModal 
@@ -55,7 +66,6 @@ import {
 } from '../core/sync/sync-manager.js';
 import { mergeCloudIntoLocal } from '../core/sync/merge.js';
 
-import { initSyncUI } from './sync-ui.js';
 import { initShell, navigate, showThumbBar, hideThumbBar } from './shell.js';
 
 import { initWrongBookUI, showExplainModal } from '../core/ui/wrongbook-ui.js';
@@ -67,7 +77,6 @@ import { installGlobalUI, lockBodyScroll } from '../core/ui/global.js';
 import { installUIListeners } from '../core/ui/global-observer.js';
 import { installSessionBackup } from '../core/session-backup.js';
 import { installDaily } from '../core/daily.js';
-import { installTimerChallenge } from '../core/timer-challenge.js';
 import { showMasteryCard } from '../core/ui/mastery-card.js';
 import { showShareCard } from '../core/share-card.js';
 import { buildWeeklyReport, buildWeeklyReportHtml } from '../core/weekly-report.js';
@@ -81,16 +90,16 @@ updateTitle();
 installGlobalErrorHandlers();
 
 // ========== 2. 全局逻辑（如活动记录、错题重做） ==========
-// ⭐ 防抖 activity 的 flush 已收敛到 shell.js 的 _activityFlush，不再挂全局空函数
+// （原 window.__flushActivity 空实现已删除：它是个从未接线的空钩子，唯一调用点也已一并移除）
 
 // ⭐ 错题本重做成功逻辑（全局单例）
 function handleRedoSuccess(problemText) {
   const result = markRedoSuccess(problemText);
   if (result.removed) {
     showToast('🎉 太棒了！这道题隔天再做对，已从错题本移除！', 'success');
-    document.getElementById('redoBanner')?.remove();
+    _lessonQ('redoBanner')?.remove();
     const history = historyLoad();
-    const rec = history.find(r => r.problemText === problemText && r.isCorrect);
+    const rec = history.find(r => sameProblem(r.problemText, problemText) && r.isCorrect);
     if (rec) {
       setTimeout(() => {
         showMasteryCard({
@@ -108,7 +117,7 @@ function handleRedoSuccess(problemText) {
   }
 
   const history = historyLoad();
-  const latest = history.find(r => r.problemText === problemText && r.isCorrect);
+  const latest = history.find(r => sameProblem(r.problemText, problemText) && r.isCorrect);
   if (latest) setTimeout(() => showShareCard(latest), 500);
 }
 // 将重做函数挂到全局以供模块使用
@@ -116,7 +125,7 @@ window.__handleRedoSuccess = handleRedoSuccess;
 
 // ========== 3. Koji 点击逻辑 ==========
 (function hookKoji() {
-  const btn = document.getElementById('kojiBtn');
+  const btn = _lessonQ('kojiBtn');
   if (!btn || btn.dataset._hooked) return;
   btn.dataset._hooked = '1';
 
@@ -134,16 +143,16 @@ window.__handleRedoSuccess = handleRedoSuccess;
 
     let problemText = '';
     if (id === 'm1') {
-      problemText = document.getElementById('m1expr')?.textContent?.trim() || '';
+      problemText = _lessonQ('m1expr')?.textContent?.trim() || '';
     } else if (id === 'm9') {
-      const a = document.getElementById('m9a')?.value || '';
-      const op = document.getElementById('m9op')?.value || '';
-      const b = document.getElementById('m9b')?.value || '';
+      const a = _lessonQ('m9a')?.value || '';
+      const op = _lessonQ('m9op')?.value || '';
+      const b = _lessonQ('m9b')?.value || '';
       problemText = `${a} ${op} ${b}`;
     } else  if (id === 'm13') {
-      problemText = document.getElementById('problem-text')?.innerText?.trim() || '';
-      // ⭐ 核心修复：先收集用户填写的答案和步骤，循环外只弹一次
-      const currentAnswer = document.getElementById('pAnswer')?.value.trim() || '';
+      problemText = _lessonQ('problem-text')?.innerText?.trim() || '';
+      // ⭐ 核心修复：把用户填写的答案和步骤收集起来
+      const currentAnswer = _lessonQ('pAnswer')?.value.trim() || '';
       const currentSteps = [];
       document.querySelectorAll('#formulaSteps .formula-step').forEach(step => {
         const rel = step.querySelector('input[data-field="rel"]')?.value || '';
@@ -151,6 +160,7 @@ window.__handleRedoSuccess = handleRedoSuccess;
         const res = step.querySelector('input[data-field="res"]')?.value || '';
         if (rel || sub || res) currentSteps.push({ rel, sub, res });
       });
+      // ⭐ Koji 弹窗只弹一次：移出循环（原先每收集一步就会弹一次）
       if (problemText) {
         showExplainModal(problemText, {
           studentAnswer: currentAnswer,
@@ -181,9 +191,9 @@ function showParentSettingsModal() {
   mask.className = 'parent-settings-mask';
   mask.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;z-index:10015;padding:20px;';
   mask.innerHTML = `
-    <div style="background:#fff;border-radius:20px;padding:24px 22px 20px;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(15,23,42,.3);">
-      <div style="font-size:17px;font-weight:800;color:#1e293b;margin-bottom:6px;">⚙️ 家长设置</div>
-      <div style="font-size:12.5px;color:#64748b;margin-bottom:16px;">设置每天/每周的学习目标</div>
+    <div style="background:var(--card);border-radius:20px;padding:24px 22px 20px;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(15,23,42,.3);">
+      <div style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:6px;">⚙️ 家长设置</div>
+      <div style="font-size:12.5px;color:var(--muted);margin-bottom:16px;">设置每天/每周的学习目标</div>
       <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:16px;">
         ${[
           { key: 'dailyQuestions', label: '每天做题', min: 1, max: 20, unit: '道' },
@@ -193,25 +203,25 @@ function showParentSettingsModal() {
           { key: 'wrongReview', label: '每天复习错题', min: 0, max: 10, unit: '道' },
         ].map(t => `
           <div style="display:flex;align-items:center;gap:10px;">
-            <span style="flex:1;font-size:13px;font-weight:700;color:#475569;">${t.label}</span>
+            <span style="flex:1;font-size:13px;font-weight:700;color:var(--text-soft);">${t.label}</span>
             <input type="number" data-target-key="${t.key}" value="${targets[t.key]}" min="${t.min}" max="${t.max}" style="width:70px;padding:8px 10px;border:2px solid #e5e7eb;border-radius:8px;font-size:14px;font-weight:700;text-align:center;font-family:inherit;outline:none;">
-            <span style="font-size:12px;color:#64748b;font-weight:600;">${t.unit}</span>
+            <span style="font-size:12px;color:var(--muted);font-weight:600;">${t.unit}</span>
           </div>
         `).join('')}
       </div>
       <div style="display:flex;gap:10px;">
-        <button id="parentSetReset" style="flex:1;padding:12px;border-radius:12px;background:#f1f5f9;color:#475569;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">恢复默认</button>
+        <button id="parentSetReset" style="flex:1;padding:12px;border-radius:12px;background:var(--border-soft);color:var(--text-soft);border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;">恢复默认</button>
         <button id="parentSetSave" style="flex:1;padding:12px;border-radius:12px;background:#2563eb;color:#fff;border:none;cursor:pointer;font-size:14px;font-weight:700;font-family:inherit;box-shadow:0 3px 0 #1d4ed8;">保存</button>
       </div>
   `;
 
   document.body.appendChild(mask);
 
-  document.getElementById('parentSetReset').addEventListener('click', () => {
+  _lessonQ('parentSetReset').addEventListener('click', () => {
     targetReset(); mask.remove(); showToast('✅ 已恢复默认目标', 'success');
   });
 
-  document.getElementById('parentSetSave').addEventListener('click', () => {
+  _lessonQ('parentSetSave').addEventListener('click', () => {
     const newTargets = { ...targets };
     mask.querySelectorAll('[data-target-key]').forEach(inp => {
       newTargets[inp.dataset.targetKey] = parseInt(inp.value, 10) || 1;
@@ -237,7 +247,7 @@ function showUnreadParentMsg() {
     <div style="background:linear-gradient(135deg,#fff,#fdf2f8);border-radius:24px;padding:28px 24px 20px;width:340px;max-width:92vw;text-align:center;box-shadow:0 24px 80px rgba(236,72,153,.3);">
       <div style="font-size:56px;margin-bottom:8px;">💌</div>
       <div style="font-size:13px;color:#ec4899;font-weight:800;letter-spacing:1px;margin-bottom:10px;">${msg.from} 给你留了一句话</div>
-      <div style="font-size:17px;font-weight:800;color:#1e293b;line-height:1.7;padding:16px;background:#fff;border-radius:14px;margin-bottom:16px;">
+      <div style="font-size:17px;font-weight:800;color:var(--text);line-height:1.7;padding:16px;background:var(--card);border-radius:14px;margin-bottom:16px;">
         ${escapeHtmlStrict(msg.text)}
       </div>
       <div id="parentMsgReplyBox" style="display:none;margin-bottom:12px;">
@@ -251,16 +261,16 @@ function showUnreadParentMsg() {
   `;
   document.body.appendChild(mask);
 
-  const replyBox = document.getElementById('parentMsgReplyBox');
-  const replyInput = document.getElementById('parentMsgReplyInput');
+  const replyBox = _lessonQ('parentMsgReplyBox');
+  const replyInput = _lessonQ('parentMsgReplyInput');
 
-  document.getElementById('parentMsgReplyToggle').addEventListener('click', () => {
+  _lessonQ('parentMsgReplyToggle').addEventListener('click', () => {
     const willShow = replyBox.style.display === 'none';
     replyBox.style.display = willShow ? 'block' : 'none';
     if (willShow) replyInput.focus();
   });
 
-  document.getElementById('parentMsgReadClose').addEventListener('click', () => {
+  _lessonQ('parentMsgReadClose').addEventListener('click', () => {
     const reply = replyInput.value.trim();
     if (reply) msgReply(msg.id, reply);
     msgMarkAllRead();
@@ -284,6 +294,8 @@ function showUnreadParentMsg() {
 
   await initStorage();
   await migrateFromLocalStorage();
+  // ⭐ S9：把已有数据就地升级为 problemId 主键（幂等，跑过一次就跳过）
+  try { migrateProblemIds(); } catch (e) { console.warn('[迁移] problemId 失败', e); }
 
   const syncOK = await initSync();
   if (syncOK) {
@@ -328,11 +340,11 @@ function showUnreadParentMsg() {
   installUIListeners();
   installSessionBackup();
   installDaily();
-  installTimerChallenge();
+  // （已删除 installTimerChallenge：core/timer-challenge.js 的选择器 #m1 .card 在 DOM 中不存在，功能从未生效）
   installStudentInit();
   renderStudentCard();
 
-  initSyncUI();
+  // （已删除 initSyncUI：app/sync-ui.js 是死代码，按钮从未插入 DOM，只剩无用的监听注册）
   initShell();
   initHistoryDelegation();
   bindRangeTabs();
@@ -364,7 +376,7 @@ function showUnreadParentMsg() {
       return origHide.call(this);
     };
 
-    const bar = document.getElementById('thumbBar');
+    const bar = _lessonQ('thumbBar');
     if (bar) {
       new MutationObserver(() => {
         document.body.classList.toggle('thumb-bar-open', bar.classList.contains('show'));
@@ -383,3 +395,14 @@ window.addEventListener('pagehide', () => { flushStorage().catch(() => {}); });
 window.addEventListener('beforeunload', () => { flushStorage().catch(() => {}); });
 
 window.__debug = { getStorageHealth, getErrorLog, flushStorage };
+
+// S3 护栏：只在调试时开启（地址带 debug），生产不跑。
+// 作用是把「id 撞车导致静默取错节点」变成控制台明确告警——
+// S3 的 184 处全局 id 尚未全部 Vue 化，这是过渡期的安全网。
+try {
+  if (/debug/.test(location.hash + location.search)) {
+    const { startIdGuard } = await import('../core/ui/id-guard.js');
+    startIdGuard({ intervalMs: 4000 });
+    console.log('[id-guard] 已开启：每 4s 检查重复 id，控制台可用 __idGuard.report() 手动检查');
+  }
+} catch (e) { console.warn('[id-guard] 启动失败', e); }

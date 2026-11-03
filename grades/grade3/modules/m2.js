@@ -1,8 +1,10 @@
 /* grades/grade3/modules/m2.js */
+import { getTemplate } from '../../../core/ui/template.js';
+
 export const meta = { title: '面积模型', icon: '🧱' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m2');
+  const tpl = getTemplate('tpl-m2');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
@@ -42,7 +44,8 @@ export default async function mount(container, ctx) {
     if (split && a > splitAt) {
       ctx2d.textAlign = 'center'; ctx2d.font = 'bold 13px system-ui,sans-serif';
       ctx2d.fillStyle = '#2563eb';
-      ctx2d.fillText('10', ox + splitAt * cw / 2, oy + gh + 24);
+      // ⭐ M7：同上，标签必须用真实的 splitAt（a≥21 时为 20），不能写死 '10'
+      ctx2d.fillText(String(splitAt), ox + splitAt * cw / 2, oy + gh + 24);
       ctx2d.fillStyle = '#d97706';
       ctx2d.fillText(String(a - splitAt), ox + splitAt * cw + (a - splitAt) * cw / 2, oy + gh + 24);
     }
@@ -54,11 +57,14 @@ export default async function mount(container, ctx) {
     const total = a * b;
     if (filled === 0) { el.innerHTML = `<span class="calc-hint">点击「铺一行」，看看 <b>${a} × ${b}</b> 到底是多少</span>`; return; }
     if (filled < total) { el.innerHTML = `<span class="calc-hint">已经铺了 <b>${filled}</b> 块，还剩 <b>${total - filled}</b> 块没铺</span>`; return; }
-    if (!split) { el.innerHTML = `<span class="calc-final">${a} × ${b} = <b>${total}</b></span>`; }
-    else {
-      const splitAt = Math.floor(a / 10) * 10;
+    const splitAt = Math.floor(a / 10) * 10;
+    // ⭐ M7：整十部分原来在标签里写死成 10，但 a≥21 时 splitAt 是 20 —— 图上 20 块却标「10」，
+    //    算式却按 20 计算，等于教错。另外 a 本身是整十时没有零头可拆，直接显示完整算式。
+    if (!split || a <= splitAt) {
+      el.innerHTML = `<span class="calc-final">${a} × ${b} = <b>${total}</b></span>`;
+    } else {
       const p1 = splitAt * b, p2 = (a - splitAt) * b;
-      el.innerHTML = `<div class="calc-line"><span class="tag blue">10 × ${b} = ${p1}</span><span class="tag amber">${a - splitAt} × ${b} = ${p2}</span></div><div class="calc-final">${p1} + ${p2} = <b>${total}</b></div>`;
+      el.innerHTML = `<div class="calc-line"><span class="tag blue">${splitAt} × ${b} = ${p1}</span><span class="tag amber">${a - splitAt} × ${b} = ${p2}</span></div><div class="calc-final">${p1} + ${p2} = <b>${total}</b></div>`;
     }
   }
 
@@ -73,6 +79,7 @@ export default async function mount(container, ctx) {
       M2.filled = i + 1;
       m2Draw();
       await new Promise(r => setTimeout(r, 26));
+      if (M2.stopped) { M2.busy = false; return; }   // ⭐ 卸载后停止铺砖循环
     }
     M2.busy = false;
     m2Calc();

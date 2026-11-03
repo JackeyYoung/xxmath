@@ -1,6 +1,7 @@
 /* core/wrongbook-tags.js */
 import { lsGet, lsSet } from './storage.js';
 import { REASON_KEY } from './keys.js';
+import { problemId } from './problem-id.js';
 
 export const REASONS = ['计算粗心', '读题不细', '方法不会', '单位漏写'];
 
@@ -31,11 +32,7 @@ const KNOWLEDGE_POINTS = [
   { id: 'mass',           name: '质量',     re: /千克|克|吨/ },
 ];
 
-function collect(hits) {
-  const set = new Set();
-  hits.forEach(h => { if (h.re.test(text)) set.add(h.name); });
-  return set;
-}
+// （已删除死函数 collect()：它引用了不存在的变量 text，调用即 ReferenceError，且从未被调用）
 
 /**
  * 返回结构化分类结果
@@ -80,14 +77,16 @@ export function saveReasons(map) {
   try { lsSet(REASON_KEY, JSON.stringify(map)); } catch (e) {}
 }
 export function getReasons(text) {
-  const m = loadReasons();
-  return m[text] || [];
+  // ⭐ S9：key 统一用 problemId（迁移脚本已把旧 key 重建）
+  return loadReasons()[problemId(text)] || [];
 }
 export function toggleReason(text, reason) {
+  const pid = problemId(text);
+  if (!pid) return;
   const m = loadReasons();
-  const cur = new Set(m[text] || []);
+  const cur = new Set(m[pid] || []);
   if (cur.has(reason)) cur.delete(reason);
   else cur.add(reason);
-  m[text] = [...cur];
+  m[pid] = [...cur];
   saveReasons(m);
 }

@@ -1,8 +1,17 @@
+/* S3：优先在 #page-lesson 内查找（本模块就挂在这里），找不到退回全局。 */
+const _pageQ = (id) => {
+  const root = document.getElementById('page-lesson');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* m5.js 面积与周长 */
+import { getTemplate } from '../../../core/ui/template.js';
+
 export const meta = { title: '面积与周长', icon: '📐' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m5');
+  const tpl = getTemplate('tpl-m5');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
@@ -122,7 +131,6 @@ export default async function mount(container, ctx) {
     }
   ];
 
-
   function m5Render(isUserAction = false) {
     const w = +$('#m5w').value, h = +$('#m5h').value;
     $('#m5wval').textContent = w; $('#m5hval').textContent = h;
@@ -143,51 +151,68 @@ export default async function mount(container, ctx) {
   }
 
   function m5NewChallenge() {
-    const el = document.getElementById('m5Challenge');
+    const el = _pageQ('m5Challenge');
     if (!el) return;
 
     const type = M5_CHAL_TYPES[Math.floor(Math.random() * M5_CHAL_TYPES.length)];
     const q = type.gen();
 
     if (q.type === 'choice') {
-      el.innerHTML = `
-        <div class="m5-chal-question">${q.question}</div>
-        <div class="m5-chal-options">
-          ${q.options.map((opt, i) =>
-            `<button class="m5-chal-opt" data-idx="${i}">${opt}</button>`
-          ).join('')}
-        </div>
-        <div class="m5-chal-fb" id="m5ChalFb"></div>
-      `;
-      const fb = document.getElementById('m5ChalFb');
+      // M3：DOM 构建（question / options 走 textContent，不进 HTML 解析器）
+      el.textContent = '';
+      const qLine = document.createElement('div');
+      qLine.className = 'm5-chal-question';
+      qLine.textContent = q.question;
+      const optsBox = document.createElement('div');
+      optsBox.className = 'm5-chal-options';
+      q.options.forEach((opt, i) => {
+        const b = document.createElement('button');
+        b.className = 'm5-chal-opt';
+        b.dataset.idx = String(i);
+        b.textContent = opt;
+        optsBox.append(b);
+      });
+      const fbBox = document.createElement('div');
+      fbBox.className = 'm5-chal-fb';
+      fbBox.id = 'm5ChalFb';
+      el.append(qLine, optsBox, fbBox);
+      const fb = fbBox;
       el.querySelectorAll('.m5-chal-opt').forEach(btn => {
         btn.addEventListener('click', () => {
           const idx = +btn.dataset.idx;
           el.querySelectorAll('.m5-chal-opt').forEach(b => b.classList.remove('correct', 'wrong'));
           if (idx === q.correctIndex) {
             btn.classList.add('correct');
-            fb.innerHTML = `✓ 对！${q.answerText}，${q.answerText.split(' × ').map(s => parseInt(s)).reduce((a,b) => a * b)} 平方米`;
+            fb.textContent = `✓ 对！${q.answerText}，${q.answerText.split(' × ').map(s => parseInt(s)).reduce((a,b) => a * b)} 平方米`;
             fb.className = 'm5-chal-fb ok';
           } else {
             btn.classList.add('wrong');
-            fb.innerHTML = '❌ 再想想～ ' + q.hint;
+            fb.textContent = '❌ 再想想～ ' + q.hint;
             fb.className = 'm5-chal-fb error';
             setTimeout(() => btn.classList.remove('wrong'), 800);
           }
         });
       });
     } else {
-      el.innerHTML = `
-        <div class="m5-chal-question">${q.question}</div>
-        <div class="m5-chal-input-row">
-          <input type="text" inputmode="decimal" class="m5-chal-input" id="m5ChalInput" placeholder="?" autocomplete="off">
-          <span style="font-size:18px;font-weight:700;color:#64748b;">${q.unit}</span>
-          <button class="btn" id="m5ChalSubmit">✓ 确认</button>
-        </div>
-        <div class="m5-chal-fb" id="m5ChalFb"></div>
-      `;
-      const input = document.getElementById('m5ChalInput');
-      const fb = document.getElementById('m5ChalFb');
+      // M3：DOM 构建（question / unit 走 textContent）
+      el.textContent = '';
+      const qLine = document.createElement('div');
+      qLine.className = 'm5-chal-question';
+      qLine.textContent = q.question;
+      const input = document.createElement('input');
+      input.type = 'text'; input.inputMode = 'decimal'; input.className = 'm5-chal-input';
+      input.id = 'm5ChalInput'; input.placeholder = '?'; input.autocomplete = 'off';
+      const unitSpan = document.createElement('span');
+      unitSpan.style.cssText = 'font-size:18px;font-weight:700;color:var(--muted);';
+      unitSpan.textContent = q.unit;
+      const submitBtn = document.createElement('button');
+      submitBtn.className = 'btn'; submitBtn.id = 'm5ChalSubmit'; submitBtn.textContent = '✓ 确认';
+      const inputRow = document.createElement('div');
+      inputRow.className = 'm5-chal-input-row';
+      inputRow.append(input, unitSpan, submitBtn);
+      const fb = document.createElement('div');
+      fb.className = 'm5-chal-fb'; fb.id = 'm5ChalFb';
+      el.append(qLine, inputRow, fb);
       const submit = () => {
         const val = parseFloat(input.value);
         if (isNaN(val)) {
@@ -197,18 +222,18 @@ export default async function mount(container, ctx) {
         }
         if (Math.abs(val - q.answer) < 0.001) {
           input.classList.add('correct');
-          fb.innerHTML = `✓ 对！答案是 ${q.answer} ${q.unit}`;
+          fb.textContent = `✓ 对！答案是 ${q.answer} ${q.unit}`;
           fb.className = 'm5-chal-fb ok';
           // ⭐ 新增
           ctx.data.recordActivity('m5', `逆向挑战`, `答对 ${q.answer} ${q.unit}`, 0);
         } else {
           input.classList.add('wrong');
-          fb.innerHTML = '❌ 再想想～ ' + q.hint;
+          fb.textContent = '❌ 再想想～ ' + q.hint;
           fb.className = 'm5-chal-fb error';
           setTimeout(() => input.classList.remove('wrong'), 800);
         }
       };
-      document.getElementById('m5ChalSubmit').addEventListener('click', submit);
+      _pageQ('m5ChalSubmit').addEventListener('click', submit);
       input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
       input.focus();
     }
@@ -222,7 +247,24 @@ export default async function mount(container, ctx) {
     const w = +$('#m5w').value, h = +$('#m5h').value;
     m5RecordIdx++;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${m5RecordIdx}</td><td>${w}</td><td>${h}</td><td>${w} × ${h} = <b style="color:#2563eb">${w*h}</b></td><td>(${w} + ${h}) × 2 = <b style="color:#d97706">${(w+h)*2}</b></td>`;
+    // M3：DOM 构建表格行（面积/周长两列里的 <b> 也建节点）
+    const mkTd = (text) => { const td = document.createElement('td'); td.textContent = String(text); return td; };
+    const mkStrongTd = (prefix, strongText, suffix, color) => {
+      const td = document.createElement('td');
+      td.append(prefix);
+      const b = document.createElement('b');
+      b.style.color = color;
+      b.textContent = String(strongText);
+      td.append(b, suffix);
+      return td;
+    };
+    tr.append(
+      mkTd(m5RecordIdx),
+      mkTd(w),
+      mkTd(h),
+      mkStrongTd(w + ' × ' + h + ' = ', w * h, '', '#2563eb'),
+      mkStrongTd('(' + w + ' + ' + h + ') × 2 = ', (w + h) * 2, '', '#d97706'),
+    );
     $('#m5table tbody').appendChild(tr);
     ctx.data.recordActivity('m5', `长方形 ${w}×${h}`, `面积 ${w*h}`);
   });

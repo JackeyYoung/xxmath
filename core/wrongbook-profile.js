@@ -1,9 +1,16 @@
+/* S3：优先在 #wrongBookDrawer 内查找（本模块写的就是抽屉内容），找不到退回全局。 */
+const _wbScopeQ = (id) => {
+  const root = document.getElementById('wrongBookDrawer');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* core/wrongbook-profile.js */
 import { historyLoad } from './history.js';
 import { autoTagsFor, loadReasons, REASONS } from './wrongbook-tags.js';
 
 export function renderErrorProfile() {
-  const panel = document.getElementById('errorProfilePanel');
+  const panel = _wbScopeQ('errorProfilePanel');
   if (!panel) return;
 
   const history = historyLoad();
@@ -60,7 +67,7 @@ export function renderErrorProfile() {
   panel.querySelectorAll('.error-tag[data-tag]').forEach(el => {
     el.addEventListener('click', () => {
       const tag = el.dataset.tag;
-      const listEl = document.getElementById('wrongBookList');
+      const listEl = _wbScopeQ('wrongBookList');
       if (!listEl) return;
       const items = listEl.querySelectorAll('.wrong-item');
       items.forEach(item => {

@@ -1,4 +1,7 @@
 /* ============ 年级管理 ============ */
+import { lsSet } from '../core/storage.js';
+import { showConfirm } from '../core/ui/dialog.js';
+import { reloadApp } from '../core/reload.js';
 const GRADE_KEY = 'grade3_current_grade';
 const SUPPORTED_GRADES = ['3'];   // ⭐ 已实现的年级，四年级五年级后续追加
 
@@ -15,7 +18,7 @@ export function getCurrentGrade() {
 export function setCurrentGrade(g) {
   try {
     if (SUPPORTED_GRADES.includes(String(g))) {
-      localStorage.setItem(GRADE_KEY, String(g));
+lsSet(GRADE_KEY, String(g));   // S8：走存储层
     }
   } catch (e) {}
 }
@@ -96,14 +99,14 @@ function showGradeModal() {
 
   // 绑定
   mask.querySelectorAll('.grade-opt:not(.disabled)').forEach(btn => {
-    btn.addEventListener('click', () => {
+btn.addEventListener('click', async () => {
       const g = btn.dataset.grade;
       if (g === cur) {
         mask.remove();
         document.body.classList.remove('modal-open');
         return;
       }
-      if (!confirm(`确定切换到${getGradeName(g)}吗？\n\n切换后学习记录会按年级分开保存。`)) return;
+if (!(await showConfirm(`确定切换到${getGradeName(g)}吗？\n\n切换后学习记录会按年级分开保存。`))) return;
       setCurrentGrade(g);
       // 切年级后：重新从存储加载 + 重渲染
       try { if (typeof wbRender === 'function') wbRender(); } catch (e) {}
@@ -111,7 +114,7 @@ function showGradeModal() {
       try { if (typeof renderDashboard === 'function') renderDashboard(); } catch (e) {}
       try { if (typeof renderStudentCard === 'function') renderStudentCard(); } catch (e) {}
       try { if (typeof window._refreshGrowthCards === 'function') window._refreshGrowthCards(); } catch (e) {}
-      location.reload();
+await reloadApp('switch-grade');
     });
   });
 

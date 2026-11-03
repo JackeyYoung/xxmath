@@ -1,12 +1,12 @@
 /* sw.js */
-const CACHE_NAME = 'math-classroom-v1';
+const CACHE_NAME = 'math-classroom-v2';   // 改清单必须同时改版本号，否则 activate 的旧缓存清理永不触发
 // 核心的静态资源，首次安装时缓存
 const CORE_ASSETS = [
   './',
   './index.html',
   './manifest.json',
   './js/localforage.min.js',
-  './js/cloudbase.full.js',
+  './data/problems.json',   // S11：题库改走 fetch，预缓存一份以便离线进 m13
   './app/main.js',
   './app/shell.js',
   './core/storage.js',

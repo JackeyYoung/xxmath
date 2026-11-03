@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { problemId } from '../problem-id.js';   // ⭐ arch 拆出的文本级 key 纯函数（零依赖，无需 mock）
 
 const mockMem = new Map();
 vi.mock('../storage.js', () => ({
@@ -9,7 +10,8 @@ vi.mock('../storage.js', () => ({
 }));
 
 vi.mock('../keys.js', () => ({
-  getGradeKey: (prefix) => `grade3_${prefix}`,
+  // ⭐ arch 版 takeaway.js 走年级隔离键：mock 必须补 getGradeKey（否则 getTakeawayMapKey 内直接炸）
+  getGradeKey: (k) => `grade3_${k}`,
 }));
 
 vi.mock('../events.js', () => ({
@@ -24,6 +26,20 @@ const {
 describe('takeaway', () => {
   beforeEach(() => {
     mockMem.clear();
+  });
+
+  it('problemId：相同文本 → 相同 key', () => {
+    expect(problemId('hello')).toBe(problemId('hello'));
+  });
+
+  it('problemId：不同文本 → 不同 key（大多数情况）', () => {
+    expect(problemId('a')).not.toBe(problemId('b'));
+  });
+
+  it('problemId：空文本 → 空串（falsy 即视为无 key）', () => {
+    expect(problemId('')).toBe('');
+    expect(problemId(null)).toBe('');
+    expect(problemId('   ')).toBe('');
   });
 
   it('save + load 往返', () => {

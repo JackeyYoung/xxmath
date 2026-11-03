@@ -1,8 +1,17 @@
+/* S3：优先在 #page-lesson 内查找（本模块就挂在这里），找不到退回全局。 */
+const _pageQ = (id) => {
+  const root = document.getElementById('page-lesson');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* m7.js 时钟 */
+import { getTemplate } from '../../../core/ui/template.js';
+
 export const meta = { title: '时分秒', icon: '🕐' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m7');
+  const tpl = getTemplate('tpl-m7');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
@@ -20,9 +29,9 @@ export default async function mount(container, ctx) {
   const CN_HOUR = ['十二','一','二','三','四','五','六','七','八','九','十','十一'];
   let m7AudioCtx = null;
   let m7Dragging = false;
+
   let m7SwRafId = 0;      // ⭐ 秒表 rAF 帧句柄
   let m7Stopped = false;  // ⭐ 卸载标志：rAF/监听一律停火
-
 
   function m7InitAudio() {
     if (!m7AudioCtx) {
@@ -188,8 +197,18 @@ export default async function mount(container, ctx) {
     }
   ];
 
+  /* M3：把「主文本 + 小字单位」两段文本写进元素，替代字符串拼 innerHTML */
+  function _setSmall(node, main, dec) {
+    if (!node) return;
+    node.textContent = '';
+    node.append(String(main));
+    const s = document.createElement('small');
+    s.textContent = String(dec);
+    node.append(s);
+  }
+
   function m7NewCalcChallenge() {
-    const el = document.getElementById('m7CalcChallenge');
+    const el = _pageQ('m7CalcChallenge');
     if (!el) return;
 
     // 最多尝试 20 次生成有效题
@@ -199,24 +218,37 @@ export default async function mount(container, ctx) {
       q = type.gen();
       if (q) break;
     }
-    if (!q) { el.innerHTML = '<div style="text-align:center;color:#94a3b8;">生成失败，请再点"出新题"</div>'; return; }
+    if (!q) {
+          el.textContent = '生成失败，请再点"出新题"';
+          el.style.textAlign = 'center';
+          el.style.color = '#94a3b8';
+          return;
+        }
 
     if (q.type === 'time') {
       // 答案是"几点几分"
-      el.innerHTML = `
-        <div class="m7-calc-question">${q.question}</div>
-        <div class="m7-calc-input-row">
-          <input type="text" inputmode="decimal" class="m7-calc-input" id="m7CalcH" placeholder="时" min="0" max="23" autocomplete="off">
-          <span class="m7-calc-unit">时</span>
-          <input type="text" inputmode="decimal" class="m7-calc-input" id="m7CalcM" placeholder="分" min="0" max="59" autocomplete="off">
-          <span class="m7-calc-unit">分</span>
-          <button class="btn" id="m7CalcSubmit">✓ 确认</button>
-        </div>
-        <div class="m7-calc-fb" id="m7CalcFb"></div>
-      `;
-      const hIn = document.getElementById('m7CalcH');
-      const mIn = document.getElementById('m7CalcM');
-      const fb = document.getElementById('m7CalcFb');
+      // M3：用 DOM 构建替代字符串模板（q.question 不再进 HTML 解析器）
+      el.textContent = '';
+      const qLine = document.createElement('div');
+      qLine.className = 'm7-calc-question';
+      qLine.textContent = q.question;
+      const mkInput = (id, ph, max) => {
+        const n = document.createElement('input');
+        n.type = 'text'; n.inputMode = 'decimal'; n.className = 'm7-calc-input';
+        n.id = id; n.placeholder = ph; n.max = max; n.autocomplete = 'off';
+        return n;
+      };
+      const mkUnit = (t) => { const s = document.createElement('span'); s.className = 'm7-calc-unit'; s.textContent = t; return s; };
+      const hIn = mkInput('m7CalcH', '时', 23);
+      const mIn = mkInput('m7CalcM', '分', 59);
+      const calcBtn = document.createElement('button');
+      calcBtn.className = 'btn'; calcBtn.id = 'm7CalcSubmit'; calcBtn.textContent = '✓ 确认';
+      const row = document.createElement('div');
+      row.className = 'm7-calc-input-row';
+      row.append(hIn, mkUnit('时'), mIn, mkUnit('分'), calcBtn);
+      const fb = document.createElement('div');
+      fb.id = 'm7CalcFb'; fb.className = 'm7-calc-fb';
+      el.append(qLine, row, fb);
       const submit = () => {
         const uh = parseInt(hIn.value, 10);
         const um = parseInt(mIn.value, 10);
@@ -228,14 +260,14 @@ export default async function mount(container, ctx) {
         if (uh === q.answer.h && um === q.answer.m) {
           hIn.classList.add('correct');
           mIn.classList.add('correct');
-          fb.innerHTML = `✓ 对！${q.answer.h} 时 ${q.answer.m} 分`;
+          fb.textContent = `✓ 对！${q.answer.h} 时 ${q.answer.m} 分`;
           fb.className = 'm7-calc-fb ok';
           // ⭐ 新增
           ctx.data.activityAdd('m7', `时间推算`, `答对 ${q.answer.h}时${q.answer.m}分`);
         } else {
           hIn.classList.add('wrong');
           mIn.classList.add('wrong');
-          fb.innerHTML = '❌ 再想想～ ' + q.hint;
+          fb.textContent = '❌ 再想想～ ' + q.hint;
           fb.className = 'm7-calc-fb error';
           setTimeout(() => {
             hIn.classList.remove('wrong');
@@ -243,23 +275,30 @@ export default async function mount(container, ctx) {
           }, 800);
         }
       };
-      document.getElementById('m7CalcSubmit').addEventListener('click', submit);
+      _pageQ('m7CalcSubmit').addEventListener('click', submit);
       hIn.addEventListener('keydown', e => { if (e.key === 'Enter') mIn.focus(); });
       mIn.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
       hIn.focus();
     } else {
       // 答案是分钟数
-      el.innerHTML = `
-        <div class="m7-calc-question">${q.question}</div>
-        <div class="m7-calc-input-row">
-          <input type="text" inputmode="decimal" class="m7-calc-input" id="m7CalcAns" placeholder="?" min="0" max="600" autocomplete="off">
-          <span class="m7-calc-unit">${q.unit}</span>
-          <button class="btn" id="m7CalcSubmit">✓ 确认</button>
-        </div>
-        <div class="m7-calc-fb" id="m7CalcFb"></div>
-      `;
-      const inp = document.getElementById('m7CalcAns');
-      const fb = document.getElementById('m7CalcFb');
+      // M3：同上，DOM 构建替代字符串模板
+      el.textContent = '';
+      const qLine = document.createElement('div');
+      qLine.className = 'm7-calc-question';
+      qLine.textContent = q.question;
+      const inp = document.createElement('input');
+      inp.type = 'text'; inp.inputMode = 'decimal'; inp.className = 'm7-calc-input';
+      inp.id = 'm7CalcAns'; inp.placeholder = '?'; inp.max = 600; inp.autocomplete = 'off';
+      const unitSpan = document.createElement('span');
+      unitSpan.className = 'm7-calc-unit'; unitSpan.textContent = q.unit;
+      const calcBtn = document.createElement('button');
+      calcBtn.className = 'btn'; calcBtn.id = 'm7CalcSubmit'; calcBtn.textContent = '✓ 确认';
+      const row = document.createElement('div');
+      row.className = 'm7-calc-input-row';
+      row.append(inp, unitSpan, calcBtn);
+      const fb = document.createElement('div');
+      fb.id = 'm7CalcFb'; fb.className = 'm7-calc-fb';
+      el.append(qLine, row, fb);
       const submit = () => {
         const v = parseInt(inp.value, 10);
         if (isNaN(v)) {
@@ -269,16 +308,16 @@ export default async function mount(container, ctx) {
         }
         if (v === q.answer) {
           inp.classList.add('correct');
-          fb.innerHTML = `✓ 对！答案是 ${q.answer} ${q.unit}`;
+          fb.textContent = `✓ 对！答案是 ${q.answer} ${q.unit}`;
           fb.className = 'm7-calc-fb ok';
         } else {
           inp.classList.add('wrong');
-          fb.innerHTML = '❌ 再想想～ ' + q.hint;
+          fb.textContent = '❌ 再想想～ ' + q.hint;
           fb.className = 'm7-calc-fb error';
           setTimeout(() => inp.classList.remove('wrong'), 800);
         }
       };
-      document.getElementById('m7CalcSubmit').addEventListener('click', submit);
+      _pageQ('m7CalcSubmit').addEventListener('click', submit);
       inp.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
       inp.focus();
     }
@@ -318,14 +357,14 @@ export default async function mount(container, ctx) {
     if (M7.mode === 'up') {
       el.classList.remove('warn','danger');
       const t = m7FmtStopwatch(M7.swElapsed);
-      el.innerHTML = `${t.main}<small>${t.dec}</small>`;
+      _setSmall(el, t.main, t.dec);
       return;
     }
 
     if (M7.mode === 'down') {
       const remain = M7.swTarget - M7.swElapsed;
       const t = m7FmtStopwatch(remain);
-      el.innerHTML = `${t.main}<small>${t.dec}</small>`;
+      _setSmall(el, t.main, t.dec);
 
       // ⭐ 用 _lastDangerState 缓存，避免每帧 DOM 操作
       let newState = 'normal';
@@ -342,7 +381,7 @@ export default async function mount(container, ctx) {
 
     // clock 模式
     el.classList.remove('warn','danger');
-    el.innerHTML = `00:00<small>.0</small>`;
+    _setSmall(el, '00:00', '.0');
   }
 
   function m7SwFrame(now) {
@@ -358,7 +397,17 @@ export default async function mount(container, ctx) {
       $('#swToggle').textContent = '▶ 开始';
       m7PlayTick(true);
       m7UpdateSwDisplay();
-      $('#swHint').innerHTML = '⏰ <b style="color:#dc2626;">时间到！</b> 点击「归零」可重新开始。';
+      {
+            const h = $('#swHint');
+            if (h) {
+              h.textContent = '';
+              h.append('⏰ ');
+              const b = document.createElement('b');
+              b.style.color = '#dc2626';
+              b.textContent = '时间到！';
+              h.append(b, ' 点击「归零」可重新开始。');
+            }
+          }
       // ⭐ 新增
       ctx.data.recordActivity('m7', `倒计时 ${M7.swTarget/1000} 秒`, '完成', 0);
       return;
@@ -378,7 +427,7 @@ export default async function mount(container, ctx) {
     M7.swLastFrame = performance.now();
     M7.swLastTickSec = Math.floor(M7.swElapsed / 1000);
     $('#swToggle').textContent = '⏸ 暂停';
-    $('#swHint').innerHTML = M7.mode === 'up'
+    $('#swHint').textContent = M7.mode === 'up'
       ? '⏱ 正在计时…每秒响一次滴答声。'
       : '⏳ 倒计时进行中…';
     m7SwRafId = requestAnimationFrame(m7SwFrame);
@@ -397,9 +446,9 @@ export default async function mount(container, ctx) {
     }
     m7UpdateSwDisplay();
     if (M7.mode === 'up') {
-      $('#swHint').innerHTML = '💡 点击「开始」，秒表从 0 往上计时。';
+      $('#swHint').textContent = '💡 点击「开始」，秒表从 0 往上计时。';
     } else if (M7.mode === 'down') {
-      $('#swHint').innerHTML = `💡 倒计时目标：${Math.floor(M7.swTarget/60000)} 分 ${Math.floor((M7.swTarget%60000)/1000)} 秒。`;
+      $('#swHint').textContent = `💡 倒计时目标：${Math.floor(M7.swTarget/60000)} 分 ${Math.floor((M7.swTarget%60000)/1000)} 秒。`;
     }
   }
 
@@ -419,13 +468,13 @@ export default async function mount(container, ctx) {
       const setup = $('#swSetup');
       if (M7.mode === 'clock') {
         setup.style.display = 'none';
-        $('#swDisplay').innerHTML = '00:00<small>.0</small>';
+        _setSmall($('#swDisplay'), '00:00', '.0');
         $('#swDisplay').classList.remove('warn','danger');
-        $('#swHint').innerHTML = '🕐 时钟模式下，秒针每秒走一格（上方可开启「滴答声」）。';
+        $('#swHint').textContent = '🕐 时钟模式下，秒针每秒走一格（上方可开启「滴答声」）。';
       } else if (M7.mode === 'up') {
         setup.style.display = 'none';
         m7UpdateSwDisplay();
-        $('#swHint').innerHTML = '💡 点击「开始」，秒表从 0 往上计时。';
+        $('#swHint').textContent = '💡 点击「开始」，秒表从 0 往上计时。';
       } else {
         setup.style.display = 'inline-flex';
         const m = +$('#swMin').value || 0;
@@ -433,7 +482,7 @@ export default async function mount(container, ctx) {
         M7.swTarget = (m * 60 + s) * 1000;
         if (M7.swTarget <= 0) M7.swTarget = 60000;
         m7UpdateSwDisplay();
-        $('#swHint').innerHTML = `💡 倒计时目标：${m} 分 ${s} 秒，点击「开始」倒计时。`;
+        $('#swHint').textContent = `💡 倒计时目标：${m} 分 ${s} 秒，点击「开始」倒计时。`;
       }
     });
   });
@@ -481,29 +530,34 @@ export default async function mount(container, ctx) {
     return Math.round(ang / (Math.PI*2) * 60) % 60;
   }
 
-  // ⭐ Pointer Events：一套代码同时支持鼠标与手指拖拽（需配合 touch-action:none）
-  const m7Canvas = $('#m7canvas');
-  if (m7Canvas) m7Canvas.style.touchAction = 'none';
-  const onM7PointerDown = e => {
+  // ⭐ S6：原来只绑 mousedown —— 触摸屏不产生鼠标事件，分针根本拖不动。
+  //    改用 Pointer Events（鼠标/触摸/手写笔一套逻辑）；并给 canvas 加 touch-action:none，
+  //    否则 Safari 会把这个手势当成页面滚动，拖动变成滚页。
+  const m7CanvasEl = $('#m7canvas');
+  if (m7CanvasEl) m7CanvasEl.style.touchAction = 'none';
+  m7CanvasEl?.addEventListener('pointerdown', e => {
+    e.preventDefault();
     m7Dragging = true;
     M7.minute = m7FromPoint(e.clientX, e.clientY);
     M7.second = 0;
     m7Draw(); m7UpdateDigital();
     // ⭐ 新增：拖分针
     ctx.data.recordActivity('m7', `拖分针到 ${M7.minute} 分`, '', 1000);
-  };
-  const onM7PointerMove = e => {
+  });
+  // ⭐ S7：window 监听必须命名并保存引用，否则每次进出 m7 都会多一份且永不解绑
+  function onM7DragMove(e) {
     if (!m7Dragging) return;
     const newMin = m7FromPoint(e.clientX, e.clientY);
     if (M7.minute > 45 && newMin < 15) M7.hour = (M7.hour % 12) + 1;
     else if (M7.minute < 15 && newMin > 45) M7.hour = ((M7.hour - 2 + 12) % 12) + 1;
     M7.minute = newMin; M7.second = 0;
     m7Draw(); m7UpdateDigital();
-  };
-  const onM7PointerUp = () => { m7Dragging = false; };
-  m7Canvas?.addEventListener('pointerdown', onM7PointerDown);
-  window.addEventListener('pointermove', onM7PointerMove);
-  window.addEventListener('pointerup', onM7PointerUp);
+  }
+  function onM7DragEnd() { m7Dragging = false; }
+  // ⭐ S6：pointermove/pointerup 让触摸与鼠标共用同一套拖拽逻辑
+  window.addEventListener('pointermove', onM7DragMove);
+  window.addEventListener('pointerup', onM7DragEnd);
+  window.addEventListener('pointercancel', onM7DragEnd);
 
   $('#m7toggle')?.addEventListener('click', () => {
     M7.running = !M7.running;
@@ -521,7 +575,7 @@ export default async function mount(container, ctx) {
     m7Draw(); m7UpdateDigital();
   });
 
-  document.getElementById('m7NewCalcChallenge')?.addEventListener('click', m7NewCalcChallenge);
+  _pageQ('m7NewCalcChallenge')?.addEventListener('click', m7NewCalcChallenge);
   const timer = setInterval(m7ClockTick, 1000);
 
   m7Draw(); 
@@ -529,14 +583,15 @@ export default async function mount(container, ctx) {
   m7NewCalcChallenge();
 
   return () => {
-    // ⭐ 完整清理：定时器、rAF、window 监听、AudioContext
-    m7Stopped = true;
+    // ⭐ S7：停掉所有外部副作用，否则退出课页后仍在跑
+    M7.swRunning = false;   // m7SwFrame 下一帧检测到后自然终止 rAF 链
+    M7.running = false;
+    m7Stopped = true;       // ⭐ 卸载标志：rAF/监听一律停火
     clearInterval(timer);
-    if (m7SwRafId) cancelAnimationFrame(m7SwRafId);
-    window.removeEventListener('pointermove', onM7PointerMove);
-    window.removeEventListener('pointerup', onM7PointerUp);
-    try { m7AudioCtx?.close(); } catch (e) {}
-    m7AudioCtx = null;
+    if (m7SwRafId) cancelAnimationFrame(m7SwRafId);   // ⭐ 立即取消在途帧
+    window.removeEventListener('pointermove', onM7DragMove);
+    window.removeEventListener('pointerup', onM7DragEnd);
+    if (m7AudioCtx) { try { m7AudioCtx.close(); } catch (e) {} m7AudioCtx = null; }
     container.innerHTML = '';
   };
 }

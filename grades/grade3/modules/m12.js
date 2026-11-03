@@ -1,8 +1,10 @@
 /* m12.js 吨 */
+import { getTemplate } from '../../../core/ui/template.js';
+
 export const meta = { title: '质量单位', icon: '⚖️' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m12');
+  const tpl = getTemplate('tpl-m12');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
@@ -14,9 +16,12 @@ export default async function mount(container, ctx) {
   function fmt(n) { if (!isFinite(n)) return '—'; if (n === 0) return '0'; return n.toFixed(6).replace(/\.?0+$/, ''); }
 
   function m12Update(isUserAction = false) {
-    const val = parseFloat($('#m12val').value), unit = $('#m12unit').value;
+    // ⭐ 修复：parseFloat('12abc') → 12，会静默接受半截输入；Number('') 又是 0。两级都要挡。
+    const valRaw = String($('#m12val').value).trim();
+    const val = valRaw === '' ? NaN : Number(valRaw);
+    const unit = $('#m12unit').value;
     const wrap = $('#m12results');
-    if (isNaN(val)) { wrap.innerHTML = '<div class="result-item"><span class="k">请输入一个数字</span></div>'; return; }
+    if (!Number.isFinite(val)) { wrap.innerHTML = '<div class="result-item"><span class="k">请输入一个数字</span></div>'; return; }
     const u = MASS_UNITS.find(x => x.key === unit);
     const inG = val * u.toG;
     if (isUserAction) {

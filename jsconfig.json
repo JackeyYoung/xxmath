@@ -1,0 +1,19 @@
+{
+  "//": "L3: 让编辑器(VS Code)对原生 ESM 提供类型提示与路径补全，无需 tsc / 构建步骤",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "checkJs": false,
+    "allowJs": true,
+    "noEmit": true,
+    "strict": false,
+    "baseUrl": ".",
+    "paths": {
+      "vue": ["./js/vendor/vue.esm-browser.prod.js"]
+    }
+  },
+  "include": ["app/**/*.js", "core/**/*.js", "grades/**/*.js", "js/**/*.js", "api/**/*.js", "sw.js"],
+  "exclude": ["node_modules", "备份1028", "占位备份", "js/cloudbase.full.js", "js/localforage.js", "js/localforage.min.js"]
+}

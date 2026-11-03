@@ -1,7 +1,19 @@
+/* S3：优先在 #page-lesson 内查找（本模块就挂在这里），找不到退回全局。 */
+const _pageQ = (id) => {
+  const root = document.getElementById('page-lesson');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* grades/grade3/modules/m13.js
    解题思维模块，100% 原版还原（恢复状态联动、错题本、全链路缓存）
 */
+import { getTemplate } from '../../../core/ui/template.js';
+
 import { escapeHtmlStrict } from '../../../core/html.js';
+import { defineMachine, createStepMachine } from '../../../core/lesson/step-machine.js';
+import { showConfirm } from '../../../core/ui/dialog.js';
+import { sameProblem } from '../../../core/problem-id.js';
 import { takeawayLoad, takeawaySave } from '../../../core/takeaway.js';
 import { LLM_CONFIG, extractJson, normalizeAiFeedback, callLLM } from '../../../core/llm.js';
 import { problemNumbers, isValidSubstitution, checkPassword, extractNums } from '../scoring/m13.js';
@@ -43,7 +55,7 @@ const M13_PROBLEMS = [
 ];
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m13');
+  const tpl = getTemplate('tpl-m13');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
@@ -53,6 +65,8 @@ export default async function mount(container, ctx) {
 
   /* ================= 状态 ================= */
   const M13_STEPS = { steps: [], minSteps: 1, maxSteps: 6, defaultSteps: 2, container: null };
+  /* M8：四步法的状态机实例（由 updateAllSteps 每次重建；外部可用它读 activeIndex/progress） */
+  let m13Machine = null;
   let M13_BANK = [];
   let M13_CurrentAnswer = null;
   let M13_ProblemSource = 'custom';
@@ -180,7 +194,7 @@ export default async function mount(container, ctx) {
         let hasHistory = false;
         try {
           const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
-          hasHistory = history.some(r => r.problemText === text && r.aiFeedback && r.aiFeedback.answer);
+          hasHistory = history.some(r => sameProblem(r.problemText, text) && r.aiFeedback && r.aiFeedback.answer);
         } catch (e) {}
         
         if (hasHistory) {
@@ -229,12 +243,12 @@ export default async function mount(container, ctx) {
     document.body.classList.remove('modal-open');
   }
 
-  function checkTakeawayBeforeChange() {
+async function checkTakeawayBeforeChange() {
     const problemText = $('#problem-text')?.innerText.trim();
     if (!problemText) return true;
     const takeaway = $('#pTakeaway')?.value.trim();
     if (takeaway) return true;
-    return confirm('💡 一题一得还没写哦！\n\n"这道题教会我什么？"记录一句心得，会让你印象更深。\n\n确定要跳过吗？');
+return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会我什么？"记录一句心得，会让你印象更深。\n\n确定要跳过吗？', { okText: '跳过', cancelText: '去写' });
   }
 
   /* ================= 步骤状态联动 ================= */
@@ -283,17 +297,12 @@ export default async function mount(container, ctx) {
 
   function updateAllSteps() {
     const problemText = $('#problem-text')?.innerText.trim() || '';
-    
-    // Step 1: 读题圈画
-    setStatus(1, (problemText && hasUsedHighlight) ? 'done' : 'pending');
-    
-    // Step 2: 草稿纸（至少有 2 个格子写了内容才算完成）
+
+    // 草稿纸（至少有 2 个格子写了内容才算完成）
     const scratch = $$('.scratch-cell textarea');
     const scratchFilled = scratch.filter(t => t.value.trim().length > 0).length;
-    setStatus(2, scratchFilled >= 2 ? 'done' : 'pending');
-    
-    // Step 3: 关系式（至少有一组完整的「关系式」+「代入数字」+「得数」才算完成）
-    const stepInputs = $$('#formulaSteps input');
+
+    // 关系式（至少有一组完整的「关系式」+「代入数字」+「得数」才算完成）
     let completeFormulaCount = 0;
     $$('#formulaSteps .formula-step').forEach(step => {
       const rel = step.querySelector('input[data-field="rel"]')?.value.trim();
@@ -301,11 +310,29 @@ export default async function mount(container, ctx) {
       const res = step.querySelector('input[data-field="res"]')?.value.trim();
       if (rel && sub && res) completeFormulaCount++;
     });
-    setStatus(3, completeFormulaCount > 0 ? 'done' : 'pending');
-    
-    // Step 4: 我的答案
+
     const pAnswer = $('#pAnswer');
-    setStatus(4, pAnswer?.value.trim() ? 'done' : 'pending');
+
+    /* M8：四步法的完成状态改为「由状态机派生」，不再各处手写 setStatus(cond ? 'done' : 'pending')。
+       这样「哪些步已完成」只有一个来源，不可能和 DOM 上的状态互相矛盾；
+       canComplete 里读的就是同一批判据，改判据只需改这一处。 */
+    const mark = [
+      !!(problemText && hasUsedHighlight),      // ① 读题圈画
+      scratchFilled >= 2,                        // ② 草稿纸
+      completeFormulaCount > 0,                  // ③ 关系式
+      !!(pAnswer && pAnswer.value.trim()),       // ④ 我的答案
+    ];
+    const machine = createStepMachine(defineMachine({
+      id: 'm13-fourstep',
+      steps: [1, 2, 3, 4],
+      canComplete: (_step, i) => !!mark[i],
+    }));
+    m13Machine = machine;
+
+    for (let i = 0; i < 4; i++) {
+      // 保留原有的二态 DOM 输出（done / pending），避免影响既有 CSS 与视觉
+      setStatus(i + 1, machine.isDone(i) ? 'done' : 'pending');
+    }
   }
 
   /* ================= 动态步骤管理 ================= */
@@ -513,7 +540,7 @@ export default async function mount(container, ctx) {
     document.body.appendChild(mask);
     document.body.classList.add('modal-open');
 
-    const input = document.getElementById('m13PwdInput');
+    const input = _pageQ('m13PwdInput');
     setTimeout(() => input.focus(), 60);
 
     function tryUnlock() {
@@ -522,12 +549,12 @@ export default async function mount(container, ctx) {
         mask.remove();
         if (typeof onSuccess === 'function') onSuccess();
       } else {
-        document.getElementById('m13PwdError').textContent = '密码不对，再想想～';
+        _pageQ('m13PwdError').textContent = '密码不对，再想想～';
         input.value = ''; input.focus();
       }
     }
-    document.getElementById('m13PwdOk').addEventListener('click', tryUnlock);
-    document.getElementById('m13PwdCancel').addEventListener('click', () => { document.body.classList.remove('modal-open'); mask.remove(); });
+    _pageQ('m13PwdOk').addEventListener('click', tryUnlock);
+    _pageQ('m13PwdCancel').addEventListener('click', () => { document.body.classList.remove('modal-open'); mask.remove(); });
     input.addEventListener('keydown', e => { if (e.key === 'Enter') tryUnlock(); });
   }
 
@@ -569,9 +596,14 @@ export default async function mount(container, ctx) {
     body.innerHTML = `<div class="ai-thinking"><span class="dots"><span></span><span></span><span></span></span><div><div class="think-text">🤖 AI 正在分析标准解法…</div></div><span class="think-time" id="stdTime">0.0s</span></div>`;
 
     const start = performance.now();
-    const timeEl = document.getElementById('stdTime');
+    const timeEl = _pageQ('stdTime');
+    // ⭐ S7：用户中途离开时这个 100ms 计时器原本会永远空转，并且通过闭包持有已脱离的 DOM。
+    //    元素一旦不在了就自行 clearInterval，无需依赖卸载钩子。
     clearInterval(stdTimer);
-    stdTimer = setInterval(() => { if (timeEl) timeEl.textContent = ((performance.now() - start) / 1000).toFixed(1) + 's'; }, 100);
+    stdTimer = setInterval(() => {
+      if (!timeEl || !timeEl.isConnected) { clearInterval(stdTimer); return; }
+      timeEl.textContent = ((performance.now() - start) / 1000).toFixed(1) + 's';
+    }, 100);
 
     try {
       const raw = await callLLMStandardSolution(problemText);
@@ -580,7 +612,7 @@ export default async function mount(container, ctx) {
     } catch (e) {
       clearInterval(stdTimer);
       body.innerHTML = `<div style="text-align:center;padding:24px 20px;"><div style="color:var(--red-text);font-weight:700;margin-bottom:12px;">❌ 获取标准解法失败：${e.message || '请稍后重试'}</div><button class="btn" id="m13RetryStdBtn">🔄 重新获取</button></div>`;
-      document.getElementById('m13RetryStdBtn')?.addEventListener('click', () => m13FetchStandardSolution());
+      _pageQ('m13RetryStdBtn')?.addEventListener('click', () => m13FetchStandardSolution());
       lock.style.display = 'block';
     }
   }
@@ -625,10 +657,16 @@ export default async function mount(container, ctx) {
       badge.className = 'm13-result-badge' + (type ? ' ' + type : '');
       badge.textContent = text || '';
     };
+    // ⭐ S12：任何早退都必须先解锁，否则「检查」按钮会永久变灰
+    //    （原来 634/635/655/843 四条早退路径都只 setBadge 不解锁，只有 3 处成功路径会解锁）
+    const bail = (text, type = 'no') => {
+      $('#pCheck').disabled = false;
+      return setBadge(type, text);
+    };
 
     // 1. 前置校验
-    if (!problemText) return setBadge('no', '请先选择或输入题目');
-    if (!user) return setBadge('no', '✏ 请先写出答案');
+    if (!problemText) return bail('请先选择或输入题目');
+    if (!user) return bail('✏ 请先写出答案');
 
     // 3. 校验步骤完整度
     const studentSteps = m13CollectSteps();
@@ -648,7 +686,7 @@ export default async function mount(container, ctx) {
       if (anyRel && !anySub) tip = '✏ 有一步没写「代入数字」，补上再检查';
       else if (!anyRel && anySub) tip = '✏ 有一步没写「关系式」，补上再检查';
       else if (anySub) tip = '✏ 「代入数字」需要用到题目中的数字（如：15 − 8 − 3）';
-      return setBadge('no', tip);
+      return bail(tip);
     }
 
     // 4. 题库题直接校验
@@ -665,7 +703,7 @@ export default async function mount(container, ctx) {
         // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
-          const existing = wbList.find(w => w.text === problemText);
+          const existing = wbList.find(w => sameProblem(w.text, problemText));
           if (existing && ctx.data.wbAdd) {
             ctx.data.wbAdd({
               ...existing,
@@ -681,7 +719,7 @@ export default async function mount(container, ctx) {
         
         // ⭐ 防止重复提交产生大量相同记录
         const isDuplicate = ctx.data.historyLoad().some(r => 
-          r.problemText === problemText && 
+          sameProblem(r.problemText, problemText) && 
           r.studentAnswer === user && 
           JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
           r.isCorrect === allMatch
@@ -711,7 +749,7 @@ export default async function mount(container, ctx) {
         
         // ⭐ 防止重复提交产生大量相同记录
         const isDuplicate = ctx.data.historyLoad().some(r => 
-          r.problemText === problemText && 
+          sameProblem(r.problemText, problemText) && 
           r.studentAnswer === user && 
           JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
           r.isCorrect === allMatch
@@ -749,7 +787,7 @@ export default async function mount(container, ctx) {
         const list = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
         // 只要能找到这道题的 aiFeedback 就行，不管上次的答案和步骤是什么
         return list.find(r => 
-          r.problemText === problemText && 
+          sameProblem(r.problemText, problemText) && 
           r.aiFeedback && 
           r.aiFeedback.answer
         ) || null;
@@ -770,7 +808,7 @@ export default async function mount(container, ctx) {
         // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
-          const existing = wbList.find(w => w.text === problemText);
+          const existing = wbList.find(w => sameProblem(w.text, problemText));
           if (existing && ctx.data.wbAdd) {
             ctx.data.wbAdd({
               ...existing,
@@ -816,7 +854,7 @@ export default async function mount(container, ctx) {
 
       // ⭐ 防止重复提交产生大量相同记录
       const isDuplicate = ctx.data.historyLoad().some(r => 
-        r.problemText === problemText && 
+        sameProblem(r.problemText, problemText) && 
         r.studentAnswer === user && 
         JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
         r.isCorrect === allMatch
@@ -836,7 +874,7 @@ export default async function mount(container, ctx) {
     }
 
     // 5. 大模型批改
-    if (!LLM_CONFIG.enabled) return setBadge('info', '📝 自定义题目无标准答案，请对照题意自查（未启用大模型）');
+    if (!LLM_CONFIG.enabled) return bail('📝 自定义题目无标准答案，请对照题意自查（未启用大模型）', 'info');
 
     if (!window_llmPwdOK) {
       $('#pCheck').disabled = false; // 解锁，等待密码验证
@@ -865,7 +903,7 @@ export default async function mount(container, ctx) {
         // ⭐ 核心新增：如果这次做对了，悄悄去错题本里把这条旧记录更新一下
         try {
           const wbList = ctx.data.wbLoad ? ctx.data.wbLoad() : [];
-          const existing = wbList.find(w => w.text === problemText);
+          const existing = wbList.find(w => sameProblem(w.text, problemText));
           if (existing && ctx.data.wbAdd) {
             ctx.data.wbAdd({
               ...existing,
@@ -883,7 +921,7 @@ export default async function mount(container, ctx) {
 
       // ⭐ 防止重复提交产生大量相同记录
       const isDuplicate = ctx.data.historyLoad().some(r => 
-        r.problemText === problemText && 
+        sameProblem(r.problemText, problemText) && 
         r.studentAnswer === user && 
         JSON.stringify(r.studentSteps) === JSON.stringify(studentSteps) &&
         r.isCorrect === ok
@@ -917,8 +955,8 @@ export default async function mount(container, ctx) {
   }
 
   /* ================= 事件绑定 ================= */
-  $('#pLoad')?.addEventListener('click', () => {
-    if (!checkTakeawayBeforeChange()) return;
+$('#pLoad')?.addEventListener('click', async () => {
+if (!(await checkTakeawayBeforeChange())) return;
     if (!M13_BANK.length) return ctx.toast('题库还在加载中', 'info');
     
     const idx = $('#pSelect').value;
@@ -961,8 +999,8 @@ export default async function mount(container, ctx) {
     $('#pLoad').click();
   });
 
-  $('#pUseCustom')?.addEventListener('click', () => {
-    if (!checkTakeawayBeforeChange()) return;
+$('#pUseCustom')?.addEventListener('click', async () => {
+if (!(await checkTakeawayBeforeChange())) return;
     const t = $('#pCustom').value.trim();
     if (!t) return;
     $('#pSelect').value = '';
@@ -977,8 +1015,8 @@ export default async function mount(container, ctx) {
   });
   $('#pCustom')?.addEventListener('keydown', e => { if (e.key === 'Enter') $('#pUseCustom').click(); });
 
-  $('#pUpload')?.addEventListener('change', e => {
-    if (!checkTakeawayBeforeChange()) { e.target.value = ''; return; }
+$('#pUpload')?.addEventListener('change', async e => {
+if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
@@ -1013,10 +1051,12 @@ export default async function mount(container, ctx) {
       updateAllSteps();
     }
   });
-  container.addEventListener('input', e => {
+  // ⭐ S7：container 是常驻的 #lesson-stage-main，匿名监听会随每次挂载累积，必须命名并在 cleanup 里解绑
+  const onM13ContainerInput = (e) => {
     if (e.target.closest('.m13-step') || e.target.id === 'problem-text') updateAllSteps();
     if (e.target.closest('#formulaSteps')) updateCheckBtnHint();
-  });
+  };
+  container.addEventListener('input', onM13ContainerInput);
 
   /* ================= 折叠：统一事件委托（挂一次，永不丢失） ================= */
   if (container.dataset.m13CollapseBound !== '1') {
@@ -1137,7 +1177,7 @@ export default async function mount(container, ctx) {
     try {
       const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
       // ⭐ 核心修复：用 filter 取出所有符合条件的记录，而不是用 find
-      const hits = history.filter(r => r.problemText === problemText && r.aiFeedback && r.aiFeedback.answer);
+      const hits = history.filter(r => sameProblem(r.problemText, problemText) && r.aiFeedback && r.aiFeedback.answer);
       
       if (hits.length > 0) {
         // ⭐ 按 timestamp 倒序，取最新的一条
@@ -1159,9 +1199,12 @@ export default async function mount(container, ctx) {
     try {
       const { showExplainModal } = await import('../../../core/ui/wrongbook-ui.js');
       // ⭐ 传入用户当前的作答和步骤
+      // 注意：user / studentSteps 是 handleCheck() 里的局部变量，在这里已越界；
+      // 旧写法会让本分支必抛 ReferenceError，被 catch 吞成"加载讲解失败"。
+      // 这里改为现场从 DOM 读取，与 m13CollectSteps() 保持同一口径。
       showExplainModal(problemText, {
-        studentAnswer: user,
-        studentSteps: studentSteps
+        studentAnswer: ($('#pAnswer')?.value || '').trim(),
+        studentSteps: m13CollectSteps(),
       });
     } catch (err) {
       console.error('加载讲解组件失败', err);
@@ -1177,7 +1220,7 @@ export default async function mount(container, ctx) {
 
     const bodyEl = $('#problemPickerDrawer').querySelector('.problem-picker-body');
     const loadingEl = $('#pickerAiLoading');
-    const subText = document.getElementById('pickerAiSub');
+    const subText = _pageQ('pickerAiSub');
     if (bodyEl) bodyEl.style.display = 'none';
     if (loadingEl) loadingEl.style.display = 'block';
     if (subText) subText.textContent = `正在参考「${currentText.slice(0, 10)}...」生成同类题`;
@@ -1235,7 +1278,7 @@ export default async function mount(container, ctx) {
       let hasHistory = false;
       try {
         const history = ctx.data.historyLoad ? ctx.data.historyLoad() : [];
-        hasHistory = history.some(r => r.problemText === text && r.aiFeedback && r.aiFeedback.answer);
+        hasHistory = history.some(r => sameProblem(r.problemText, text) && r.aiFeedback && r.aiFeedback.answer);
       } catch (e) {}
 
       // 4. 装载题目
@@ -1294,7 +1337,7 @@ export default async function mount(container, ctx) {
       $('#m13UnlockBtn').textContent = '🤖 让 AI 现算标准解法';
       
       // 2. 弹出重做横幅
-      document.getElementById('redoBanner')?.remove();
+      _pageQ('redoBanner')?.remove();
       const banner = document.createElement('div');
       banner.id = 'redoBanner';
       banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:var(--amber-text);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.1);`;
@@ -1305,10 +1348,11 @@ export default async function mount(container, ctx) {
 
   return () => {
     unregisterActiveModule('m13');
+    container.removeEventListener('input', onM13ContainerInput);
     clearTimeout(saveTimer);      // ⭐ 防抖保存待执行句柄
     clearInterval(stdTimer);      // ⭐ 在途的 AI 计时器
-    document.body.classList.remove('modal-open');
     document.getElementById('redoBanner')?.remove();   // ⭐ body 上的重做横幅残留
+    document.body.classList.remove('modal-open');
     container.innerHTML = '';
   };
 }

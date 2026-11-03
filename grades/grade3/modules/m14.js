@@ -1,6 +1,8 @@
 /* grades/grade3/modules/m14.js */
+import { getTemplate } from '../../../core/ui/template.js';
+
 import { historyLoad } from '../../../core/history.js';
-import { getStudyStreak } from '../../../core/dashboard-render.js';
+import { getStudyStreak, statCards, renderWeekBars, renderStreakDots } from '../../../core/dashboard-render.js';
 import { lsGet, lsKeysByPrefix } from '../../../core/storage.js';
 import { escapeHtmlStrict } from '../../../core/html.js';
 import { buildWeeklyReport, buildWeeklyReportHtml } from '../../../core/weekly-report.js';
@@ -13,7 +15,7 @@ import { takeawayListAll } from '../../../core/takeaway.js';
 export const meta = { title: '我的成长', icon: '📊' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m14');
+  const tpl = getTemplate('tpl-m14');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
@@ -98,11 +100,11 @@ export default async function mount(container, ctx) {
 
     // ① 做题记录统计
     const hs = $('#historyStats');
-    if (hs) hs.innerHTML = `
-      <div class="growth-card-stat"><div class="num">${allTexts.size}<small>道</small></div><div class="lbl">题目</div></div>
-      <div class="growth-card-stat"><div class="num">${history.length}<small>次</small></div><div class="lbl">练习</div></div>
-      <div class="growth-card-stat"><div class="num">${totalRate}<small>%</small></div><div class="lbl">正确率</div></div>
-    `;
+if (hs) hs.replaceChildren(statCards([
+  [allTexts.size, '道', '题目'],
+  [history.length, '次', '练习'],
+  [totalRate, '%', '正确率'],
+]));
 
     // ② 一题一得
     let takeawayN = 0;
@@ -113,34 +115,32 @@ export default async function mount(container, ctx) {
       });
     } catch (e) {}
     const ts = $('#takeawayStats');
-    if (ts) ts.innerHTML = `
-      <div class="growth-card-stat"><div class="num">${takeawayN}<small>条</small></div><div class="lbl">心得</div></div>
-    `;
+if (ts) ts.replaceChildren(statCards([[takeawayN, '条', '心得']]));
 
     // ③ 成长曲线统计
     const gs = $('#growthChartStats');
-    if (gs) gs.innerHTML = `
-      <div class="growth-card-stat"><div class="num">${week.length}<small>道</small></div><div class="lbl">本周做题</div></div>
-      <div class="growth-card-stat"><div class="num">${weekCorrect}<small>道</small></div><div class="lbl">做对</div></div>
-      <div class="growth-card-stat"><div class="num">${weekDays}<small>天</small></div><div class="lbl">学习天数</div></div>
-    `;
+if (gs) gs.replaceChildren(statCards([
+  [week.length, '道', '本周做题'],
+  [weekCorrect, '道', '做对'],
+  [weekDays, '天', '学习天数'],
+]));
 
     // ④ 打卡树统计
     const streak = typeof getStudyStreak === 'function' ? getStudyStreak() : 0;
     const loops = Math.floor(streak / 7);
     const ss = $('#streakTreeStats');
-    if (ss) ss.innerHTML = `
-      <div class="growth-card-stat"><div class="num">${streak}<small>天</small></div><div class="lbl">连续打卡</div></div>
-      <div class="growth-card-stat"><div class="num">${loops}<small>轮</small></div><div class="lbl">7天周期</div></div>
-    `;
+if (ss) ss.replaceChildren(statCards([
+  [streak, '天', '连续打卡'],
+  [loops, '轮', '7天周期'],
+]));
 
     // ⑤ 周报统计
     const ws = $('#weeklyReportStats');
-    if (ws) ws.innerHTML = `
-      <div class="growth-card-stat"><div class="num">${week.length}<small>道</small></div><div class="lbl">本周做题</div></div>
-      <div class="growth-card-stat"><div class="num">${weekRate}<small>%</small></div><div class="lbl">正确率</div></div>
-      <div class="growth-card-stat"><div class="num">${weekDays}<small>天</small></div><div class="lbl">学习天数</div></div>
-    `;
+if (ws) ws.replaceChildren(statCards([
+  [week.length, '道', '本周做题'],
+  [weekRate, '%', '正确率'],
+  [weekDays, '天', '学习天数'],
+]));
 
     // 内部图形/内容渲染
     renderGrowthChartInline();
@@ -151,60 +151,11 @@ export default async function mount(container, ctx) {
   }
 
   // ================= 内部图形渲染 =================
-  function renderGrowthChartInline() {
-    const box = $('#growthChartInline');
-    if (!box) return;
-    const history = historyLoad();
-    const days = [];
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today.getTime() - i * 86400000);
-      days.push({ date: d, label: `${d.getMonth() + 1}/${d.getDate()}`, total: 0, correct: 0 });
-    }
-    history.forEach(r => {
-      const d = new Date(r.timestamp); d.setHours(0, 0, 0, 0);
-      const slot = days.find(x => x.date.getTime() === d.getTime());
-      if (slot) { slot.total++; if (r.isCorrect) slot.correct++; }
-    });
-    const maxTotal = Math.max(1, ...days.map(x => x.total));
-    box.innerHTML = days.map(d => {
-      const totalH = d.total ? Math.round(d.total / maxTotal * 100) : 0;
-      const correctH = d.total ? Math.round(d.correct / d.total * totalH) : 0;
-      const wrongH = totalH - correctH;
-      return `
-        <div class="growth-bar-wrap">
-          <div class="growth-bar-count">${d.total || ''}</div>
-          <div class="growth-bar-stack">
-            <div class="growth-bar-seg correct" style="height:${correctH}%"></div>
-            <div class="growth-bar-seg wrong" style="height:${wrongH}%"></div>
-          </div>
-          <div class="growth-bar-label">${d.label}</div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  function renderStreakTreeInline() {
-    const box = $('#streakTreeInline');
-    const label = $('#streakTreeInlineLabel');
-    if (!box) return;
-    const streak = typeof getStudyStreak === 'function' ? getStudyStreak() : 0;
-    const cycle = (streak > 0 && streak % 7 === 0) ? 7 : (streak % 7);
-    const loops = Math.floor(streak / 7);
-    box.innerHTML = Array.from({ length: 7 }).map((_, i) => {
-      let cls = 'streak-dot';
-      if (i < cycle) {
-        cls += ' lit';
-        if (loops >= 1 && i === 6) cls += ' flower';
-        if (loops >= 4 && i === 3) cls += ' fruit';
-      }
-      return `<span class="${cls}"></span>`;
-    }).join('');
-    if (label) {
-      const tips = loops >= 4 ? ' 🌟 已结果' : (loops >= 1 ? ' 🌸 开花' : '');
-      label.textContent = `已连续 ${streak} 天${tips}`;
-    }
-  }
+  // L7：下面两个函数原来各自拼一遍图表与打卡点，而 core/dashboard-render.js 已经在渲染
+  //     同一批节点（#growthChartInline / #streakTreeInline），属于「后写者赢」的重复实现。
+  //     现在只做委托，视觉结果不变，但只剩一份实现。
+  function renderGrowthChartInline() { renderWeekBars(); }
+  function renderStreakTreeInline() { renderStreakDots(getStudyStreak()); }
 
   function renderTakeawayGalleryInline() {
     const box = $('#takeawayGalleryBox');
@@ -214,21 +165,44 @@ export default async function mount(container, ctx) {
     const items = takeawayListAll(); 
 
     if (!items.length) {
-      box.innerHTML = `<div class="takeaway-gallery"><div class="takeaway-gallery-hd"><div class="takeaway-gallery-title">💡 一题一得 · 汇总</div></div><div class="takeaway-empty">还没有心得，做题时在"一题一得"里记一句吧 ✍️</div></div>`;
+      // M3：DOM 构建替代模板字符串
+      box.textContent = '';
+      const gallery = document.createElement('div');
+      gallery.className = 'takeaway-gallery';
+      const head = document.createElement('div');
+      head.className = 'takeaway-gallery-hd';
+      const title = document.createElement('div');
+      title.className = 'takeaway-gallery-title';
+      title.textContent = '💡 一题一得 · 汇总';
+      head.append(title);
+      const empty = document.createElement('div');
+      empty.className = 'takeaway-empty';
+      empty.textContent = '还没有心得，做题时在"一题一得"里记一句吧 ✍️';
+      gallery.append(head, empty);
+      box.append(gallery);
       return;
     }
 
-    box.innerHTML = `
-      <div class="takeaway-gallery">
-        <div class="takeaway-gallery-hd">
-          <div class="takeaway-gallery-title">💡 一题一得 · 汇总（${items.length} 条）</div>
-          <input type="search" class="takeaway-gallery-search" id="takeawaySearch" placeholder="🔍 搜索题目或心得…">
-        </div>
-        <div class="takeaway-list" id="takeawayList"></div>
-      </div>
-    `;
-    const searchEl = box.querySelector('#takeawaySearch');
-    const listEl = box.querySelector('#takeawayList');
+    // M3：DOM 构建替代模板字符串
+    box.textContent = '';
+    const gallery = document.createElement('div');
+    gallery.className = 'takeaway-gallery';
+    const head = document.createElement('div');
+    head.className = 'takeaway-gallery-hd';
+    const title = document.createElement('div');
+    title.className = 'takeaway-gallery-title';
+    title.textContent = '💡 一题一得 · 汇总（' + items.length + ' 条）';
+    const searchEl = document.createElement('input');
+    searchEl.type = 'search';
+    searchEl.className = 'takeaway-gallery-search';
+    searchEl.id = 'takeawaySearch';
+    searchEl.placeholder = '🔍 搜索题目或心得…';
+    head.append(title, searchEl);
+    const listEl = document.createElement('div');
+    listEl.className = 'takeaway-list';
+    listEl.id = 'takeawayList';
+    gallery.append(head, listEl);
+    box.append(gallery);
 
     const renderList = (filter) => {
       const f = (filter || '').trim().toLowerCase();
@@ -237,20 +211,35 @@ export default async function mount(container, ctx) {
         : items;
         
       if (!filtered.length) {
-        listEl.innerHTML = `<div class="takeaway-empty" style="grid-column:1/-1;">没有匹配的心得</div>`;
+        // M3：DOM 构建替代模板字符串
+        listEl.textContent = '';
+        const empty = document.createElement('div');
+        empty.className = 'takeaway-empty';
+        empty.style.gridColumn = '1/-1';
+        empty.textContent = '没有匹配的心得';
+        listEl.append(empty);
         return;
       }
       
-      listEl.innerHTML = filtered.map(x => `
-        <div class="takeaway-item">
-          <!-- ⭐ 新增：展示题目出处 -->
-          <div class="takeaway-item-problem" title="${escapeHtmlStrict(x.problemText)}">
-            📝 ${escapeHtmlStrict(x.problemText.slice(0, 30))}${x.problemText.length > 30 ? '…' : ''}
-          </div>
-          <!-- 展示心得 -->
-          <div class="takeaway-item-note">💡 ${escapeHtmlStrict(x.note)}</div>
-        </div>
-      `).join('');
+      // M3：DOM 构建替代模板字符串（problemText / note 走 textContent，不再靠转义）
+      listEl.textContent = '';
+      for (const x of filtered) {
+        const item = document.createElement('div');
+        item.className = 'takeaway-item';
+
+        const prob = document.createElement('div');
+        prob.className = 'takeaway-item-problem';
+        prob.title = String(x.problemText || '');
+        const pt = String(x.problemText || '');
+        prob.textContent = '📝 ' + pt.slice(0, 30) + (pt.length > 30 ? '…' : '');
+
+        const note = document.createElement('div');
+        note.className = 'takeaway-item-note';
+        note.textContent = '💡 ' + String(x.note || '');
+
+        item.append(prob, note);
+        listEl.append(item);
+      }
     };
     renderList('');
     if (searchEl) searchEl.oninput = () => renderList(searchEl.value);
@@ -352,7 +341,8 @@ export default async function mount(container, ctx) {
     if (rafId1) cancelAnimationFrame(rafId1);
     if (rafId2) cancelAnimationFrame(rafId2);
     if (typeof offDataChanged === 'function') offDataChanged(); // 解绑事件
-    window._refreshGrowthCards = null;   // ⭐ 卸载后置空，避免外部调用到旧闭包
+    // ⭐ S7：只清自己挂的那个全局钩子（身份比对，避免误删后来者的）
+    if (window._refreshGrowthCards === updateCardStats) delete window._refreshGrowthCards;
     container.innerHTML = '';
   };
 }

@@ -1,9 +1,16 @@
+/* S3：优先在 #wrongBookDrawer 内查找（本模块写的就是抽屉内容），找不到退回全局。 */
+const _wbScopeQ = (id) => {
+  const root = document.getElementById('wrongBookDrawer');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* core/wrongbook-recommend.js */
 import { wbLoad } from './wrongbook.js';
 import { autoTagsFor } from './wrongbook-tags.js';
 
 export function renderWbRecommend() {
-  const el = document.getElementById('wbRecommend');
+  const el = _wbScopeQ('wbRecommend');
   if (!el) return;
 
   const list = wbLoad();
@@ -56,13 +63,13 @@ export function renderWbRecommend() {
 }
 
 export function filterWrongListByTag(tag) {
-  const listEl = document.getElementById('wrongBookList');
+  const listEl = _wbScopeQ('wrongBookList');
   if (!listEl) return;
 
   const items = listEl.querySelectorAll('.wrong-item');
   if (!tag) {
     items.forEach(item => { item.style.display = ''; });
-    document.getElementById('wbFilterHint')?.remove();
+    _wbScopeQ('wbFilterHint')?.remove();
     return;
   }
 
@@ -72,7 +79,7 @@ export function filterWrongListByTag(tag) {
     item.style.display = autoTagsFor(text).includes(tag) ? '' : 'none';
   });
 
-  let hint = document.getElementById('wbFilterHint');
+  let hint = _wbScopeQ('wbFilterHint');
   if (!hint) {
     hint = document.createElement('div');
     hint.id = 'wbFilterHint';

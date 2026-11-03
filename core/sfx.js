@@ -3,8 +3,11 @@ import { lsGet, lsSet } from './storage.js';
 
 export const SFX = (function () {
   let ctx = null;
-  let enabled = false;
-  try { enabled = lsGet('grade3_sound_on') === '1'; } catch (e) {}
+  // ⭐ S7：不能在模块顶层读存储 —— main.js 里 initStorage() 此时还没跑，_memCache 为空，
+  //    每次冷启动都会把开关判成 false（声音永远静音）。改为实时读，设置页一改立刻生效。
+  function isEnabled() {
+    try { return lsGet('grade3_sound_on') === '1'; } catch (e) { return false; }
+  }
 
   function init() {
     if (ctx) return;
@@ -13,7 +16,7 @@ export const SFX = (function () {
   }
 
   function tone(freq, dur, type, vol) {
-    if (!enabled) return;
+    if (!isEnabled()) return;
     init();
     if (!ctx) return;
     const t = ctx.currentTime;
@@ -29,11 +32,11 @@ export const SFX = (function () {
   }
 
   return {
-    isEnabled: () => enabled,
+    isEnabled,
     setEnabled(v) {
-      enabled = !!v;
-      try { lsSet('grade3_sound_on', enabled ? '1' : '0'); } catch (e) {}
-      if (enabled) init();
+      const on = !!v;
+      try { lsSet('grade3_sound_on', on ? '1' : '0'); } catch (e) {}
+      if (on) init();
     },
     correct() { tone(880, 0.12, 'sine', 0.10); setTimeout(() => tone(1320, 0.10, 'sine', 0.08), 70); },
     wrong()   { tone(220, 0.18, 'triangle', 0.10); },

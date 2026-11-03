@@ -1,3 +1,10 @@
+/* S3：优先在 #wrongBookDrawer 内查找（本模块写的就是抽屉内容），找不到退回全局。 */
+const _wbScopeQ = (id) => {
+  const root = document.getElementById('wrongBookDrawer');
+  const el = root && typeof root.querySelector === 'function' ? root.querySelector('#' + id) : null;
+  return el || document.getElementById(id);
+};
+
 /* core/wrongbook-render.js
    合并原 wbRender + patchWrongBookBadge + patchWrongBookRender2 + patchWbRecommendRender
 */
@@ -10,8 +17,8 @@ import { renderErrorProfile } from './wrongbook-profile.js';
 import { renderWbRecommend } from './wrongbook-recommend.js';
 
 export function wbRender() {
-  const listEl = document.getElementById('wrongBookList');
-  const badge  = document.getElementById('wrongBookBadge');
+  const listEl = _wbScopeQ('wrongBookList');
+  const badge  = _wbScopeQ('wrongBookBadge');
   if (!listEl) return;
 
   const history = historyLoad();
@@ -59,7 +66,8 @@ export function wbRender() {
   listEl.innerHTML = dueBanner + list.map(r => {
     const d = new Date(r.timestamp);
     const date = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    const enc = encodeURIComponent(r.text);
+// L6：改用 HTML 转义（放进属性后 dataset 读取会自动解码），不再做 URL 编码往返
+const enc = escapeHtmlStrict(r.text);
     const takeaway = takeawayLoad(r.text);
     const takeawayHtml = takeaway ? `
       <div style="margin-top:8px;padding:8px 12px;background:#f0f9ff;border-left:3px solid #3b82f6;border-radius:6px;font-size:12px;color:#334155;line-height:1.6;">

@@ -939,7 +939,7 @@ export default async function mount(container, ctx) {
   }
 
   function m9Reset() {
-    if (window.__shell?.hideThumbBar) window.__shell.hideThumbBar();
+    ctx.ui?.hideThumbBar?.();   // ⭐ 契约化：保留原 window.__shell?.hideThumbBar 的可选链守卫语义
     document.getElementById('thumbBar')?.classList.remove('show', 'ok', 'err');
 
     let a = +aInput.value, b = +bInput.value;

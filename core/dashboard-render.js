@@ -155,6 +155,38 @@ function _renderStreakDots(streak) {
   });
 }
 
+/* L7：m14 原来把「一段统计卡」的 HTML 复制了 5 份，这里收敛成一个构造器 */
+/* M3：改为直接建节点并返回 DocumentFragment，调用方用 replaceChildren 挂上去，
+   不再产生 HTML 字符串（也避免 num/label 进 HTML 解析器）。 */
+export function statCard(num, unit, label) {
+  const wrap = document.createElement('div');
+  wrap.className = 'growth-card-stat';
+
+  const numEl = document.createElement('div');
+  numEl.className = 'num';
+  numEl.textContent = String(num);
+  const small = document.createElement('small');
+  small.textContent = String(unit);
+  numEl.append(small);
+
+  const lblEl = document.createElement('div');
+  lblEl.className = 'lbl';
+  lblEl.textContent = String(label);
+
+  wrap.append(numEl, lblEl);
+  return wrap;
+}
+export function statCards(list) {
+  const frag = document.createDocumentFragment();
+  for (const [n, u, l] of list) frag.append(statCard(n, u, l));
+  return frag;
+}
+
+/* L7：m14 与 dashboard-render 曾各自渲染同一批节点（后写者赢），
+   现在 m14 只调用这两个入口，不再自己拼图表。 */
+export function renderWeekBars() { _renderGrowthBars(); }
+export function renderStreakDots(streak) { _renderStreakDots(streak); }
+
 export function bindRangeTabs() {
   const tabs = document.querySelectorAll('#rangeTabs .range-tab');
   tabs.forEach(t => {

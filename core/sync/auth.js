@@ -14,11 +14,17 @@ export function isLoggedIn() {
   return !!_currentUser;
 }
 
+let _auth = null;
+let _authApp = null;
 function getAuth() {
   const app = getCloudBaseApp();
   if (!app) return null;
-  // persistence: 'local' —— 登录态持久化到 localStorage
-  return app.auth({ persistence: 'local' });
+  // ⭐ 修复：原来每次调用都新建 auth 实例 —— onLoginStateChanged 监听的实例
+  //    与业务实际使用的可能不是同一个；且环境 ID 变更后需要重建。
+  if (_auth && _authApp === app) return _auth;
+  _authApp = app;
+  _auth = app.auth({ persistence: 'local' });
+  return _auth;
 }
 
 /* 匿名登录（首次自动注册匿名用户） */
@@ -93,10 +99,13 @@ export async function signOut() {
 /* 监听登录状态变化 */
 export function onAuthChange(callback) {
   const auth = getAuth();
-  if (!auth) return;
+  if (!auth) return () => {};
 
-  auth.onLoginStateChanged((loginState) => {
+  const off = auth.onLoginStateChanged((loginState) => {
     _currentUser = loginState?.user || null;
     callback('STATE_CHANGE', _currentUser);
   });
+
+  // ⭐ 修复：原来返回 undefined，调用方无从解绑 → 订阅永久残留
+  return typeof off === 'function' ? off : () => {};
 }

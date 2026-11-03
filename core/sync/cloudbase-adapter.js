@@ -28,9 +28,11 @@ export async function pullAll() {
   console.log(`[Adapter] 开始拉取数据，当前用户 UID: ${user.uid}`);
 
   try {
-    // 1. 尝试不加 _openid 查询（新版网关自带权限校验）
+    // ⭐ 安全修复：必须带 _openid 过滤。原来这里不加任何条件、完全依赖集合权限规则，
+    //    若规则是「所有用户可读」就会把别人的数据一起拉下来，再按存储 key 覆盖本地。
     const res = await db.collection(COLLECTION)
-      .limit(1000)
+      .where({ _openid: user.uid })
+      .limit(100)
       .get();
 
     console.log(`[Adapter] 云端返回原始数据:`, res);
@@ -45,6 +47,12 @@ export async function pullAll() {
     list.forEach(doc => {
       // ⭐ 兼容处理：数据可能被包在 doc.data 里，也可能直接在 doc 上
       const actualData = doc.data || doc;
+
+      // ⭐ 安全修复：纵深防御——即使查询条件被改坏，也绝不接受别人的文档
+      if (doc._openid && doc._openid !== user.uid) {
+        console.warn('[Adapter] 丢弃非当前用户的文档');
+        return;
+      }
 
       if (actualData.key) {
         map.set(actualData.key, {

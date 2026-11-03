@@ -1,8 +1,10 @@
 /* m8.js 倍数 */
+import { getTemplate } from '../../../core/ui/template.js';
+
 export const meta = { title: '倍的认识', icon: '🍎' };
 
 export default async function mount(container, ctx) {
-  const tpl = document.getElementById('tpl-m8');
+  const tpl = getTemplate('tpl-m8');
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
