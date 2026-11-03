@@ -427,19 +427,9 @@ export default async function mount(container, ctx) {
       const cEl = grid.cells.get(`c-${i}`);
       setCellText(cEl, M9.filled[carryKey] ?? '');
       setTier(cEl, M9.filled[carryKey] != null ? 'consumed' : 'init');
-      // 被减数：借位后本列要如实变化，否则中间过程"被减数虚大"（如 298-199 的十位仍显 9，
-      //   实为 8-9）。被右侧列借走 → 减 1；本列向左借入 → 加 10（个位单格只显个位）。
+      // 被加数 / 加数：初始常量，绝不黄色；当前列给细下划线引导
       const aEl = grid.cells.get(`a-${i}`);
-      const aLeadingEmpty = aStr[i] === '0' && i < maxLen - String(M9.a).length;
-      let aText = aLeadingEmpty ? '' : aStr[i];
-      if (!aLeadingEmpty && M9.op === '−') {
-        let v = Number(aStr[i]);
-        if (M9.filled[`carry-${i + 1}`] != null) v -= 1;
-        if (M9.filled[`carry-${i}`] != null) v += 10;
-        v %= 10;
-        aText = String(v);
-      }
-      setCellText(aEl, aText);
+      setCellText(aEl, aStr[i] === '0' && i < maxLen - String(M9.a).length ? '' : aStr[i]);
       const bEl = grid.cells.get(`b-${i}`);
       setCellText(bEl, bStr[i] === '0' && i < maxLen - String(M9.b).length ? '' : bStr[i]);
       const isCurCol = i === curI && !done;
