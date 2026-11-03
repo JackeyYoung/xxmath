@@ -64,10 +64,24 @@ describe('wrongbook', () => {
   it('markRedoSuccess：连续做对 2 次，移除', () => {
     wbAdd({ text: 'y' });
     markRedoSuccess('y');
+    // ⭐ 隔日重做算法要求两次做对间隔 ≥ 20 小时，
+    //    测试里把 lastCorrectAt 拨回 21 小时前来模拟"隔天"
+    const rec = wbLoad().find(r => r.text === 'y');
+    rec.lastCorrectAt = Date.now() - 21 * 3600000;
+    wbSave(wbLoad().map(r => (r.text === 'y' ? rec : r)));
     const r2 = markRedoSuccess('y');
     expect(r2.removed).toBe(true);
     expect(r2.masteredCount).toBe(2);
     expect(wbLoad().length).toBe(0);
+  });
+
+  it('markRedoSuccess：第二次做对但未隔天 → 不移除（tooSoon）', () => {
+    wbAdd({ text: 'z2' });
+    markRedoSuccess('z2');
+    const r = markRedoSuccess('z2');
+    expect(r.removed).toBe(false);
+    expect(r.tooSoon).toBe(true);
+    expect(wbLoad().length).toBe(1);
   });
 
   it('markRedoSuccess：不在错题本里 → removed=false, count=0', () => {
