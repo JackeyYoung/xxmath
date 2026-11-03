@@ -46,10 +46,10 @@ export const GOLDEN = Object.freeze({
 export const EASE = Object.freeze({
   draw: 'power2.out',       // 画线：起笔快、收尾稳
   absorb: 'power3.in',      // 重力吸收：越靠近越快
-  land: 'back.out(1.5)',    // 落地回弹
+  land: 'back.out(1.2)',    // 落地回弹（m1/m9 真机验收值）
   breathe: 'power1.inOut',  // 降噪/恢复：不对抗视线
   fade: 'power2.inOut',     // 颜色过渡
-  pop: 'elastic.out(1, 0.5)', // 终极谢幕
+  pop: 'elastic.out(1, 0.55)', // 终极谢幕（真机验收值）
 });
 
 export const DUR = Object.freeze({
@@ -62,8 +62,8 @@ export const DUR = Object.freeze({
   fade: 0.34,
 });
 
-/** 圆弧下潜深度与下垂短线长度（m1 验收值） */
-export const ARC = Object.freeze({ dip: 22, tick: 9, offset: 10, arrow: 4.5 });
+/** 圆弧下潜深度与下垂短线长度（m1 真机验收几何：dip 34 / tickLen 20） */
+export const ARC = Object.freeze({ dip: 34, tick: 20, offset: 10, arrow: 4.5 });
 
 /**
  * 圆弧 + 最低点下垂短线。
@@ -93,26 +93,30 @@ export function funnelToTarget({ midX, yLow, tx, yEnd, arrow = ARC.arrow }) {
 
 /**
  * 单元格配色（三档强对比）。m1 / m9 共用同一套判定。
- * @param {{ state?: 'history'|'focus'|'normal', fromResult?: boolean }} o
+ * ⭐ 主题注入制：palette 与 GOLDEN 同形（focus/result/history/historyDeep/historyMid/
+ *    textSoft/glowFocus/glowResult/opacity*），light 档由 tokens.js 组装注入——
+ *    本文件保持零主题色值、零 import 的纯净性（铁律：主题只存在于 tokens.js）。
+ * @param {{ state?: 'history'|'focus'|'normal', fromResult?: boolean, palette?: object }} o
  * @returns {{ color: string, opacity: number, textShadow: string }}
  */
-export function cellStyle({ state = 'normal', fromResult = false } = {}) {
+export function cellStyle({ state = 'normal', fromResult = false, palette = null } = {}) {
+  const P = palette || GOLDEN;
   if (state === 'historyDeep') {
-    return { color: GOLDEN.historyDeep, opacity: GOLDEN.opacityHistoryDeep, textShadow: 'none' };
+    return { color: P.historyDeep, opacity: P.opacityHistoryDeep, textShadow: 'none' };
   }
   if (state === 'historyMid') {
-    return { color: GOLDEN.historyMid, opacity: GOLDEN.opacityHistoryMid, textShadow: 'none' };
+    return { color: P.historyMid, opacity: P.opacityHistoryMid, textShadow: 'none' };
   }
   if (state === 'history') {
-    return { color: GOLDEN.history, opacity: GOLDEN.opacityHistory, textShadow: 'none' };
+    return { color: P.history, opacity: P.opacityHistory, textShadow: 'none' };
   }
   if (fromResult) {
-    return { color: GOLDEN.result, opacity: GOLDEN.opacityFocus, textShadow: GOLDEN.glowResult };
+    return { color: P.result, opacity: P.opacityFocus, textShadow: P.glowResult };
   }
   if (state === 'focus') {
-    return { color: GOLDEN.focus, opacity: GOLDEN.opacityFocus, textShadow: GOLDEN.glowFocus };
+    return { color: P.focus, opacity: P.opacityFocus, textShadow: P.glowFocus };
   }
-  return { color: 'var(--text)', opacity: GOLDEN.opacityFocus, textShadow: 'none' };
+  return { color: 'var(--text)', opacity: P.opacityFocus, textShadow: 'none' };
 }
 
 /** 缓动白名单校验（供测试与开发期自检使用） */
@@ -157,7 +161,7 @@ export function bringDownVars(dy, onDone) {
   return {
     y: 0,
     duration: 0.42,
-    ease: 'back.out(1.2)',
+    ease: EASE.land,   // 落位回弹（对齐 EASE.land，消除硬编码双源）
     from: { y: dy, opacity: 0.85 },
     onComplete: onDone,
   };

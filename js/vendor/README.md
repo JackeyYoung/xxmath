@@ -5,6 +5,7 @@
 | 文件 | 来源 | 用法 |
 |---|---|---|
 | `vue.esm-browser.prod.js` | Vue 3.5.44 `dist/` | `import { createApp } from '../../js/vendor/vue.esm-browser.prod.js'` —— 含运行时编译器，支持 `template` 字符串 |
+| `gsap/` | GSAP 3.15.0 官方 ESM 构建（`gsap/index.js` 装配 gsap-core + CSSPlugin，npm 源 `gsap@^3.15.0`） | `import { gsap } from '../../js/vendor/gsap/index.js'` —— 业务动效唯一真相源（design/motion.js 桥与 virtual-keypad 均指向此） |
 | `gsap.min.js` | GSAP 3.10.3（UMD） | **不要 import**，见下 |
 | `Flip.min.js` | GSAP Flip 3.10.3（UMD） | **不要 import**，见下 |
 | `gsap-esm.js` | 本项目写的加载器 | `import { loadGsap } from '.../gsap-esm.js'` → `await loadGsap()` |

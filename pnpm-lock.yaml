@@ -165,6 +165,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      gsap:
+        specifier: ^3.15.0
+        version: 3.15.0
     devDependencies:
       '@vitest/coverage-v8':
         specifier: 5.0.4
@@ -175,6 +179,9 @@ importers:
       jsdom:
         specifier: ^30.1.2
         version: 30.1.2
+      playwright-core:
+        specifier: ^1.64.1
+        version: 1.64.1
       vitest:
         specifier: ^5.0.4
         version: 5.0.4(@vitest/coverage-v8@5.0.4)(@vitest/ui@5.0.4)(jsdom@30.1.2)(vite@8.3.4)
@@ -491,6 +498,9 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
+
   html-encoding-sniffer@7.0.0:
     resolution: {integrity: sha512-UikN5yr7xsCDAq87Or5or0PAlD3HJJOKVzM05az588WnpDJ4Ux7a2A53Qi6gofGg2/EtvF/H4hCi/TXfCW4Y6w==}
     engines: {node: ^22.13.0 || >=24.0.0}
@@ -622,6 +632,11 @@ packages:
   picomatch@4.0.7:
     resolution: {integrity: sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA==}
     engines: {node: '>=12'}
+
+  playwright-core@1.64.1:
+    resolution: {integrity: sha512-BC4s8y6SEVA6Q1rSxZTto8hI1KUI3xXlHGZgvGqP4IqPdI/a6FX9H29IDNz7vKo9l21b6LfYosScPL6M3xxyDQ==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   postcss@8.5.30:
     resolution: {integrity: sha512-zkd+e9S1AQHhmaBKye9zlFHWjOwVgqXl1q3ECYy8561K7qxR2cREf/STLskulBFd78k6AOFeA+ff1TtEzk9bAA==}
@@ -1039,6 +1054,8 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
+  gsap@3.15.0: {}
+
   html-encoding-sniffer@7.0.0:
     dependencies:
       '@exodus/bytes': 1.16.0
@@ -1152,6 +1169,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.7: {}
+
+  playwright-core@1.64.1: {}
 
   postcss@8.5.30:
     dependencies:

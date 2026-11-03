@@ -10,6 +10,10 @@
    模块代码里禁止出现魔法颜色 / 魔法时长，一律从这里取。
 */
 
+/* ⭐ 单向引用：缓动/几何/时长标准值以 core/ui/golden-motion.js 为唯一事实源
+   （golden 零主题值、零反向依赖）；本文件只持有业务键名别名与主题色板。 */
+import { EASE as GOLDEN_EASE, DUR as GOLDEN_DUR, ARC as GOLDEN_ARC, cellStyle as goldenCellStyle } from '../../../core/ui/golden-motion.js';
+
 /* 五档色彩生命周期 —— 按主题双色板（语义不变，字色随底色自适应，保持视觉统一）
    dark：亮白数字浮在深色卡片上（原版规范值）
    light：深板岩字浮在浅色卡片上；焦点档用黄底色块保证对比 */
@@ -40,12 +44,12 @@ export function getLifecycle(theme = currentTheme()) {
   return LIFECYCLE_THEMES[theme] || LIFECYCLE_THEMES.light;
 }
 
-/* GSAP 缓动函数（物理直觉） */
+/* GSAP 缓动（业务键名别名）——值单向引用 golden 标准，逐项 === 旧字面量（业务行为零变化） */
 export const EASE = {
-  entry:     'power2.out',           // 入场与位移
-  land:      'back.out(1.2)',        // 新数字落地：重力砸下微回弹
-  emphasize: 'elastic.out(1, 0.55)', // 强调最终结果
-  exit:      'power2.in',            // 消失/缩小
+  entry:     GOLDEN_EASE.draw,   // 入场与位移（= power2.out）
+  land:      GOLDEN_EASE.land,   // 新数字落地：重力砸下微回弹（= back.out(1.2)，真机验收值）
+  emphasize: GOLDEN_EASE.pop,    // 强调最终结果（= elastic.out(1, 0.55)，真机验收值）
+  exit:      'power2.in',        // 消失/缩小（业务专属档，golden 暂无对应；有第二消费者时上收）
 };
 
 /* 动效节奏（秒 / 像素） */
@@ -57,13 +61,13 @@ export const MOTION = {
   lineGrowDur:  0.6,    // 贝塞尔弧线生长
   lineStartMove: 0.7,   // 线画到 70% 数字才起步（不能撞得太早）
   holdGlow:     0.15,   // 连线连通后保持高亮
-  restPause:    0.25,   // 时间轴留白：让大脑处理信息
+  restPause:    GOLDEN_DUR.pause,   // 时间轴留白：让大脑处理信息（= golden DUR.pause = 0.25）
   overlap:      0.1,    // 组合拳重叠量（tl.to(..., "-=0.1")）
   dimOpacity:   0.4,    // 呼吸降噪：非焦点元素透明度
   stagger:      0.04,   // 同排多元素交错
-  arcDip:       34,     // 圆弧漏斗的下潜深度
+  arcDip:       GOLDEN_ARC.dip,     // 圆弧漏斗的下潜深度（= golden ARC.dip = 34，真机验收值）
   strokeWidth:  1.5,    // 弧线宽（必须比数字字重小）
-  tickLen:      20,     // 弧底垂直指示线长度
+  tickLen:      GOLDEN_ARC.tick,    // 弧底垂直指示线长度（= golden ARC.tick = 20，真机验收值）
   hintPulseDur: 0.18,   // 下一步运算符的提示脉动
 };
 
@@ -114,4 +118,28 @@ export const SURFACE = {
 export function prefersReducedMotion() {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
   catch (e) { return false; }
+}
+
+/* 单元格配色（golden 标准判定 + 主题注入制）：dark 直接走 golden 默认色板；
+   light 在此组装 palette 注入——light 色值只存在于本文件，golden 保持纯净。 */
+export function cellStyle({ state, fromResult, theme = currentTheme() } = {}) {
+  if (theme === 'dark') return goldenCellStyle({ state, fromResult });
+  const lc = LIFECYCLE_THEMES.light;
+  return goldenCellStyle({
+    state, fromResult,
+    palette: {
+      focus: lc.focus.color,
+      result: lc.result.color,
+      history: lc.history.color,
+      historyMid: lc.history.color,
+      historyDeep: lc.consumed.color,
+      textSoft: lc.init.color,
+      glowFocus: lc.focus.glow,
+      glowResult: lc.result.glow,
+      opacityFocus: 1,
+      opacityHistory: lc.history.opacity ?? 0.75,
+      opacityHistoryMid: lc.history.opacity ?? 0.75,
+      opacityHistoryDeep: lc.consumed.opacity ?? 0.4,
+    },
+  });
 }

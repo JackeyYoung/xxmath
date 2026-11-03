@@ -9,7 +9,7 @@
      连续答题（确认后继续下一步）绝不收起。
    - 单例：全局只有一把键盘，show() 重绑回调不重播动画。
 */
-import { gsap } from '../../assets/gsap/index.js';
+import { gsap } from '../../js/vendor/gsap/index.js';
 
 let instance = null;
 
