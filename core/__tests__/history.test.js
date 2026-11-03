@@ -33,8 +33,13 @@ describe('history', () => {
 
   it('historySave + historyLoad 往返', () => {
     historySave([{ id: 'x', problemText: 'q' }]);
-    // ⭐ arch 版 history.js 会为记录注入归档字段 moduleId（默认 'm13'）——锁定该行为防漂移
+    // ⭐ historyLoad 会给没有 moduleId 的旧记录补默认值 m13
     expect(historyLoad()).toEqual([{ id: 'x', problemText: 'q', moduleId: 'm13' }]);
+  });
+
+  it('historyLoad 保留已有 moduleId', () => {
+    historySave([{ id: 'x', problemText: 'q', moduleId: 'm4' }]);
+    expect(historyLoad()[0].moduleId).toBe('m4');
   });
 
   it('historyAdd 添加记录并生成 id + timestamp', () => {

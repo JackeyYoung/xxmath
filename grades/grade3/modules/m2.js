@@ -75,6 +75,7 @@ export default async function mount(container, ctx) {
     M2.busy = true;
     const start = M2.filled, end = Math.min(total, start + M2.a);
     for (let i = start; i < end; i++) {
+      if (M2.stopped) { M2.busy = false; return; }   // ⭐ 卸载后停止铺砖循环
       M2.filled = i + 1;
       m2Draw();
       await new Promise(r => setTimeout(r, 26));

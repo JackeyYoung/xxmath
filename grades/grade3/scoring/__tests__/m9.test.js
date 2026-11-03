@@ -112,6 +112,16 @@ describe('m9 · computeAnswerMap 除法', () => {
   });
 });
 
+describe('m9 · 除数 0 守卫', () => {
+  it('computeAnswerMap b=0 → 空 map（不产出 Infinity/NaN）', () => {
+    const map = computeAnswerMap({ a: 936, b: 0, op: '÷' });
+    expect(Object.keys(map).length).toBe(0);
+  });
+  it('calcFinalResult b=0 → "?"', () => {
+    expect(calcFinalResult({ a: 936, b: 0, op: '÷' })).toBe('?');
+  });
+});
+
 describe('m9 · getMaxSteps', () => {
   it('加法 348+176 → 2', () => {
     expect(getMaxSteps({ a: 348, b: 176, op: '+' })).toBe(2);
