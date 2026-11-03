@@ -25,6 +25,7 @@ import { renderSettings } from './views/settings.js';
 import { activeModules, registerActiveModule, unregisterActiveModule } from './active-modules.js';
 import { swapModule, unmountCurrentModule } from './lifecycle.js';
 import { GRADE_CONFIG, getGradeConfig } from './grade-config.js';
+import { registerGrade } from '../grades/registry.js';
 
 /* ⚠️ 对外再导出必须写成「先 import 再 export { ... }」。
    之前这里写的是 `export { navigate } from './router.js'` —— 那种语法只把名字转手导出，
@@ -41,6 +42,9 @@ export { GRADE_CONFIG, getGradeConfig };
    7. 初始化
    ============================================================ */
 export function initShell() {  
+  // ⭐ 年级 loader 注册（组合根接线）：mountLesson 经 loadGrade 取模块单一事实源
+  registerGrade('3', () => import('../grades/grade3/index.js'));
+
   // ⭐ 视图注册：router 不认识任何视图，避免 router ↔ views 循环依赖
   registerView('home', () => renderHome());
   registerView('lesson', (opts) => mountLesson(opts && opts.lessonId));

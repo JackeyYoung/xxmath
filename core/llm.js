@@ -1,6 +1,9 @@
 /* core/llm.js
    大模型调用 + JSON 兜底解析 + 统一反馈结构
-   ⚠️ 注意：LLM_CONFIG 里的 apiUrl 保持你现在的 'api/llm'
+   apiUrl 说明：
+   - Web 部署（Vercel）：相对路径 'api/llm' 走同源 serverless 函数
+   - Capacitor App：WebView 的 origin 是 https://localhost，相对路径打不到后端，
+     需通过 localStorage 'grade3_llm_base_url' 配置后端基地址（如 https://your-app.vercel.app）
 */
 
 export const LLM_CONFIG = {
@@ -9,6 +12,17 @@ export const LLM_CONFIG = {
   apiKey: '',
   model: 'glm-5.3-flash',
 };
+
+/* ⭐ 解析实际请求地址：App 内无配置时返回 null，调用方给出明确报错而不是静默失败 */
+export function resolveApiUrl() {
+  if (LLM_CONFIG.apiUrl.startsWith('http')) return LLM_CONFIG.apiUrl;
+  let base = '';
+  try { base = localStorage.getItem('grade3_llm_base_url') || ''; } catch (e) {}
+  if (base) return base.replace(/\/+$/, '') + '/api/llm';
+  if (/^https?:$/.test(location.protocol)) return LLM_CONFIG.apiUrl;
+  console.warn('[llm] 当前运行在 WebView 中且未配置 grade3_llm_base_url，AI 功能不可用');
+  return null;
+}
 
 export const LLM_SYSTEM_PROMPT = `你是一位三年级数学老师，负责评判学生的解题过程。
 
@@ -171,8 +185,12 @@ ${stepsText}
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   let res;
+  const apiUrl = resolveApiUrl();
+  if (!apiUrl) {
+    throw new Error('AI 服务地址未配置：请在设置里写入后端基地址（grade3_llm_base_url）');
+  }
   try {
-    res = await fetch(LLM_CONFIG.apiUrl, {
+    res = await fetch(apiUrl, {
       method: 'POST', headers,
       body: JSON.stringify(body),
       signal: controller.signal,

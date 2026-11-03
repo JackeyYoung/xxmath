@@ -7,9 +7,23 @@
 
 let _currentCleanup = null;              // fn / Promise<fn> / Promise<null>
 let _swapChain = Promise.resolve();      // 串行队列：任意时刻只有一个模块在切换
+let _activityFlush = null;               // ⭐ 当前模块的防抖 activity 冲刷器（lesson-host 挂载时注册）
+
+/** 注册当前模块的防抖 activity 冲刷器（切页/卸载前把未满 delay 的 activity 落盘） */
+export function registerActivityFlush(fn) {
+  _activityFlush = typeof fn === 'function' ? fn : null;
+}
+
+/** 冲刷当前模块未落盘的防抖 activity（幂等：重复调用/无注册时为空操作） */
+export function flushPendingActivity() {
+  if (typeof _activityFlush !== 'function') return;
+  try { _activityFlush(); } catch (e) { console.warn('[lifecycle] activity 冲刷失败', e); }
+}
 
 /** 解析并执行上一个模块的 cleanup（兼容 null / 同步函数 / Promise<函数>） */
 export async function unmountCurrentModule(reason = '') {
+  // ⭐ 统一卸载点：先冲刷防抖 activity（数据落盘先于 cleanup 的 DOM 清理）
+  flushPendingActivity();
   const pending = _currentCleanup;
   _currentCleanup = null;                // 先摘引用，防止重入时被二次执行
   if (!pending) return;

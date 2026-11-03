@@ -20,76 +20,11 @@ import { buildAiInsightHtml } from '../core/ui/ai-insight.js';
 import { showMasteryCard } from '../core/ui/mastery-card.js';
 import { wbAdd, wbLoad, wbSave } from '../core/wrongbook.js';
 import { LESSON_META } from './lesson-meta.js';
-import { swapModule } from './lifecycle.js';
+import { swapModule, registerActivityFlush } from './lifecycle.js';
 import { navigate } from './router.js';
+import { getGradeConfig } from './grade-config.js';
+import { loadGrade } from '../grades/registry.js';
 
-
-/* ⭐ 搬进 stage 后，重新跑一次模块自己的渲染入口 */
-function retriggerModuleRender(lessonId) {
-  try {
-    switch (lessonId) {
-      case 'm1':
-        // M1 的 m1Render 是闭包，优先用挂到 window 的引用
-        if (typeof window.__m1Rerender === 'function') {
-          window.__m1Rerender();
-        } else {
-          // 兜底：点一下"重来一次"按钮，触发 m1LoadExpression
-          _lessonQ('m1reset')?.click();
-        }
-        break;
-      case 'm2':
-        if (typeof window.m2Draw === 'function') { window.m2Draw(); window.m2Calc(); }
-        break;
-      case 'm3':
-        if (typeof window.m3Reset === 'function') window.m3Reset();
-        break;
-      case 'm5':
-        if (typeof window.m5Render === 'function') window.m5Render();
-        break;
-      case 'm6':
-        if (typeof window.m6Update === 'function') window.m6Update();
-        break;
-      case 'm7':
-        if (typeof window.m7Draw === 'function') { window.m7Draw(); window.m7UpdateDigital(); }
-        break;
-      case 'm9':
-        if (typeof window.m9Render === 'function') window.m9Render();
-        break;
-      case 'm10':
-        if (typeof window.m10Render === 'function') window.m10Render();
-        break;
-      case 'm11':
-        if (typeof window.m11Render === 'function') window.m11Render();
-        break;
-      case 'm12':
-        if (typeof window.m12Update === 'function') window.m12Update();
-        break;
-      case 'm13':
-        if (typeof window.m13RenderSteps === 'function') window.m13RenderSteps();
-        break;
-      // m4/m8/m14 不需要额外渲染
-    }
-  } catch (e) {
-    console.warn('[shell] 重新渲染模块失败:', lessonId, e);
-  }
-}
-
-// ⭐ 显示重做横幅
-function showRedoBanner() {
-  _lessonQ('redoBanner')?.remove();
-  const banner = document.createElement('div');
-  banner.id = 'redoBanner';
-  // 使用 amber 变量，自适应深浅色
-  banner.style.cssText = `position:fixed;top:0;left:0;right:0;background:var(--amber-text);color:#fff;padding:10px 20px;font-size:14px;font-weight:700;text-align:center;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.1);`;
-  // M3：DOM 构建（顺带去掉内联 onclick，改为事件监听）
-  banner.textContent = '🔁 正在重做错题，做对将累计掌握进度 ';
-  const closeBtn = document.createElement('button');
-  closeBtn.style.cssText = 'margin-left:10px;background:transparent;border:none;color:#fff;cursor:pointer;';
-  closeBtn.textContent = '×';
-  closeBtn.addEventListener('click', () => banner.remove());
-  banner.appendChild(closeBtn);
-  document.body.appendChild(banner);
-}
 
 const _levelHandlers = new Map(); // ⭐ 保存各模块的层级切换函数
 
@@ -131,38 +66,23 @@ export function mountLesson(lessonId) {
   `;
   _lessonQ('lessonBack')?.addEventListener('click', () => navigate('home'));
 
-  const loader = {
-    m1: () => import('../grades/grade3/modules/m1.js'),
-    m2: () => import('../grades/grade3/modules/m2.js'),
-    m3: () => import('../grades/grade3/modules/m3.js'),
-    m4: () => import('../grades/grade3/modules/m4.js'),
-    m5: () => import('../grades/grade3/modules/m5.js'),
-    m6: () => import('../grades/grade3/modules/m6.js'),
-    m7: () => import('../grades/grade3/modules/m7.js'),
-    m8: () => import('../grades/grade3/modules/m8.js'),
-    m9: () => import('../grades/grade3/modules/m9.js'),
-    m10: () => import('../grades/grade3/modules/m10.js'),
-    m11: () => import('../grades/grade3/modules/m11.js'),
-    m12: () => import('../grades/grade3/modules/m12.js'),
-    m13: () => import('../grades/grade3/modules/m13.js')
-  }[lessonId];
-
-  if (!loader) {
-// M3/L6：同上，模块 id 不进 HTML 字符串
-    stage.innerHTML = '';
-    {
-      const box = document.createElement('div');
-      box.style.cssText = 'padding:40px;text-align:center;color:var(--muted);';
-      box.textContent = '模块 ' + lessonId + ' 尚未拆分';
-      stage.appendChild(box);
-    }
-    return;
-  }
-
-  // ⭐ 必须在这里包裹 Promise，否则拿不到 mod 和 mount
+  // ⭐ 单一事实源：loader 取自年级注册表（grades/grade3/index.js），不再在此重复登记
   swapModule(stage, async () => {
     let mod;
     try {
+      const cfg = await loadGrade(getGradeConfig().id || '3');
+      const loader = cfg && cfg.modules && cfg.modules[lessonId];
+      if (!loader) {
+        // M3/L6：模块 id 不进 HTML 字符串
+        stage.innerHTML = '';
+        {
+          const box = document.createElement('div');
+          box.style.cssText = 'padding:40px;text-align:center;color:var(--muted);';
+          box.textContent = '模块 ' + lessonId + ' 尚未拆分';
+          stage.appendChild(box);
+        }
+        return null;
+      }
       mod = await loader();
     } catch (err) {
       console.error('模块加载失败', lessonId, err);
@@ -195,6 +115,16 @@ export function mountLesson(lessonId) {
       }, delay);
     }
 
+    // ⭐ 立即落盘未满 delay 的 activity（切页/卸载前由 lifecycle 统一冲刷）
+    function flushActivity() {
+      Object.keys(_actTimers).forEach(id => { clearTimeout(_actTimers[id]); delete _actTimers[id]; });
+      Object.keys(_actPending).forEach(id => {
+        activityAdd(id, _actPending[id]);
+        delete _actPending[id];
+      });
+    }
+    registerActivityFlush(flushActivity);
+
     // 构造注入模块的上下文（S5：契约收敛到 core/lesson/ctx.js，字段名保持不变）
     const ctx = createLessonContext({
       lessonId,
@@ -204,9 +134,8 @@ export function mountLesson(lessonId) {
         focusWhenReady: focusInputWhenReady,
         showMasteryCard,
         buildAiInsightHtml,
-        showThumbBar: (opts) => {
-          if (window.__shell && window.__shell.showThumbBar) window.__shell.showThumbBar(opts);
-        },
+        showThumbBar,
+        hideThumbBar,
         registerLevelHandler: (id, fn) => {
           _levelHandlers.set(id, fn);
         },

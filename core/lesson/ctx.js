@@ -36,7 +36,7 @@ function warnMissing(lessonId, missing) {
  * @param {{
  *   lessonId: string,
  *   data?: object,   // historyAdd/historyLoad/historySave/masteryRecord/takeawayLoad/activityAdd/recordActivity/wbAdd/wbLoad/wbSave
- *   ui?: object,     // toast/focusWhenReady/showMasteryCard/buildAiInsightHtml/showThumbBar/registerLevelHandler
+ *   ui?: object,     // toast/focusWhenReady/showMasteryCard/buildAiInsightHtml/showThumbBar/hideThumbBar/registerLevelHandler
  *   storage?: object // { get, set }
  * }} parts
  */
@@ -55,6 +55,7 @@ export function createLessonContext({ lessonId = 'unknown', data = {}, ui = {}, 
       showMasteryCard: ui.showMasteryCard || noop,
       buildAiInsightHtml: ui.buildAiInsightHtml || (() => ''),
       showThumbBar: ui.showThumbBar || noop,
+      hideThumbBar: ui.hideThumbBar || noop,
       registerLevelHandler: ui.registerLevelHandler || noop,
     },
 
@@ -81,6 +82,7 @@ export function createLessonContext({ lessonId = 'unknown', data = {}, ui = {}, 
     showMasteryCard: { get: () => ctx.ui.showMasteryCard, enumerable: true },
     buildAiInsightHtml: { get: () => ctx.ui.buildAiInsightHtml, enumerable: true },
     showThumbBar: { get: () => ctx.ui.showThumbBar, enumerable: true },
+    hideThumbBar: { get: () => ctx.ui.hideThumbBar, enumerable: true },
     registerLevelHandler: { get: () => ctx.ui.registerLevelHandler, enumerable: true },
   });
 

@@ -159,13 +159,14 @@ window.__handleRedoSuccess = handleRedoSuccess;
         const sub = step.querySelector('input[data-field="sub"]')?.value || '';
         const res = step.querySelector('input[data-field="res"]')?.value || '';
         if (rel || sub || res) currentSteps.push({ rel, sub, res });
-        if (problemText){
-          showExplainModal(problemText, {
-            studentAnswer: currentAnswer,
-            studentSteps: currentSteps
-          });
-        }
       });
+      // ⭐ Koji 弹窗只弹一次：移出循环（原先每收集一步就会弹一次）
+      if (problemText) {
+        showExplainModal(problemText, {
+          studentAnswer: currentAnswer,
+          studentSteps: currentSteps
+        });
+      }
     } else {
       problemText = document.querySelector('#lesson-stage-main .card h2')?.textContent || '';
     }

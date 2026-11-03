@@ -4,6 +4,8 @@
    直接互相 import 会形成循环依赖。改成注册表：router 不认识任何视图，shell 在 initShell 里注册。
 */
 
+import { flushPendingActivity } from './lifecycle.js';
+
 const ROUTES = ['home', 'lesson', 'growth', 'messages', 'settings'];
 const renderers = Object.create(null);
 let currentRoute = 'home';
@@ -14,10 +16,11 @@ export function registerView(route, fn) {
   if (typeof fn === "function") renderers[route] = fn;
 }
 
-export function getCurrentRoute() { return currentRoute; }
-export function getCurrentLessonId() { return currentLessonId; }
-
 export function navigate(route, opts = {}) {
+  // ⭐ 切页前冲刷当前模块未落盘的防抖 activity —— lesson→home 等路径只切页不卸载模块，
+  //    此处是旧壳 _activityFlush 语义的唯一全覆盖入口（模块切换路径由 lifecycle 统一卸载点覆盖）
+  flushPendingActivity();
+
   // ⭐ 路由切换时，强制清空拇指条状态
   const bar = document.getElementById("thumbBar");
   if (bar) bar.classList.remove("show", "ok", "err");
