@@ -33,7 +33,8 @@ describe('history', () => {
 
   it('historySave + historyLoad 往返', () => {
     historySave([{ id: 'x', problemText: 'q' }]);
-    expect(historyLoad()).toEqual([{ id: 'x', problemText: 'q' }]);
+    // ⭐ arch 版 history.js 会为记录注入归档字段 moduleId（默认 'm13'）——锁定该行为防漂移
+    expect(historyLoad()).toEqual([{ id: 'x', problemText: 'q', moduleId: 'm13' }]);
   });
 
   it('historyAdd 添加记录并生成 id + timestamp', () => {
