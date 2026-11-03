@@ -17,7 +17,6 @@ export default async function mount(container, ctx) {
     { key:'fen', label:'1 分', cls:'fen' }
   ];
 
-  // TODO: 复制 main.js 里的 m6RenderCoins, m6PickScale, m6FmtLabel, m6RenderNumline, m6Update
   function m6RenderCoins() {
     $('#m6coins').innerHTML = COIN_DEF.map(c => {
       const max = c.key === 'yuan' ? 1000 : 9;

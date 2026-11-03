@@ -30,7 +30,8 @@ export default async function mount(container, ctx) {
   let m7AudioCtx = null;
   let m7Dragging = false;
 
-  // TODO: 复制 main.js 里的 m7InitAudio, m7PlayTick, m7Draw, m7UpdateDigital, M7_CALC_TYPES, m7NewCalcChallenge, m7ClockTick, m7FmtStopwatch, m7UpdateSwDisplay, m7SwFrame, m7SwStart, m7SwReset, m7FromPoint
+  let m7SwRafId = 0;      // ⭐ 秒表 rAF 帧句柄
+  let m7Stopped = false;  // ⭐ 卸载标志：rAF/监听一律停火
 
   function m7InitAudio() {
     if (!m7AudioCtx) {
@@ -384,6 +385,7 @@ export default async function mount(container, ctx) {
   }
 
   function m7SwFrame(now) {
+    if (m7Stopped) return;   // ⭐ 卸载后立即停帧
     if (M7.mode === 'clock' || !M7.swRunning) { M7.swLastFrame = now; return; }
     const dt = now - M7.swLastFrame;
     M7.swLastFrame = now;
@@ -417,7 +419,7 @@ export default async function mount(container, ctx) {
       m7PlayTick(false);
     }
     m7UpdateSwDisplay();
-    requestAnimationFrame(m7SwFrame);
+    m7SwRafId = requestAnimationFrame(m7SwFrame);
   }
 
   function m7SwStart() {
@@ -428,7 +430,7 @@ export default async function mount(container, ctx) {
     $('#swHint').textContent = M7.mode === 'up'
       ? '⏱ 正在计时…每秒响一次滴答声。'
       : '⏳ 倒计时进行中…';
-    requestAnimationFrame(m7SwFrame);
+    m7SwRafId = requestAnimationFrame(m7SwFrame);
   }
 
   function m7SwReset() {
@@ -584,7 +586,9 @@ export default async function mount(container, ctx) {
     // ⭐ S7：停掉所有外部副作用，否则退出课页后仍在跑
     M7.swRunning = false;   // m7SwFrame 下一帧检测到后自然终止 rAF 链
     M7.running = false;
+    m7Stopped = true;       // ⭐ 卸载标志：rAF/监听一律停火
     clearInterval(timer);
+    if (m7SwRafId) cancelAnimationFrame(m7SwRafId);   // ⭐ 立即取消在途帧
     window.removeEventListener('pointermove', onM7DragMove);
     window.removeEventListener('pointerup', onM7DragEnd);
     if (m7AudioCtx) { try { m7AudioCtx.close(); } catch (e) {} m7AudioCtx = null; }

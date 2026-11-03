@@ -39,9 +39,10 @@ export default async function mount(container, ctx) {
   const scope = createScope(container, 'tpl-m10');
   const { $, on, dispose } = scope;
 
-  function render() {
+  function render(isUserAction = false) {
     const y = parseYear($('#m10year') ? $('#m10year').value : '');
     const m = Number($('#m10month') ? $('#m10month').value : 1) || 1;
+    if (!(m >= 1 && m <= 12)) return;   // ⭐ 月份非法时直接跳过渲染
     const { weeks, days } = buildMonthGrid(y, m);
 
     const title = $('#m10title');
@@ -72,11 +73,12 @@ export default async function mount(container, ctx) {
       );
     }
 
-    ctx.data.activityAdd('m10', y + ' 年 ' + m + ' 月', days + ' 天');
+    // ⭐ M10：只有用户真实操作才记体验，且走防抖版 recordActivity（此前每次渲染/每敲一个键都会刷一条记录）
+    if (isUserAction) ctx.data.recordActivity?.('m10', y + ' 年 ' + m + ' 月', days + ' 天');
   }
 
-  on($('#m10year'), 'input', render);
-  on($('#m10month'), 'change', render);
+  on($('#m10year'), 'input', () => render(true));
+  on($('#m10month'), 'change', () => render(true));
 
   render();
   return () => dispose();

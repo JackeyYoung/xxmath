@@ -599,17 +599,18 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
     const timeEl = _pageQ('stdTime');
     // ⭐ S7：用户中途离开时这个 100ms 计时器原本会永远空转，并且通过闭包持有已脱离的 DOM。
     //    元素一旦不在了就自行 clearInterval，无需依赖卸载钩子。
-    const timer = setInterval(() => {
-      if (!timeEl || !timeEl.isConnected) { clearInterval(timer); return; }
+    clearInterval(stdTimer);
+    stdTimer = setInterval(() => {
+      if (!timeEl || !timeEl.isConnected) { clearInterval(stdTimer); return; }
       timeEl.textContent = ((performance.now() - start) / 1000).toFixed(1) + 's';
     }, 100);
 
     try {
       const raw = await callLLMStandardSolution(problemText);
-      clearInterval(timer);
+      clearInterval(stdTimer);
       renderStandardSolution(normalizeAiFeedback(raw, null));
     } catch (e) {
-      clearInterval(timer);
+      clearInterval(stdTimer);
       body.innerHTML = `<div style="text-align:center;padding:24px 20px;"><div style="color:var(--red-text);font-weight:700;margin-bottom:12px;">❌ 获取标准解法失败：${e.message || '请稍后重试'}</div><button class="btn" id="m13RetryStdBtn">🔄 重新获取</button></div>`;
       _pageQ('m13RetryStdBtn')?.addEventListener('click', () => m13FetchStandardSolution());
       lock.style.display = 'block';
@@ -1106,6 +1107,7 @@ if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
   const takeawayBtn = $('#pTakeawaySave');
   const takeawayHint = $('#pTakeawayHint');
   let saveTimer = null, savedValue = '', savedFromProblem = '';
+  let stdTimer = 0;   // ⭐ AI 标准解法的计时器句柄，卸载时清理
 
   function updateTakeawayBtnState() {
     const cur = takeawayInput.value.trim();
@@ -1347,6 +1349,9 @@ if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
   return () => {
     unregisterActiveModule('m13');
     container.removeEventListener('input', onM13ContainerInput);
+    clearTimeout(saveTimer);      // ⭐ 防抖保存待执行句柄
+    clearInterval(stdTimer);      // ⭐ 在途的 AI 计时器
+    document.getElementById('redoBanner')?.remove();   // ⭐ body 上的重做横幅残留
     document.body.classList.remove('modal-open');
     container.innerHTML = '';
   };
