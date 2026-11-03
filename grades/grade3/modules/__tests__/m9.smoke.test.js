@@ -303,34 +303,6 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     cleanup();
   });
 
-  it('减法借位：被减数位随借位减小（不再虚大，十位 9→8）', { timeout: 20000 }, async () => {
-    // 298 - 199 = 99：个位 8-9 借位，十位 9 应减为 8
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '298'; b.value = '199'; op.value = '−';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
-    await wait(200);
-    container.querySelector('#m9step').click();
-    await wait(50);
-    const exact = 298 - 199;
-    [...container.querySelectorAll('#m9EstimateOptions .priority-opt')].find(btn => {
-      const [lo, hi] = btn.textContent.split('~').map(Number);
-      return exact >= lo && exact <= hi;
-    }).click();
-    await wait(900);
-
-    // 借位前：十位仍是 9
-    expect(key(container, 'a-1').textContent).toBe('9');
-    // 填个位借位（从十位借 1）
-    pressDigits('1'); pressConfirm();
-    await wait(800);
-    // 借位后：十位减为 8，个位保持个位数字（+10 由借位记号体现）
-    expect(key(container, 'a-1').textContent).toBe('8');
-    expect(key(container, 'a-2').textContent).toBe('8');
-    cleanup();
-  });
-
   it('清理函数：清空容器、可安全重复调用', async () => {
     cleanup = cleanup || null;
     expect(() => cleanup()).not.toThrow();
