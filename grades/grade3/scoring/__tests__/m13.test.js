@@ -25,6 +25,13 @@ describe('m13 · problemNumbers', () => {
     expect(nums).toContain(3);
     expect(nums).toContain(12.5);
   });
+  it('汉字数量级数字 → 转阿拉伯数字', () => {
+    expect(problemNumbers('一百四十元')).toContain(140);
+    expect(problemNumbers('十五个苹果')).toContain(15);
+  });
+  it('普通量词里的汉字不误转（"一共/第一"不产出 1）', () => {
+    expect(problemNumbers('一共有 15 个苹果，谁排第一？')).toEqual([15]);
+  });
 });
 
 describe('m13 · isValidSubstitution', () => {
@@ -34,8 +41,8 @@ describe('m13 · isValidSubstitution', () => {
     expect(isValidSubstitution('15 - 8 - 3', problemNums)).toBe(true);
   });
 
-  it('只有一个题目数字 → false（需要至少 2 个）', () => {
-    expect(isValidSubstitution('15 - 100', problemNums)).toBe(false);
+  it('只含 1 个题目数字 → true（规则已放宽：hit ≥ 1 即可）', () => {
+    expect(isValidSubstitution('15 - 100', problemNums)).toBe(true);
   });
 
   it('不含运算符 → false', () => {
@@ -50,8 +57,12 @@ describe('m13 · isValidSubstitution', () => {
     expect(isValidSubstitution('3 x 8', problemNums)).toBe(true);
   });
 
-  it('数字少 → false', () => {
-    expect(isValidSubstitution('15 +', problemNums)).toBe(false);
+  it('含题目数字与运算符即可（数字数量不限制）', () => {
+    expect(isValidSubstitution('15 +', problemNums)).toBe(true);
+  });
+
+  it('完全不含题目数字 → false', () => {
+    expect(isValidSubstitution('100 - 50', problemNums)).toBe(false);
   });
 });
 
