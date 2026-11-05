@@ -186,15 +186,16 @@ function buildCss() {
 .b1-op.b1-clickable:active { filter: brightness(.9); }
 .b1-op.b1-locked { cursor: default; pointer-events: none; }
 
-/* ── 输入行：待算组合 → 答案槽（无原生 input） ── */
-.b1-inputrow { display: flex; align-items: center; gap: 10px; height: ${D.rowH}px; flex: none; }
-.b1-eq, .b1-arrow { color: var(--b1-history); font-weight: 800; font-size: ${Math.round(D.font * 0.8)}px; }
-.b1-pending { font-weight: 800; font-size: ${Math.round(D.font * 0.72)}px; color: var(--b1-init); letter-spacing: 1px; }
+/* ── 输入行：答案槽（无原生 input、无括号/箭头/问号）
+      ⭐ 防跳动：行常驻占位（display 恒为 flex），激活只切 opacity，高度永不变化 ── */
+.b1-inputrow { display: flex; align-items: center; gap: 10px; height: ${D.rowH}px; flex: none;
+  opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+.b1-inputrow.b1-active { opacity: 1; pointer-events: auto; }
+.b1-eq { color: var(--b1-history); font-weight: 800; font-size: ${Math.round(D.font * 0.8)}px; }
 .b1-answer { min-width: ${D.numW}px; height: ${D.rowH - 8}px; position: relative;
   display: inline-flex; align-items: center; justify-content: center;
   font-weight: 800; font-size: ${D.font}px; color: var(--b1-init);
-  border-bottom: 3px solid var(--b1-focus); border-radius: 4px 4px 0 0; }
-.b1-answer[data-empty="1"]::before { content: '?'; opacity: .3; }
+  border-bottom: 1.5px solid var(--b1-focus-ring); }
 .b1-answer::after { content: ''; position: absolute; right: 12px; bottom: 4px; width: 2.5px; height: 62%;
   background: var(--b1-focus); border-radius: 2px; animation: b1caret 1s steps(1) infinite; }
 @keyframes b1caret { 50% { opacity: 0; } }
@@ -211,7 +212,7 @@ function buildCss() {
 .b1-hint { margin-top: 32px; }
 .b1-hint:not(.ok):not(.error) { color: ${F.hint}; font-size: 16px; }
 .b1-placeholder { color: var(--b1-placeholder); font-size: 16px; padding: 14px 4px; }
-@media (prefers-reduced-motion: reduce) { .b1-answer.b1-wrong { animation: none; } .b1-answer::after { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .b1-answer.b1-wrong { animation: none; } .b1-answer::after { animation: none; } .b1-inputrow { transition: none; } }
 `;
 }
 
@@ -236,6 +237,13 @@ export default async function mount(container, ctx) {
     console.error('[m1] 模板结构缺失（b1-board / b1-rows / b1-arcs / b1-answer）');
     return;
   }
+
+  // ⭐ 噪音清理（模板是共享的，DOM 层面在模块内修正）：
+  //    输入行撤掉内联 display:none → 防跳动（常驻占位，只动 opacity）；
+  //    箭头 → 是复写时代的残留；data-empty → '?' 占位已废除
+  inputRow.style.display = '';
+  container.querySelector('.b1-arrow')?.remove();
+  answerEl.removeAttribute('data-empty');
 
   // 样式注入（一次）
   if (!document.getElementById(STYLE_ID)) {
@@ -352,6 +360,7 @@ export default async function mount(container, ctx) {
   }
 
   function clearBoard() {
+    hideGuideArc(true);
     rowsMeta.length = 0;
     rowsEl.innerHTML = '';          // 只有"换新题"才允许整体清空
     svgEl.innerHTML = '';
@@ -376,7 +385,9 @@ export default async function mount(container, ctx) {
     svgEl.removeAttribute('viewBox');
   }
 
-  function drawArcGeometry(leftCell, rightCell, tickTargetY) {
+  /* 弧线路径构建（碰撞弧线与引导弧共用）：三次贝塞尔 C 指令，
+     起点/终点在两个操作数底部中心，控制点 Y 轴向下偏移 → 对称下潜的平缓圆弧 */
+  function buildArcPath(leftCell, rightCell, opacity = 1) {
     const boardRect = board.getBoundingClientRect();
     const l = leftCell.getBoundingClientRect();
     const r = rightCell.getBoundingClientRect();
@@ -388,14 +399,19 @@ export default async function mount(container, ctx) {
 
     syncSvgSize();
 
-    // 三次贝塞尔：两个控制点都在下方 → 对称下潜圆弧
     const path = document.createElementNS(SVG_NS, 'path');
     path.setAttribute('d', `M ${lx} ${ly} C ${lx} ${ly + dip}, ${rx} ${ry + dip}, ${rx} ${ry}`);
     path.setAttribute('fill', 'none');
     path.setAttribute('stroke', LC.focus.color);
     path.setAttribute('stroke-width', MOTION.strokeWidth);
     path.setAttribute('stroke-linecap', 'round');
+    if (opacity < 1) path.setAttribute('opacity', String(opacity));
     svgEl.appendChild(path);
+    return { path, lx, ly, rx, ry };
+  }
+
+  function drawArcGeometry(leftCell, rightCell, tickTargetY) {
+    const { path, lx, ly } = buildArcPath(leftCell, rightCell);
 
     // 弧底中心：采样取最低点
     const len = path.getTotalLength();
@@ -420,6 +436,32 @@ export default async function mount(container, ctx) {
       gsap.set(p, { strokeDasharray: pl, strokeDashoffset: pl });
     }
     return { path, tick };
+  }
+
+  /* ---------- 引导弧（等待输入态的空间引导）：代替复写算式。
+     复用 buildArcPath 的贝塞尔几何，在两个操作数下方展开一条极淡圆弧
+     （stroke-dashoffset 描边生长 0.2s ease-out，≈18% 透明度，绝不抢戏）；
+     答对 → 瞬时让位给同几何的碰撞弧线（无缝衔接）；Esc → 淡出。 ---------- */
+  let guideArc = null;
+
+  function showGuideArc() {
+    const w = M1.waiting;
+    const row = rowsMeta[w?.rowIdx];
+    if (!w || !row) return;
+    hideGuideArc(true);   // 防残留
+    const { path } = buildArcPath(row.cells[w.opIdx - 1], row.cells[w.opIdx + 1], 0.18);
+    const len = path.getTotalLength();
+    gsap.set(path, { strokeDasharray: len, strokeDashoffset: len });
+    gsap.to(path, { strokeDashoffset: 0, duration: 0.2, ease: EASE.entry });
+    guideArc = path;
+  }
+
+  function hideGuideArc(instant = false) {
+    if (!guideArc) return;
+    const p = guideArc;
+    guideArc = null;
+    if (instant) { gsap.killTweensOf(p); p.remove(); return; }
+    gsap.to(p, { opacity: 0, duration: 0.25, ease: EASE.exit, onComplete: () => p.remove() });
   }
 
   // ---------- 反馈 ----------
@@ -458,24 +500,19 @@ export default async function mount(container, ctx) {
   // ---------- 输入行（答案槽：无原生 input，键盘认领输入） ----------
   function renderAnswerSlot() {
     answerEl.textContent = M1.answerBuf;
-    if (M1.answerBuf) answerEl.removeAttribute('data-empty');
-    else answerEl.setAttribute('data-empty', '1');
   }
 
+  /* ⭐ 极简输入区：不复写算式（无括号/箭头/问号），只出现 "= ___"；
+     防跳动 —— 行常驻占位，激活只切 .b1-active（opacity），高度永不变化 */
   function showInputRow() {
-    const w = M1.waiting;
-    pendingEl.textContent = `( ${fmtNum(w.left)} ${w.op} ${fmtNum(w.right)} )`;
+    pendingEl.textContent = '';
     M1.answerBuf = '';
     renderAnswerSlot();
-    inputRow.style.display = 'flex';
-    gsap.fromTo(inputRow, { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.25, ease: EASE.entry });
+    inputRow.classList.add('b1-active');
   }
 
   function hideInputRow() {
-    gsap.to(inputRow, {
-      opacity: 0, duration: 0.15, ease: EASE.exit,
-      onComplete: () => { inputRow.style.display = 'none'; gsap.set(inputRow, { opacity: 1, y: 0 }); },
-    });
+    inputRow.classList.remove('b1-active');
   }
 
   // ---------- 载入新题 ----------
@@ -561,6 +598,7 @@ export default async function mount(container, ctx) {
       gsap.to(c, { opacity: MOTION.dimOpacity, duration: 0.2, ease: EASE.entry });
     });
 
+    showGuideArc();   // ⭐ 极淡引导弧：两个操作数要"合"成一个的空间提示
     showInputRow();
     // ⭐ 场景驱动：键盘弹出（持久 —— 确认后不收起，直到终局）
     keypad.show({
@@ -599,6 +637,7 @@ export default async function mount(container, ctx) {
   function m1CancelInput() {
     if (!M1.waiting || M1.busy) return;   // ⭐ 动画进行中不允许取消，防止状态撕裂
     const { opIdx, rowIdx, cell } = M1.waiting;
+    hideGuideArc();                       // ⭐ 引导弧淡出退场
     const row = rowsMeta[rowIdx];
     if (row && row.cells[opIdx] === cell) {
       applyTier(cell, 'init');
@@ -652,6 +691,7 @@ export default async function mount(container, ctx) {
     const w = M1.waiting;
     if (!w) return;
     M1.busy = true;
+    hideGuideArc(true);   // ⭐ 引导弧瞬时让位：碰撞弧线同几何、同起点随即生长 → 视觉无缝衔接
     hideInputRow();
 
     const row = rowsMeta[w.rowIdx];
@@ -706,6 +746,7 @@ export default async function mount(container, ctx) {
     const dxMid = (br.left + br.width / 2 - (bl.left + bl.width / 2)) / 2;
 
     const prevFresh = rowsMeta.length >= 3 ? rowsMeta[rowsMeta.length - 3].freshCell : null;
+    const freshCell = newRow.freshCell || newRow.cells[0];
     const otherIdx = [];
     row.cells.forEach((_, j) => { if (j < w.opIdx - 1 || j > w.opIdx + 1) otherIdx.push(row.cells[j]); });
 
@@ -734,7 +775,8 @@ export default async function mount(container, ctx) {
       // 5. 原槽位换入灰暗静态文本（同尺寸 → 零位移），上一行的结果降为历史档
       .call(() => swapToConsumed(row, w.opIdx), null, collideAt + MOTION.collideDur)
       .call(() => { if (prevFresh) gsap.to(prevFresh, { color: LC.history.color, opacity: LC.history.opacity, duration: 0.3 }); }, null, collideAt)
-      // 6. 新行揭示：其余数字淡入交错，结果从 y:-20 砸下（back.out 重力回弹）
+      // 6. 新行揭示：其余数字淡入交错；结果格"聚变产出"——短距离三段式砸落：
+      //    下落 power3.in → 触地压扁 power2.out → back.out(3) 回弹（距离短 -20，物理产生感但不抢戏）
       .addLabel('reveal', collideAt + MOTION.collideDur)
       // 弧线 + 指示线连通保持后，一起过渡到冷暗灰（被消耗档）
       .to([path, tick], { stroke: LC.consumed.color, opacity: LC.consumed.opacity, duration: 0.3, ease: EASE.entry }, 'reveal')
@@ -742,9 +784,11 @@ export default async function mount(container, ctx) {
       .to(newRow.cells.filter(c => c !== newRow.freshCell), {
         opacity: 1, duration: 0.2, stagger: MOTION.stagger, ease: EASE.entry,
       }, 'reveal+=0.05')
-      .fromTo(newRow.freshCell || newRow.cells[0],
-        { y: MOTION.dropYResult, opacity: 0, scale: 0.7 },
-        { y: 0, opacity: 1, scale: 1, duration: 0.5, ease: EASE.land }, 'reveal+=0.08')
+      .fromTo(freshCell,
+        { y: MOTION.dropYResult, scale: 0.8, opacity: 0 },
+        { y: 0, scale: 1, opacity: 1, duration: 0.22, ease: 'power3.in' }, 'reveal+=0.08')      // 下落
+      .to(freshCell, { scaleX: 1.08, scaleY: 0.92, duration: 0.12, ease: 'power2.out' }, 'reveal+=0.30')   // 触地压扁
+      .to(freshCell, { scaleX: 1, scaleY: 1, duration: 0.28, ease: 'back.out(3)', clearProps: 'scaleX,scaleY' }, 'reveal+=0.42')   // 回弹
       // 7. 旧行其余元素缓缓融入背景（被消耗档）
       .to(otherIdx, { color: LC.consumed.color, opacity: LC.consumed.opacity, duration: 0.35, ease: EASE.entry }, 'reveal+=0.2')
       // 8. 时间轴留白：让大脑处理信息

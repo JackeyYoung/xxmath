@@ -104,8 +104,12 @@ describe('m1 · Brilliant 重构冒烟', () => {
     const row = container.querySelector('.b1-row');
     row.querySelectorAll('.b1-op.b1-clickable')[0].click();
 
-    expect(container.querySelector('#m1inputrow').style.display).toBe('flex');
-    expect(container.querySelector('#m1pending').textContent).toBe('( 3 + 6 )');
+    // ⭐ 防跳动：输入行常驻占位（display 恒为 flex），激活态只切 .b1-active（opacity）
+    expect(inputRow_state(container)).toBe('flex');
+    expect(container.querySelector('#m1inputrow').style.display).toBe('');
+    // ⭐ 告别复写算式：pending 恒为空，输入区无括号/箭头/问号
+    expect(container.querySelector('#m1pending').textContent).toBe('');
+    expect(container.querySelector('.b1-arrow')).toBeNull();
     expect(container.querySelector('#m1fb').textContent).toContain('得数');
     // ⭐ 虚拟键盘弹出 + 聚光灯
     expect(keypadVisible()).toBe(true);
@@ -123,7 +127,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
     const outerDiv = [...row.querySelectorAll('.b1-op')].find(op => op.textContent === '÷');
     outerDiv.click();
     expect(container.querySelector('#m1fb').textContent).toContain('先算括号里的');
-    expect(container.querySelector('#m1inputrow').style.display).toBe('none');
+    expect(inputRow_state(container)).toBe('none');
     cleanup();
   });
 
@@ -308,5 +312,6 @@ describe('m1 · Brilliant 重构冒烟', () => {
 });
 
 function inputRow_state(container) {
-  return container.querySelector('#m1inputrow').style.display;
+  // ⭐ 防跳动契约：占位恒在（display 恒为 flex），激活态由 .b1-active（opacity）表达
+  return container.querySelector('#m1inputrow').classList.contains('b1-active') ? 'flex' : 'none';
 }

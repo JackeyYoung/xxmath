@@ -6,8 +6,10 @@
       之后所有变化只做"原地文字/档位更新"，绝不 innerHTML。
    2. 布局锁死 —— CSS Grid 轨道固定（design/tokens.js GRID），
       严禁用 transform 把上排数字挪到下排（会崩塌整个网格）；
-      "落位"= 在余数行直接渲染新数字 + 自身 y:-20 砸下动画，
+      "落位"= FLIP：目标格在余数行原位渲染，动画用瞬时 transform 反向偏移
+      （起点钉在源格上 → 斜向飞落回正），不触碰 grid 轨道布局；
       源数字原地变灰占位，M9.broughtDown 防止重复动画。
+      填格（进位/乘积/商/余数）= 单纯书写 → 只做 scale 脉冲，绝不砸落。
    3. 纯函数分离 —— 除法逐步推导在 scoring/m9.js（divisionSteps / computeAnswerMap）。
    4. 状态驱动 —— 颜色由 (M9.waitingFor, M9.step, M9.filled, M9.broughtDown) 推导，
       动画结束（onComplete）才交还档位控制权。
@@ -574,7 +576,9 @@ export default async function mount(container, ctx) {
 
   /* ============ 动画 ============ */
 
-  /* 答对：绿框消失 → 数字以结果档闪光落位 → 平滑过渡到稳定档 */
+  /* 答对：绿框消失 → 数字原地"书写脉冲"（结果档白/绿光闪 + scale 1.15→1）→ 平滑过渡到稳定档。
+     ⭐ 单纯书写（进位/乘积/商/余数）绝不砸落：无 y 轴位移、无 opacity 瞬脱——
+        数字一直在原地，只是被"写上去"并亮了一下。 */
   function flashFilled(cell, raw, key) {
     unmountSlot();
     cell.textContent = raw;
@@ -583,7 +587,7 @@ export default async function mount(container, ctx) {
     cell.style.color = t.color;
     cell.style.opacity = 1;
     cell.style.textShadow = `0 0 14px ${STATUS.ok}80`;
-    gsap.fromTo(cell, { scale: 0.55, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.32, ease: EASE.land });
+    gsap.fromTo(cell, { scale: 1.15 }, { scale: 1, duration: 0.32, ease: EASE.land, clearProps: 'scale' });
     const steady = steadyTierForKey(key);
     const st = LC[steady];
     gsap.to(cell, {
@@ -597,7 +601,10 @@ export default async function mount(container, ctx) {
     });
   }
 
-  /* 落位（Bring Down）：在余数行直接渲染下一位被除数，y:-20 砸下；
+  /* 落位（Bring Down）：FLIP 具身认知 —— "把上面的数字拿下来"。
+     First：改写文字前测源格（被除数行 d-col）位置；
+     Invert：写入目标格（余数行 bd-idx）后测其位置，反算 dx/dy；
+     Play：从源格位置斜向飞落回正（微压扁 0.85 + back.out(1.2) 回弹落座）。
      源数字原地变灰占位。M9.broughtDown 先登记，重绘绝不重复动画。 */
   function bringDown(idx) {
     const { steps, n } = grid.meta;
@@ -609,13 +616,23 @@ export default async function mount(container, ctx) {
     const cell = grid.cells.get(`bd-${idx}`);
     const src = grid.cells.get(`d-${col}`);
     if (!cell) return;
+    // FLIP First：textContent 改写前测源格
+    const srcRect = src ? src.getBoundingClientRect() : null;
     cell.textContent = String(M9.a)[col];
     cell.dataset.b1Animating = '1';
     const t = LC.result;
     cell.style.color = t.color;
     cell.style.textShadow = `0 0 14px ${STATUS.ok}80`;
-    gsap.fromTo(cell, { y: MOTION.dropYResult, opacity: 0 }, {
-      y: 0, opacity: 1, duration: 0.5, ease: EASE.land,
+    // FLIP Invert：目标格与源格中心差 → 起点钉在源格上
+    const cellRect = cell.getBoundingClientRect();
+    let dx = 0, dy = MOTION.dropYResult;         // 兜底：源格/目标格测不到 → 退化为短距砸落
+    if (srcRect && srcRect.width && cellRect.width && cellRect.height) {
+      dx = (srcRect.left + srcRect.width / 2) - (cellRect.left + cellRect.width / 2);
+      dy = (srcRect.top + srcRect.height / 2) - (cellRect.top + cellRect.height / 2);
+    }
+    gsap.fromTo(cell, { x: dx, y: dy, scale: 0.85, opacity: 0.7 }, {
+      x: 0, y: 0, scale: 1, opacity: 1, duration: 0.42, ease: EASE.land,   // back.out(1.2) 微压扁回弹
+      clearProps: 'transform,opacity',
       onComplete: () => {
         cell.dataset.b1Animating = '';
         cell.style.textShadow = '';
