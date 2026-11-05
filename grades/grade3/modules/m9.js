@@ -818,6 +818,9 @@ export default async function mount(container, ctx) {
     if (M9.waitingFor) {
       M9.answerBuf = '';        // ⭐ 新目标新缓冲（否则上一格的数字会串进来）
       renderSlot();
+      // ⭐ 键盘黑盒回调制接入：屏幕键与实体键统一由键盘组件路由到此；
+      //    动态 maxlength（商1/乘积3…）是业务缓冲语义，留业务层截断（最终权威），
+      //    键盘侧 maxLength 仅作发牌外护栏
       keypad.show({
         onDigit: (d) => {
           if (!M9.waitingFor || M9.submitting) return;
@@ -827,6 +830,12 @@ export default async function mount(container, ctx) {
           renderSlot();
         },
         onConfirm: () => submitBuffer(),
+        onBackspace: () => {
+          if (!M9.waitingFor || M9.submitting) return;
+          M9.answerBuf = M9.answerBuf.slice(0, -1);
+          renderSlot();
+        },
+        maxLength: M9_BUF_MAX,
       });
       armOutsideConfirm();
       // ⭐ 提示语滚到键盘上沿之上（长除法网格很深，下边缘不被遮挡）
@@ -979,6 +988,7 @@ export default async function mount(container, ctx) {
       setFeedback('❌ 再想想', 'error');
       emitUI('WRONG', { moduleId: 'm9' });
       M9.answerBuf = '';
+      keypad.resetInput();   // ⭐ 缓冲在回调外被清空 → 同步键盘 maxLength 计数
       setTimeout(() => renderSlot(), 420);
       M9.submitting = false;
       highlightM9WrongHint();
@@ -1064,22 +1074,7 @@ export default async function mount(container, ctx) {
     if (M9.answerBuf.trim()) submitBuffer();
   }
 
-  /* ---- 桌面物理键盘 ---- */
-  const onWinKey = (e) => {
-    if (!M9.waitingFor || M9.submitting) return;
-    if (/^[0-9]$/.test(e.key)) {
-      const t = currentTarget();
-      const max = Math.min(t?.maxlength ?? 1, M9_BUF_MAX);
-      if (M9.answerBuf.length < max) { M9.answerBuf += e.key; renderSlot(); }
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      submitBuffer();
-    } else if (e.key === 'Backspace') {
-      M9.answerBuf = M9.answerBuf.slice(0, -1);
-      renderSlot();
-    }
-  };
-  window.addEventListener('keydown', onWinKey);
+  /* ---- 桌面物理键盘：已上收进键盘组件（onDigit/onConfirm/onBackspace 回调），业务零监听 ---- */
 
   const handleM9Random = () => {
     const level = localStorage.getItem('grade3_m9_level') || null;
@@ -1134,7 +1129,6 @@ export default async function mount(container, ctx) {
   return () => {
     unregisterActiveModule('m9');
     themeObserver.disconnect();
-    window.removeEventListener('keydown', onWinKey);
     disarmOutsideConfirm();
     keypad.hide();
     if (sheetMask) sheetMask.remove();

@@ -492,15 +492,7 @@ export default async function mount(container, ctx) {
             $('#m1Random')?.click();
           } else {
             // 没做完：键盘保持/唤起，继续输入
-            keypad.show({
-              onDigit: (d) => {
-                if (!M1.waiting || M1.busy) return;
-                if (M1.answerBuf.length >= 4) return;
-                M1.answerBuf += d;
-                renderAnswerSlot();
-              },
-              onConfirm: () => m1SubmitAnswer(),
-            });
+            showKeypad();
             armOutsideConfirm();
             keypad.ensureVisible($('#m1fb'));
           }
@@ -525,6 +517,27 @@ export default async function mount(container, ctx) {
 
   function hideInputRow() {
     inputRow.classList.remove('b1-active');
+  }
+
+  /* ⭐ 键盘接入（黑盒回调制）：屏幕键与实体键统一由键盘组件路由到此；
+     缓冲截断/判卷守卫留在业务层（最终权威），键盘外点击的自动确认也归业务（armOutsideConfirm） */
+  function showKeypad() {
+    keypad.show({
+      onDigit: (d) => {
+        if (!M1.waiting || M1.busy) return;
+        if (M1.answerBuf.length >= 4) return;
+        M1.answerBuf += d;
+        renderAnswerSlot();
+      },
+      onConfirm: () => m1SubmitAnswer(),
+      onBackspace: () => {
+        if (!M1.waiting || M1.busy) return;
+        M1.answerBuf = M1.answerBuf.slice(0, -1);
+        renderAnswerSlot();
+      },
+      onCancel: () => m1CancelInput(),   // 实体 Esc
+      maxLength: 4,
+    });
   }
 
   // ---------- 载入新题 ----------
@@ -613,15 +626,7 @@ export default async function mount(container, ctx) {
     showGuideArc();   // ⭐ 极淡引导弧：两个操作数要"合"成一个的空间提示
     showInputRow();
     // ⭐ 场景驱动：键盘弹出（持久 —— 确认后不收起，直到终局）
-    keypad.show({
-      onDigit: (d) => {
-        if (!M1.waiting || M1.busy) return;
-        if (M1.answerBuf.length >= 4) return;
-        M1.answerBuf += d;
-        renderAnswerSlot();
-      },
-      onConfirm: () => m1SubmitAnswer(),
-    });
+    showKeypad();
     armOutsideConfirm();
     cardEl?.classList.add('b1-awaiting');   // 聚光灯：页面其余部分退后
     m1SetFeedback('✏️ 请算出这一步的得数', '');
@@ -692,6 +697,7 @@ export default async function mount(container, ctx) {
     answerEl.classList.add('b1-wrong');
     m1SetFeedback(msg, 'error');
     M1.answerBuf = '';
+    keypad.resetInput();   // ⭐ 缓冲在回调外被清空 → 同步键盘 maxLength 计数
     setTimeout(() => {
       renderAnswerSlot();
       answerEl.classList.remove('b1-wrong');
@@ -1093,23 +1099,6 @@ export default async function mount(container, ctx) {
   $('#m1Upload')?.addEventListener('change', closeSheet);
   $('#m1Random')?.addEventListener('click', closeSheet);
 
-  // ---------- 桌面物理键盘（虚拟键盘的补充，移动端不触发） ----------
-  const onWinKey = (e) => {
-    if (!M1.waiting || M1.busy) return;
-    if (/^[0-9]$/.test(e.key)) {
-      if (M1.answerBuf.length < 4) { M1.answerBuf += e.key; renderAnswerSlot(); }
-    } else if (e.key === 'Enter') {
-      e.preventDefault();
-      m1SubmitAnswer();
-    } else if (e.key === 'Backspace') {
-      M1.answerBuf = M1.answerBuf.slice(0, -1);
-      renderAnswerSlot();
-    } else if (e.key === 'Escape') {
-      m1CancelInput();
-    }
-  };
-  window.addEventListener('keydown', onWinKey);
-
   // ---------- 层级切换 ----------
   ctx.registerLevelHandler('m1', (levelId) => {
     const lv = meta.levels.find(x => x.id === levelId) || meta.levels[0];
@@ -1139,7 +1128,6 @@ export default async function mount(container, ctx) {
   return () => {
     unregisterActiveModule('m1');
     themeObserver.disconnect();
-    window.removeEventListener('keydown', onWinKey);
     disarmOutsideConfirm();
     keypad.hide();
     if (sheetMask) sheetMask.remove();
