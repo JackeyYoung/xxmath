@@ -1,5 +1,5 @@
 /* core/ui/virtual-keypad.js
-   <共享底部数字键盘> —— 全模块通用（m1 / m9 / 后续模块）
+   <共享底部数字键盘> —— 全局黑盒输入组件（业务层只经回调接入）
    ─────────────────────────────────────────────
    设计契约：
    - 主题 CSS 变量名与 MathLive 虚拟键盘保持一致，宿主可覆盖：
@@ -8,6 +8,17 @@
    - 持久模式：show() 之后键盘常驻底部，hide() 只由业务在"终局"调用；
      连续答题（确认后继续下一步）绝不收起。
    - 单例：全局只有一把键盘，show() 重绑回调不重播动画。
+   - ⭐ 黑盒接入（零业务耦合）：键盘内部绝无判分/步骤/业务元素逻辑，一切语义经回调上抛：
+       show({ onDigit, onConfirm, onBackspace, onCancel, maxLength })
+       · onDigit(d)     屏幕键或实体数字键
+       · onConfirm()    确认键或实体回车（回车 preventDefault）
+       · onBackspace()  实体退格键（屏幕键无退格，DOM 结构冻结）
+       · onCancel()     实体 Esc（业务未传则 Esc 无效果）
+       · maxLength      键盘侧发牌上限（计数字屏+实体；show/确认后清零，退格递减；
+                        业务在回调外清空缓冲后须调 resetInput() 同步）。
+                        键盘无缓冲，业务层回调内的截断仍是最终权威。
+   - 实体键路由在本组件内（键盘可见时才接管）；键盘外部点击属于业务判卷语义
+     （各模块规则不同），由业务层自行监听，本组件绝不越界。
 */
 import { gsap } from '../../js/vendor/gsap/index.js';
 
@@ -68,7 +79,9 @@ class VirtualKeypad {
     style.textContent = CSS;
     document.head.appendChild(style);
 
-    this._handlers = { onDigit: () => {}, onConfirm: () => {} };
+    this._handlers = { onDigit: () => {}, onConfirm: () => {}, onBackspace: () => {}, onCancel: () => {} };
+    this._maxLength = null;   // 键盘侧发牌上限（null = 不限，由业务截断）
+    this._pressCount = 0;     // 自 show/确认 起已发出的数字个数（退格递减）
     this.visible = false;
 
     // 按键：pointerdown 响应更快，且不抢走页面的合成点击
@@ -76,9 +89,26 @@ class VirtualKeypad {
       const key = e.target.closest('.vkp-key');
       if (!key) return;
       e.preventDefault();
-      if (key.dataset.confirm) this._handlers.onConfirm();
-      else this._handlers.onDigit(key.dataset.digit);
+      if (key.dataset.confirm) this._emitConfirm();
+      else this._emitDigit(key.dataset.digit);
     });
+
+    // ⭐ 实体键盘路由（桌面端补充）：键盘可见时才接管，全部经回调上抛，组件内零业务语义
+    this._onWinKey = (e) => {
+      if (!this.visible) return;
+      if (/^[0-9]$/.test(e.key)) {
+        this._emitDigit(e.key);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        this._emitConfirm();
+      } else if (e.key === 'Backspace') {
+        if (this._pressCount > 0) this._pressCount--;
+        this._handlers.onBackspace();
+      } else if (e.key === 'Escape') {
+        this._handlers.onCancel();
+      }
+    };
+    window.addEventListener('keydown', this._onWinKey);
 
     // 跟随应用主题重设变量
     this._applyTheme();
@@ -101,10 +131,24 @@ class VirtualKeypad {
     s.setProperty('--keyboard-accent-color', t.accent);
   }
 
+  /** 发牌：屏幕键与实体数字键共用（maxLength 计数在此统一） */
+  _emitDigit(d) {
+    if (this._maxLength != null && this._pressCount >= this._maxLength) return;
+    this._pressCount++;
+    this._handlers.onDigit(d);
+  }
+
+  _emitConfirm() {
+    this._pressCount = 0;   // 一轮作答结束，计数清零
+    this._handlers.onConfirm();
+  }
+
   /** 显示键盘（已可见时只重绑回调，绝不重播动画） */
-  show({ onDigit = () => {}, onConfirm = () => {} } = {}) {
+  show({ onDigit = () => {}, onConfirm = () => {}, onBackspace = () => {}, onCancel = () => {}, maxLength = null } = {}) {
     this._ensureAttached();
-    this._handlers = { onDigit, onConfirm };
+    this._handlers = { onDigit, onConfirm, onBackspace, onCancel };
+    this._maxLength = maxLength;
+    this._pressCount = 0;
     this._applyTheme();
     if (!this.visible) {
       this.visible = true;
@@ -143,6 +187,7 @@ class VirtualKeypad {
   hide() {
     if (!this.visible) return;
     this.visible = false;
+    this._pressCount = 0;
     gsap.to(this.el, { yPercent: 105, duration: 0.28, ease: 'power2.in', overwrite: 'auto',
       onComplete: () => {
         if (!this.visible) {
@@ -152,8 +197,14 @@ class VirtualKeypad {
       } });
   }
 
+  /** 业务层在回调之外清空了输入缓冲（如答错重置）后调用，同步 maxLength 计数 */
+  resetInput() {
+    this._pressCount = 0;
+  }
+
   destroy() {
     this._themeObserver.disconnect();
+    window.removeEventListener('keydown', this._onWinKey);
     gsap.killTweensOf(this.el);
     this.el.remove();
     document.getElementById('vkp-style')?.remove();
