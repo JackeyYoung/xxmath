@@ -12,13 +12,14 @@
 */
 import {
   parseExpression, tokensToString, tokensToMarkedHtml,
-  canClickOp, computeStep,
+  canClickOp, computeStep, evaluatesNonNegative,
 } from '../scoring/m1.js';
 import { getLifecycle, applyThemeVars, EASE, MOTION, DIMENSION, STATUS, SURFACE, prefersReducedMotion } from '../design/tokens.js';
 import { gsap } from '../design/motion.js';
 import { COMBO } from '../../../core/ui/celebrate.js';
 import { getEncouragement } from '../../../core/ui/encourage.js';
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
+import { getGradeConfig } from '../../../app/grade-config.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getVirtualKeypad } from '../../../core/ui/virtual-keypad.js';
 
@@ -329,11 +330,10 @@ export default async function mount(container, ctx) {
         cell = makeCell(t.val, 'op');
         applyTier(cell, 'init');
         const chk = canClickOp(tokens, i);
-        cell.classList.add(chk.ok ? 'b1-clickable' : 'b1-locked');
-        if (chk.ok) {
-          cell.title = '点我先算这一步';
-          cell.addEventListener('click', () => m1ClickOp(i, cell));
-        }
+        // ⭐ 所有运算符都可点：点错了在提示区给原因，而不是静默锁定（"点了没反应"）
+        cell.classList.add('b1-clickable');
+        cell.title = chk.ok ? '点我先算这一步' : '点这里看看为什么不能算';
+        cell.addEventListener('click', () => m1ClickOp(i, cell));
       }
       if (lay) {
         cell.style.width = lay.widths[i] + 'px';
@@ -515,7 +515,9 @@ export default async function mount(container, ctx) {
   const WRONG_REASON = {
     'inner-paren': '❌ 先算括号里的哦！括号优先级最高。',
     'muldiv-first': '❌ 先算乘除哦！',
-    'left-first': '❌ 从左到右依次计算哦！',
+    'left-first': '❌ 要先算左边的这一步哦！从左到右。',
+    'negative': '❌ 这样算会出现负数，我们还没学负数哦！',
+    'div-zero': '❌ 不能除以 0 哦！',
     'not-ready': '',
     'not-op': '',
   };
@@ -966,34 +968,40 @@ export default async function mount(container, ctx) {
       'no-paren': () => {
         const type = rnd(1, 6);
         if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
-        if (type === 2) return `${rnd(30, 90)} - ${rnd(5, 15)} - ${rnd(5, 15)}`;
+        if (type === 2) { const b = rnd(5, 15), c = rnd(5, 15); return `${rnd(Math.max(30, b + c), 90)} - ${b} - ${c}`; }
         if (type === 3) { const b = rnd(2, 9), q = rnd(2, 9); return `${b * q} ÷ ${b} + ${rnd(10, 50)}`; }
-        if (type === 4) return `${rnd(2, 9)} × ${rnd(2, 9)} - ${rnd(2, 9)}`;
+        if (type === 4) { const a = rnd(2, 9), b = rnd(2, 9); return `${a} × ${b} - ${rnd(2, Math.min(9, a * b - 1))}`; }
         if (type === 5) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(2, 9)} × ${rnd(2, 9)}`;
-        return `${rnd(10, 99)} - ${rnd(2, 9)} × ${rnd(2, 9)}`;
+        const b = rnd(2, 9), c = rnd(2, 9); return `${rnd(Math.max(10, b * c), 99)} - ${b} × ${c}`;
       },
       'with-paren': () => {
         const type = rnd(1, 3);
         if (type === 1) { const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9); return `(${a} + ${b}) × ${c}`; }
         if (type === 2) { const b = rnd(2, 9), q = rnd(2, 9), a = rnd(1, 5); return `(${b * q + a} - ${a}) ÷ ${b}`; }
-        const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9), d = rnd(2, 9);
-        return `(${a} + ${b}) × ${c} - ${d}`;
+        const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9);
+        return `(${a} + ${b}) × ${c} - ${rnd(2, Math.min(9, (a + b) * c - 1))}`;
       },
       'mul-div': () => {
         const type = rnd(1, 3);
         if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
         if (type === 2) { const b = rnd(2, 9), q = rnd(2, 9); return `${b * q} ÷ ${b} + ${rnd(10, 50)}`; }
-        return `${rnd(10, 99)} - ${rnd(2, 9)} × ${rnd(2, 9)}`;
+        const b = rnd(2, 9), c = rnd(2, 9); return `${rnd(Math.max(10, b * c), 99)} - ${b} × ${c}`;
       },
       'add-sub': () => {
         const type = rnd(1, 3);
-        if (type === 1) return `${rnd(30, 90)} - ${rnd(5, 15)} - ${rnd(5, 15)}`;
-        if (type === 2) return `${rnd(10, 50)} + ${rnd(10, 50)} - ${rnd(5, 30)}`;
+        if (type === 1) { const b = rnd(5, 15), c = rnd(5, 15); return `${rnd(Math.max(30, b + c), 90)} - ${b} - ${c}`; }
+        if (type === 2) { const a = rnd(10, 50), b = rnd(10, 50); return `${a} + ${b} - ${rnd(5, Math.min(30, a + b - 1))}`; }
         return `${rnd(10, 40)} + ${rnd(5, 30)} + ${rnd(5, 30)}`;
       },
     };
     const gen = GEN[level] || GEN['no-paren'];
-    m1LoadExpression(gen());
+    // ⭐ 年级防卫：三年级尚未学负数 → 随机题保证标准顺序下全程非负（源头已约束 + 兜底重试）
+    const allowNegative = getGradeConfig().allowNegative !== false;
+    let expr = gen();
+    if (!allowNegative) {
+      for (let tries = 0; tries < 30 && !evaluatesNonNegative(expr); tries++) expr = gen();
+    }
+    m1LoadExpression(expr);
   });
 
   $('#m1reset')?.addEventListener('click', () => {

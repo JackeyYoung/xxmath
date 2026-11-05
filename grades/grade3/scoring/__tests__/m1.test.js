@@ -3,6 +3,7 @@ import {
   parseExpression, fmtNum, tokensToString,
   computePriorityOps, computeDepths, canClickOp,
   computeStep, applyStep, cleanParens, tokensToMarkedHtml,
+  evaluatesNonNegative,
 } from '../m1.js';
 
 describe('m1 · parseExpression', () => {
@@ -112,11 +113,41 @@ describe('m1 · computeDepths', () => {
 });
 
 describe('m1 · canClickOp', () => {
-  it('纯加减：同级运算符从左到右，只有最左可点', () => {
+  it('纯加法：同级 + 满足结合律，两个 + 都可点', () => {
     const t = parseExpression('1 + 2 + 3');
     expect(canClickOp(t, 1).ok).toBe(true);     // 最左 + 可点
-    expect(canClickOp(t, 3).ok).toBe(false);    // 第二个 + 被左结合锁定
+    expect(canClickOp(t, 3).ok).toBe(true);     // 第二个 + 左边是 +，也允许
+  });
+
+  it('左边是 + 时允许先算右边的减号：8+4-2', () => {
+    const t = parseExpression('8 + 4 - 2');
+    expect(canClickOp(t, 1).ok).toBe(true);     // 8+4
+    expect(canClickOp(t, 3).ok).toBe(true);     // 4-2 左边是 +，允许
+  });
+
+  it('左边是 - 时只能先算左边：8-4+2', () => {
+    const t = parseExpression('8 - 4 + 2');
+    expect(canClickOp(t, 1).ok).toBe(true);     // 8-4
+    expect(canClickOp(t, 3).ok).toBe(false);    // 4+2 左边是 -，锁定
     expect(canClickOp(t, 3).reason).toBe('left-first');
+  });
+
+  it('左边是 × 时允许先算右边的除法：8×4÷2', () => {
+    const t = parseExpression('8 × 4 ÷ 2');
+    expect(canClickOp(t, 1).ok).toBe(true);
+    expect(canClickOp(t, 3).ok).toBe(true);     // 4÷2 左边是 ×，允许
+  });
+
+  it('负数防卫：减数大于被减数 → negative', () => {
+    const t = parseExpression('6 - 8');
+    expect(canClickOp(t, 1).ok).toBe(false);
+    expect(canClickOp(t, 1).reason).toBe('negative');
+  });
+
+  it('除零防卫：8÷0 → div-zero', () => {
+    const t = parseExpression('8 ÷ 0');
+    expect(canClickOp(t, 1).ok).toBe(false);
+    expect(canClickOp(t, 1).reason).toBe('div-zero');
   });
 
   it('减法左结合：15-9-8 只能点第一个 -', () => {
@@ -221,5 +252,22 @@ describe('m1 · tokensToMarkedHtml', () => {
     expect(html).toContain('<span class="step-part">');
     expect(html).toContain('12');
     expect(html).toContain('3');
+  });
+});
+
+describe('m1 · evaluatesNonNegative', () => {
+  it('全程非负 → true', () => {
+    expect(evaluatesNonNegative('45 - 18 - 15')).toBe(true);
+    expect(evaluatesNonNegative('6 × 8 - 20 ÷ 4')).toBe(true);
+    expect(evaluatesNonNegative('(3 + 6) ÷ (4 - 1)')).toBe(true);
+  });
+
+  it('中间/最终出现负数 → false', () => {
+    expect(evaluatesNonNegative('2 × 3 - 8')).toBe(false);
+    expect(evaluatesNonNegative('15 - 8 - 9')).toBe(false);
+  });
+
+  it('除零 → false', () => {
+    expect(evaluatesNonNegative('8 ÷ 0')).toBe(false);
   });
 });
