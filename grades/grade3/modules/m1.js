@@ -14,7 +14,7 @@ import {
   parseExpression, tokensToString, tokensToMarkedHtml,
   canClickOp, computeStep, evaluatesNonNegative,
 } from '../scoring/m1.js';
-import { getLifecycle, applyThemeVars, EASE, MOTION, DIMENSION, STATUS, SURFACE, prefersReducedMotion } from '../design/tokens.js';
+import { getLifecycle, applyThemeVars, EASE, MOTION, DIMENSION, STATUS, SURFACE, prefersReducedMotion, ensureMathTypoStyle } from '../design/tokens.js';
 import { gsap } from '../design/motion.js';
 import { COMBO } from '../../../core/ui/celebrate.js';
 import { getEncouragement } from '../../../core/ui/encourage.js';
@@ -171,15 +171,18 @@ function buildCss() {
 .b1-sheet.open { transform: translateY(0); }
 .b1-mask { position: fixed; inset: 0; z-index: 9994; background: rgba(15,23,42,.35); }
 
-/* ── C 位舞台：超大等宽 + 呼吸感间距 ── */
-.b1-board { position: relative; margin-top: 40px; margin-bottom: 8px; padding: 14px 10px 8px; border-radius: 16px; overflow: hidden;
-  font-family: 'Consolas', 'SF Mono', ui-monospace, monospace; }
+/* ── C 位舞台：超大数字 + 呼吸感间距（字体统一走 TYPOGRAPHY：.math-num/.math-op 与 --math-* 变量） ── */
+.b1-board { position: relative; margin-top: 40px; margin-bottom: 8px; padding: 14px 10px 8px; border-radius: 16px; overflow: hidden; }
 .b1-arcs  { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; z-index: 0; }
 .b1-rows  { position: relative; z-index: 1; display: flex; flex-direction: column; gap: ${D.rowGap}px; min-height: ${D.rowH}px; }
 .b1-row   { display: flex; align-items: center; height: ${D.rowH}px; flex: none; }
-.b1-cell  { display: inline-flex; align-items: center; justify-content: center; font-weight: 800; font-size: ${D.font}px; line-height: 1; font-variant-numeric: tabular-nums; user-select: none; -webkit-user-select: none; }
+.b1-cell  { display: inline-flex; align-items: center; justify-content: center; font-size: ${D.font}px; line-height: 1; user-select: none; -webkit-user-select: none; }
+/* 字体/字重/等宽数字由 .math-num / .math-op 工具类承载（TYPOGRAPHY 单一数据源），此处不再硬编码 */
 .b1-num   { width: ${D.numW}px; }
-.b1-op    { width: ${D.opW}px; border-radius: 10px; }
+.b1-op    { width: ${D.opW}px; border-radius: 10px;
+  /* ⭐ 运算符 0.95 倍光学缩比（与 .math-op 工具类同规；声明在同表后部压过 .math-op 的 0.95em——
+     em 参照父行字号，会丢 38px 基准，必须显式 calc） */
+  font-size: calc(${D.font}px * 0.95); }
 .b1-paren { width: ${D.parenW}px; }
 .b1-op.b1-clickable { cursor: pointer; }
 .b1-op.b1-clickable:hover { filter: brightness(1.15) drop-shadow(0 0 6px var(--b1-focus-ring)); }
@@ -191,10 +194,13 @@ function buildCss() {
 .b1-inputrow { display: flex; align-items: center; gap: 10px; height: ${D.rowH}px; flex: none;
   opacity: 0; pointer-events: none; transition: opacity .25s ease; }
 .b1-inputrow.b1-active { opacity: 1; pointer-events: auto; }
-.b1-eq { color: var(--b1-history); font-weight: 800; font-size: ${Math.round(D.font * 0.8)}px; }
+.b1-eq { color: var(--b1-history); font-family: var(--math-font-family, sans-serif); font-weight: var(--math-font-weight, 800);
+  font-variant-numeric: var(--math-font-variant-numeric, tabular-nums); font-size: ${Math.round(D.font * 0.8)}px; }
 .b1-answer { min-width: ${D.numW}px; height: ${D.rowH - 8}px; position: relative;
   display: inline-flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: ${D.font}px; color: var(--b1-init);
+  font-family: var(--math-font-family, sans-serif); font-weight: var(--math-font-weight, 800);
+  font-variant-numeric: var(--math-font-variant-numeric, tabular-nums);
+  font-size: ${D.font}px; color: var(--b1-init);
   border-bottom: 1.5px solid var(--b1-focus-ring); }
 .b1-answer::after { content: ''; position: absolute; right: 12px; bottom: 4px; width: 2.5px; height: 62%;
   background: var(--b1-focus); border-radius: 2px; animation: b1caret 1s steps(1) infinite; }
@@ -244,6 +250,9 @@ export default async function mount(container, ctx) {
   inputRow.style.display = '';
   container.querySelector('.b1-arrow')?.remove();
   answerEl.removeAttribute('data-empty');
+
+  // ⭐ 全局数学排版（TYPOGRAPHY）：:root 变量 + .math-num/.math-op 工具类（幂等，shell 已注则跳过）
+  ensureMathTypoStyle();
 
   // 样式注入（一次）
   if (!document.getElementById(STYLE_ID)) {
@@ -302,8 +311,11 @@ export default async function mount(container, ctx) {
   // ---------- 行构建（不可变行） ----------
   function makeCell(text, kind) {
     const s = document.createElement('span');
-    s.className = 'b1-cell b1-' + kind;
-    s.textContent = text;
+    // ⭐ 数学排版统一：数字/括号挂 .math-num，运算符挂 .math-op（TYPOGRAPHY 单一数据源）
+    s.className = 'b1-cell b1-' + kind + (kind === 'op' ? ' math-op' : ' math-num');
+    // ⭐ 减号渲染规范化：scoring 层 token 内部用 ASCII '-'（parseExpression 归一 + 判分依赖，不动），
+    //    显示层统一为数学减号 U+2212 '−'
+    s.textContent = (kind === 'op' && text === '-') ? '−' : text;
     return s;
   }
 

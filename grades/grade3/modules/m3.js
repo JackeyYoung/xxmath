@@ -123,7 +123,7 @@ export default async function mount(container, ctx) {
         </div>
         <div style="display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;">
           ${fracHtml(n1, d1)}
-          <span style="font-size:28px;color:var(--muted);font-weight:800;">?</span>
+          <span class="math-op" style="font-size:28px;color:var(--muted);">?</span>
           ${fracHtml(n2, d2)}
         </div>
         <div class="frac-cmp-options">
@@ -188,9 +188,9 @@ export default async function mount(container, ctx) {
         </div>
         <div class="frac-calc-row">
           ${fracHtml(n1, den)}
-          <span style="font-size:28px;color:var(--muted);font-weight:800;">${opSymbol}</span>
+          <span class="math-op" style="font-size:28px;color:var(--muted);">${opSymbol}</span>
           ${fracHtml(n2, den)}
-          <span style="font-size:28px;color:var(--muted);font-weight:800;">=</span>
+          <span class="math-op" style="font-size:28px;color:var(--muted);">=</span>
           <div style="display:inline-flex;flex-direction:column;align-items:center;">
             <input type="text" inputmode="decimal" class="frac-calc-input" id="fracNum" placeholder="?" min="0" max="20">
             <span style="width:60px;height:2.5px;background:var(--primary-d);margin:4px 0;border-radius:1px;"></span>

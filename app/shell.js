@@ -26,6 +26,7 @@ import { activeModules, registerActiveModule, unregisterActiveModule } from './a
 import { swapModule, unmountCurrentModule } from './lifecycle.js';
 import { GRADE_CONFIG, getGradeConfig } from './grade-config.js';
 import { registerGrade } from '../grades/registry.js';
+import { ensureMathTypoStyle } from '../grades/grade3/design/tokens.js';
 
 /* ⚠️ 对外再导出必须写成「先 import 再 export { ... }」。
    之前这里写的是 `export { navigate } from './router.js'` —— 那种语法只把名字转手导出，
@@ -41,7 +42,10 @@ export { GRADE_CONFIG, getGradeConfig };
 /* ============================================================
    7. 初始化
    ============================================================ */
-export function initShell() {  
+export function initShell() {
+  // ⭐ 全局数学排版（TYPOGRAPHY 单一数据源）：:root 变量 + .math-num/.math-op 一次性注入
+  ensureMathTypoStyle();
+
   // ⭐ 年级 loader 注册（组合根接线）：mountLesson 经 loadGrade 取模块单一事实源
   registerGrade('3', () => import('../grades/grade3/index.js'));
 

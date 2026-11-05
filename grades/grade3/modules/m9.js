@@ -16,7 +16,7 @@
    视觉参数全部来自 design/tokens.js，本文件零硬编码。
 */
 import * as M9Score from '../scoring/m9.js';
-import { getLifecycle, applyThemeVars, EASE, MOTION, GRID, STATUS, SURFACE } from '../design/tokens.js';
+import { getLifecycle, applyThemeVars, EASE, MOTION, GRID, STATUS, SURFACE, ensureMathTypoStyle } from '../design/tokens.js';
 import { gsap } from '../design/motion.js';
 import { COMBO } from '../../../core/ui/celebrate.js';
 import { getEncouragement } from '../../../core/ui/encourage.js';
@@ -45,11 +45,24 @@ function buildCss() {
   return `
 #m9display .b9-root { --vc-gap: 4px; }
 #m9display .vc-cell { transition: none; }
+/* ⭐ 数学排版统一（TYPOGRAPHY 单一数据源，经 :root 变量）：
+   #m9display 作用域覆盖 index.html 遗留的 monospace/700；零 DOM/class 改动，不触碰网格几何。
+   字号维持各自语义层级（数字 38 / 进位 22 / 商位行同 38），仅归一 family/weight/variant。 */
+#m9display .vc-cell, #m9display .vc-div-grid > div {
+  font-family: var(--math-font-family, sans-serif);
+  font-variant-numeric: var(--math-font-variant-numeric, tabular-nums); }
+#m9display .vc-cell { font-weight: var(--math-font-weight, 800); }
+#m9display .vc-div-grid > div { font-weight: var(--math-font-weight, 800); }
+/* 运算符与 .math-op 同规：0.95 倍 + 1px 光学下移（覆盖遗留 32px，与 m1 的 38×0.95 完全一致）。
+   ⭐ 不能写 0.95em —— em 参照父元素字号（此处父行无 38px），必须显式 calc */
+#m9display .vc-cell.op { font-size: calc(var(--math-size-l, 38px) * 0.95); transform: translateY(1px); }
 /* 答案槽：荧光绿细框、无底色、闪烁光标（输入由虚拟键盘认领，绝不弹原生键盘） */
 #m9display .b9-slot { min-width: 40px; height: 44px; padding: 0 6px;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1.5px solid ${S.ok}; border-radius: 8px; background: transparent;
-  font-weight: 700; color: var(--b1-init); position: relative;
+  font-family: var(--math-font-family, sans-serif); font-weight: var(--math-font-weight, 800);
+  font-variant-numeric: var(--math-font-variant-numeric, tabular-nums);
+  color: var(--b1-init); position: relative;
   box-shadow: 0 0 5px rgba(41,204,87,.22); }
 #m9display .b9-slot:empty::before { content: '?'; opacity: .3; }
 #m9display .b9-slot::after { content: ''; position: absolute; right: 5px; bottom: 8px;
@@ -84,6 +97,7 @@ export default async function mount(container, ctx) {
   if (!display || !aInput || !bInput || !opInput) return;
 
   ensureChromeStyle();
+  ensureMathTypoStyle();   // ⭐ 全局数学排版（TYPOGRAPHY，幂等）
   const keypad = getVirtualKeypad();
 
   // 样式注入 + 主题变量（跟随 <html data-theme>）

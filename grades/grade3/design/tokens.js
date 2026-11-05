@@ -120,6 +120,48 @@ export function prefersReducedMotion() {
   catch (e) { return false; }
 }
 
+/* 全局数学排版（单一数据源）────────────────────────────────
+   模块内禁止硬编码 math 字符的 font-family / font-weight / font-variant-numeric：
+   - CSS 侧用 var(--math-*) 变量（本文件 ensureMathTypoStyle 注入 :root）
+   - DOM 侧直接挂 .math-num / .math-op 工具类
+   字号分级：sizeL = C 位大数字（m1 算式行 / m9 竖式，与 DIMENSION.font、GRID 同值）；
+             sizeM = 次级结果条（calc-final 等）。模块自有语义字号（如 m9 进位 22px）
+             属局部层级，继续走各自 tokens，不在此强归一。 */
+export const TYPOGRAPHY = {
+  family: "'Inter', 'Helvetica Neue', Arial, sans-serif",
+  weight: 800,
+  fontVariantNumeric: 'tabular-nums',   // 强制数字等宽：多位数变化时零宽度抖动
+  sizeL: 38,
+  sizeM: 24,
+};
+
+const MATH_TYPO_STYLE_ID = 'math-typo-style';
+
+/* 幂等注入 :root 变量 + 两个基础工具类。shell.js 启动时调用一次；
+   m1/m9 mount 兜底调用（脱离 shell 独立挂载也能拿到）。Node/jsdom 外安全返回。 */
+export function ensureMathTypoStyle() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(MATH_TYPO_STYLE_ID)) return;
+  const el = document.createElement('style');
+  el.id = MATH_TYPO_STYLE_ID;
+  el.textContent = `
+:root {
+  --math-font-family: ${TYPOGRAPHY.family};
+  --math-font-weight: ${TYPOGRAPHY.weight};
+  --math-font-variant-numeric: ${TYPOGRAPHY.fontVariantNumeric};
+  --math-size-l: ${TYPOGRAPHY.sizeL}px;
+  --math-size-m: ${TYPOGRAPHY.sizeM}px;
+}
+/* 基础工具类：数字 / 运算符。运算符 0.95em + 1px 下移做光学居中微调 */
+.math-num { font-family: var(--math-font-family); font-weight: var(--math-font-weight);
+  font-variant-numeric: var(--math-font-variant-numeric); line-height: 1; }
+.math-op { font-family: var(--math-font-family); font-weight: var(--math-font-weight);
+  font-variant-numeric: var(--math-font-variant-numeric); line-height: 1;
+  font-size: 0.95em; transform: translateY(1px); }
+`;
+  document.head.appendChild(el);
+}
+
 /* 单元格配色（golden 标准判定 + 主题注入制）：dark 直接走 golden 默认色板；
    light 在此组装 palette 注入——light 色值只存在于本文件，golden 保持纯净。 */
 export function cellStyle({ state, fromResult, theme = currentTheme() } = {}) {
