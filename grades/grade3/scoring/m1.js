@@ -86,20 +86,31 @@ export function canClickOp(tokens, i) {
     if (hasMulDivAtSameDepth) return { ok: false, reason: 'muldiv-first' };
   }
 
-  // 左结合：同级运算符（同为乘除，或同为加减）若相邻（共享同一操作数），
-  // 必须先算最左的那个，否则 15-9-8 点第二个 '-' 会右结合成 15-(9-8)=14；
-  // 8÷4×2 同理（(8÷4)×2=4 而非 8÷(4×2)=1）。相邻 = 中间只隔一个操作数。
+  // 左结合：同级运算符（同为乘除，或同为加减）相邻（共享同一操作数）时——
+  //   左边是 '-' 或 '÷'：右结合会改变结果（15-9-8 点第二个 '-' 得 15-(9-8)=14；
+  //   8÷4×2 点第二个 '×' 得 8÷(4×2)=1），必须先算最左的那个；
+  //   左边是 '+' 或 '×'：满足结合律，先算右边结果不变（8+4-2、8×4÷2），放行。
   const tier = (op === '×' || op === '÷') ? 'muldiv' : 'addsub';
   const leftOp = tokens[i - 2];
   if (leftOp && leftOp.type === 'op' && depths[i - 2] === depth) {
     const leftTier = (leftOp.val === '×' || leftOp.val === '÷') ? 'muldiv' : 'addsub';
-    if (leftTier === tier) return { ok: false, reason: 'left-first' };
+    if (leftTier === tier && (leftOp.val === '-' || leftOp.val === '÷')) {
+      return { ok: false, reason: 'left-first' };
+    }
   }
 
   const left = tokens[i - 1], right = tokens[i + 1];
   if (!left || !right || left.type !== 'num' || right.type !== 'num') {
     return { ok: false, reason: 'not-ready' };
   }
+  // 负数 / 除零防卫：这一步的结果不能为负（尚未学负数），也不能除以 0
+  let result;
+  try {
+    result = computeStep(left.val, right.val, op);
+  } catch (e) {
+    return { ok: false, reason: 'div-zero' };
+  }
+  if (result < 0) return { ok: false, reason: 'negative' };
   return { ok: true, depth };
 }
 
@@ -148,6 +159,44 @@ export function cleanParens(tokens) {
     }
   }
   return result;
+}
+
+/* 按数学标准顺序（先括号、再乘除、再加减，同级左结合）逐步计算，
+   判断全程（每一步中间结果与最终结果）都不会出现负数。
+   三年级尚未学负数，随机出题用它兜底：返回 true 表示该算式安全。 */
+export function evaluatesNonNegative(str) {
+  let tokens = parseExpression(str);
+  if (!tokens.length) return false;
+
+  // 找"标准顺序下应先算"的运算符下标：最深层 → 同层先乘除 → 同级最左
+  const nextStep = () => {
+    const { depths, maxDepth } = computeDepths(tokens);
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < tokens.length; i++) {
+        const t = tokens[i];
+        if (t.type !== 'op' || depths[i] !== maxDepth) continue;
+        const isMulDiv = t.val === '×' || t.val === '÷';
+        if (pass === 0 ? !isMulDiv : isMulDiv) continue;
+        if (tokens[i - 1]?.type !== 'num' || tokens[i + 1]?.type !== 'num') continue;
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  while (tokens.length > 1) {
+    const i = nextStep();
+    if (i === -1) return false;   // 死锁（无合法步骤）
+    let result;
+    try {
+      result = computeStep(tokens[i - 1].val, tokens[i + 1].val, tokens[i].val);
+    } catch (e) {
+      return false;               // 除以 0
+    }
+    if (result < 0) return false; // 出现负数
+    tokens = cleanParens(applyStep(tokens, i, result));
+  }
+  return true;
 }
 
 /* 生成"把某段用括号 + 高亮包起来"的 HTML（不转义，交给调用方） */

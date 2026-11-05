@@ -7,6 +7,7 @@ export const GRADE_CONFIG = {
   '3': {
     id: '3',
     name: '三年级',
+    allowNegative: false,   // 三年级尚未学习负数：出题/作答都禁止出现负的中间结果
     islands: [
       { id: 'm1',  icon: '🎯', name: '混合运算', color: 'blue',   desc: '先算乘除，后算加减' },
       { id: 'm2',  icon: '🧱', name: '铺地砖',   color: 'green',  desc: '一块一块铺满' },

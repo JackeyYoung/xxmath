@@ -90,9 +90,9 @@ describe('m1 · Brilliant 重构冒烟', () => {
     expect(rows.length).toBe(1);
     // ( 3 + 6 ) ÷ ( 4 - 1 ) = 11 个 token
     expect(rows[0].querySelectorAll('.b1-cell').length).toBe(11);
-    // 括号优先：可点的只有内层的 + 和 -，÷ 与外层被锁
-    expect(rows[0].querySelectorAll('.b1-op.b1-clickable').length).toBe(2);
-    expect(rows[0].querySelectorAll('.b1-op.b1-locked').length).toBe(1);
+    // ⭐ 所有运算符都可点（点错给提示，不再静默锁定为"点了没反应"）
+    expect(rows[0].querySelectorAll('.b1-op.b1-clickable').length).toBe(3);
+    expect(rows[0].querySelectorAll('.b1-op.b1-locked').length).toBe(0);
     // ⭐ 场景化：无原生输入框
     expect(container.querySelector('input.b1-input')).toBeNull();
     expect(container.querySelector('#m1answer')).toBeTruthy();
@@ -113,6 +113,17 @@ describe('m1 · Brilliant 重构冒烟', () => {
     // 键盘按键：点 9 → 答案槽显示 9
     pressDigit('9');
     expect(container.querySelector('#m1answer').textContent).toBe('9');
+    cleanup();
+  });
+
+  it('点错运算符：提示区给出原因，而不是静默无反应', async () => {
+    const cleanup = await mount(container, ctx);
+    const row = container.querySelector('.b1-row');
+    // (3+6)÷(4-1)：外层 ÷ 不能先算（括号内优先）——点它应给提示而非"没反应"
+    const outerDiv = [...row.querySelectorAll('.b1-op')].find(op => op.textContent === '÷');
+    outerDiv.click();
+    expect(container.querySelector('#m1fb').textContent).toContain('先算括号里的');
+    expect(container.querySelector('#m1inputrow').style.display).toBe('none');
     cleanup();
   });
 
@@ -184,17 +195,18 @@ describe('m1 · Brilliant 重构冒烟', () => {
 
     // 继续完成整题（÷ 无进位陷阱：(4-1) 内层 - → 3 → ÷ → 3）
     await wait(2300);   // 等合并动画 + 留白完成
-    const clickable = container.querySelectorAll('.b1-op.b1-clickable');
-    // 剩下 ÷（外层，此时括号已消）与内层 -：内层 - 可点
-    expect(clickable.length).toBeGreaterThan(0);
-    clickable[0].click();
+    // ⭐ 所有运算符都可点，但要找"当前可算"的那个（title 区分）；点错的会给提示、不推进
+    const canOp = () => [...container.querySelectorAll('.b1-op.b1-clickable')].find(op => op.title === '点我先算这一步');
+    const firstOp = canOp();
+    expect(firstOp).toBeTruthy();
+    firstOp.click();
     pressDigit('3');
     pressConfirm();
     await wait(2300);
     // 还剩 ÷：再一步
-    const clickable2 = container.querySelectorAll('.b1-op.b1-clickable');
-    if (clickable2.length) {
-      clickable2[0].click();
+    const nextOp = canOp();
+    if (nextOp) {
+      nextOp.click();
       pressDigit('3');
       pressConfirm();
       await wait(2300);
