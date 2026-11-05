@@ -136,7 +136,7 @@ const M4View = defineComponent({
     <select v-model="unitKey" @change="notify" aria-label="单位">
       <option v-for="u in units" :key="u.key" :value="u.key">{{ u.name }}</option>
     </select>
-    <span style="font-size:16px;font-weight:700;color:var(--muted);">= ?</span>
+    <span class="math-op" style="font-size:16px;color:var(--muted);">= ?</span>
   </div>
 
   <div class="result-list">
