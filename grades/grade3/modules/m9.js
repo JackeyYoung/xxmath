@@ -230,6 +230,7 @@ export default async function mount(container, ctx) {
     root.className = 'vc-div-grid b9-root';
     root.style.gridTemplateColumns = `${GRID.labelW}px ${GRID.sepW}px repeat(${n}, ${GRID.digitW}px)`;
     root.style.gridAutoRows = `${GRID.rowH}px`;
+    root.style.setProperty('--vc-div-w', `${n * GRID.digitW}px`);   // 厂字"一横"跨被除数的宽度
     display.appendChild(root);
 
     // 行1：商
@@ -237,7 +238,22 @@ export default async function mount(container, ctx) {
     // 行2：除号 | 分隔 | 被除数
     const divisorCell = root.appendChild(makeCell('divisor', 2, 1, 'vc-div-divisor'));
     divisorCell.textContent = M9.b;
-    root.appendChild(makeCell('sep', 2, 2, 'vc-div-sep'));
+    const sepCell = root.appendChild(makeCell('sep', 2, 2, 'vc-div-sep'));
+    // 厂字"撇"(丿)：绝对定位 SVG 路径，从被除数左上角向左下带弧度（控制点偏左形成弧）
+    const pieSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    pieSvg.setAttribute('class', 'vc-div-pie');
+    pieSvg.setAttribute('viewBox', `0 0 ${GRID.sepW} ${GRID.rowH}`);
+    pieSvg.setAttribute('preserveAspectRatio', 'none');
+    pieSvg.setAttribute('aria-hidden', 'true');
+    const piePath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const px0 = GRID.sepW, pcx = Math.round(GRID.sepW * 0.33), pcy = Math.round(GRID.rowH * 0.44), py1 = Math.round(GRID.rowH * 0.80);
+    piePath.setAttribute('d', `M ${px0} 0 Q ${pcx} ${pcy} 0 ${py1}`);
+    piePath.setAttribute('fill', 'none');
+    piePath.setAttribute('stroke', 'currentColor');
+    piePath.setAttribute('stroke-width', '2');
+    piePath.setAttribute('stroke-linecap', 'round');
+    pieSvg.appendChild(piePath);
+    sepCell.appendChild(pieSvg);
     for (let i = 0; i < n; i++) {
       const dCell = root.appendChild(makeCell(`d-${i}`, 2, 3 + i));
       dCell.textContent = aStr[i];
