@@ -272,6 +272,8 @@ export default async function mount(container, ctx) {
   let m1StageCy = 0;   // 当前平移量（布局位置 = rect.top - cy）
   function m1CenterStage() {
     if (!cardEl || !board) return;
+    // ⭐ Aji 聊天舱展开时让位管线归它接管（两套 transform 同写 y 会互相覆盖）
+    if (aji.stageOwned('m1')) return;
     const vv = window.visualViewport;
     const kb = vv ? Math.max(0, window.innerHeight - vv.height) : 0;
     const bandTop = 64;                                   // 页头高度
@@ -291,6 +293,13 @@ export default async function mount(container, ctx) {
   window.visualViewport?.addEventListener('resize', m1OnStageReflow);
   window.visualViewport?.addEventListener('scroll', m1OnStageReflow);
   window.addEventListener('resize', m1OnStageReflow);
+  // ⭐ 把舞台交给 Aji：聊天舱展开时在「页头 ~ 舱体上缘」带内居中，收起时交还 m1CenterStage
+  //    ⚠️ 交还前必须重置 m1StageCy 记忆——Aji 在背后移动过元素，
+  //    模块若仍认为"已居中"会 early-return，算式永远卡在上移位置收不回来。
+  aji.registerStage({
+    moduleId: 'm1', el: board, extra: [$('#m1fb')], gap: 20,
+    onRest: () => { m1StageCy = NaN; m1CenterStage(); },
+  });
 
   // ---------- 主题（跟随 <html data-theme> 实时切换） ----------
   let LC = getLifecycle();
@@ -1383,6 +1392,7 @@ export default async function mount(container, ctx) {
     disarmOutsideConfirm();
     m1SettleRecheck();   // ⭐ 心流守护（定时器/文档监听/微光）随卸载无痕退场
     aji.hideToast();     // ⭐ 防旧计时器在后台触发
+    aji.clearStage('m1');   // ⭐ 释放让位接管（防旧模块的舞台对象滞留）
     window.visualViewport?.removeEventListener('resize', m1OnStageReflow);
     window.visualViewport?.removeEventListener('scroll', m1OnStageReflow);
     window.removeEventListener('resize', m1OnStageReflow);
