@@ -16,14 +16,13 @@
    视觉参数全部来自 design/tokens.js，本文件零硬编码。
 */
 import * as M9Score from '../scoring/m9.js';
-import { getLifecycle, applyThemeVars, EASE, MOTION, GRID, STATUS, SURFACE, ensureMathTypoStyle } from '../design/tokens.js';
+import { getLifecycle, applyThemeVars, EASE, MOTION, GRID, STATUS, SURFACE, SOFT_GLOW, ensureMathTypoStyle } from '../design/tokens.js';
 import { gsap } from '../design/motion.js';
-import { COMBO } from '../../../core/ui/celebrate.js';
-import { getEncouragement } from '../../../core/ui/encourage.js';
 import { takeawayLoad } from '../../../core/takeaway.js';
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getVirtualKeypad } from '../../../core/ui/virtual-keypad.js';
+import { getKoji } from '../../../core/ui/koji.js';
 import { ensureChromeStyle } from '../../../core/ui/brilliant-chrome.js';
 
 export const meta = {
@@ -68,8 +67,11 @@ function buildCss() {
 #m9display .b9-slot::after { content: ''; position: absolute; right: 5px; bottom: 8px;
   width: 2px; height: 55%; background: ${S.ok}; border-radius: 1px; animation: b9caret 1s steps(1) infinite; }
 @keyframes b9caret { 50% { opacity: 0; } }
-#m9display .b9-slot.b9-wrong { border-color: ${S.bad}; box-shadow: 0 0 7px rgba(239,68,68,.35); animation: b9shake .3s; }
-@keyframes b9shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+/* ⭐ 心流克制（答错静默：无红、无抖、无弹窗、不清数字）。
+   全模块唯一的"指引色"：求助 / 终局静置 45 秒后，用主题暖黄 15% 微光（SOFT_GLOW）
+   轻照出错格 —— inset 铺满 + 柔角，绝不出现红色 */
+#m9display .b9-glow { box-shadow: inset 0 0 0 9999px ${SOFT_GLOW}; border-radius: 8px; transition: box-shadow .8s ease; }
+#m9display .b9-editable { cursor: pointer; }
 #m9display .b9-colmark { box-shadow: inset 0 -3px 0 var(--b1-focus-ring); border-radius: 4px; }
 #m9display .b9-placeholder { color: var(--b1-placeholder); font-size: 15px; padding: 18px 6px; text-align: center; }
 `;
@@ -90,7 +92,6 @@ export default async function mount(container, ctx) {
   const aInput  = $('#m9a');
   const bInput  = $('#m9b');
   const opInput = $('#m9op');
-  const stepBtn = $('#m9step');
   const resetBtn = $('#m9reset');
   const fbEl = $('#m9fb');
   const cardEl = container.querySelector('.b9-card');
@@ -98,7 +99,35 @@ export default async function mount(container, ctx) {
 
   ensureChromeStyle();
   ensureMathTypoStyle();   // ⭐ 全局数学排版（TYPOGRAPHY，幂等）
+  const koji = getKoji();  // ⭐ Koji 交互助教（主动式浮条 = 唯一求助入口）
   const keypad = getVirtualKeypad();
+
+  /* ---------- 算式舞台视觉居中 + 键盘避让（与 m1 同规） ─────────────────────
+     标题下线后，主舞台（#m9display）占据「页头以下 ~ 软键盘以上」可视带的正中。
+     平移对象 = 舞台(#m9display) + 其下反馈行：同进退互不遮挡，卡片内 fixed 抽屉不受影响。 ---------- */
+  let m9StageCy = 0;   // 当前平移量（布局位置 = rect.top - cy）
+  function m9CenterStage() {
+    if (!cardEl || !display) return;
+    const vv = window.visualViewport;
+    const kb = vv ? Math.max(0, window.innerHeight - vv.height) : 0;
+    const bandTop = 64;                                   // 页头高度
+    const bandBottom = window.innerHeight - kb - 12;
+    // ⭐ 布局位置用 offsetTop 链计算（对 transform 免疫）——rect.top 在 gsap 补间中途读数会漂移
+    let el = display, docTop = 0;
+    while (el && el !== document.body) { docTop += el.offsetTop; el = el.offsetParent; }
+    const stageTop = docTop - (window.scrollY || 0);
+    const stageH = display.offsetHeight || GRID.rowH * 2;
+    const targetTop = Math.max(bandTop, (bandTop + bandBottom) / 2 - stageH / 2);
+    const delta = Math.round(targetTop - stageTop);
+    if (delta === m9StageCy) return;
+    m9StageCy = delta;
+    gsap.to([display, fbEl].filter(Boolean), { y: delta, duration: 0.3, ease: EASE.entry, overwrite: 'auto' });
+  }
+  const m9OnStageReflow = () => m9CenterStage();
+  window.visualViewport?.addEventListener('resize', m9OnStageReflow);
+  window.visualViewport?.addEventListener('scroll', m9OnStageReflow);
+  window.addEventListener('resize', m9OnStageReflow);
+
 
   // 样式注入 + 主题变量（跟随 <html data-theme>）
   if (!document.getElementById(STYLE_ID)) {
@@ -125,6 +154,8 @@ export default async function mount(container, ctx) {
   const M9 = {
     a: 348, b: 176, op: '+', step: -1, waitingFor: null, filled: {}, submitting: false,
     broughtDown: new Set(),   // ⭐ 已播过"落位"动画的步骤（防重绘重复动画）
+    history: {},              // ⭐ 探究式放行：key → { expected, actual, isCorrect, cellKey, step, type }
+    recheck: null,            // ⭐ 终局回溯：{ firstWrongKey }——放弃时才结算为错
   };
 
   const getAddSubMaxLen = () => M9Score.getAddSubMaxLen(M9.a, M9.b, M9.op);
@@ -428,21 +459,23 @@ export default async function mount(container, ctx) {
 
     // 反馈文案
     if (M9.step < 0) {
-      setFeedback('点击「下一步」，开始计算');
+      setFeedback('点击竖式中的待填格，开始计算 👆');
     } else if (M9.waitingFor) {
-      const label = {
-        carry: '✏️ 请填写进位/借位', result: '✏️ 请填写这一位的得数', quotient: '✏️ 请填写这一位的商', product: '✏️ 请填写乘积', remainder: '✏️ 请填写余数',
-      }[M9.waitingFor] || '✏️ 请填写';
-      setFeedback(label, '');
+      if (M9.recheck) {
+        // ⭐ 终局回溯：柔声提示（无 error 档 → 无红、无缩略条），任何重绘都保持这句话
+        setFeedback(RECHECK_HINT);
+      } else {
+        const label = {
+          carry: '✏️ 请填写进位/借位', result: '✏️ 请填写这一位的得数', quotient: '✏️ 请填写这一位的商', product: '✏️ 请填写乘积', remainder: '✏️ 请填写余数',
+        }[M9.waitingFor] || '✏️ 请填写';
+        setFeedback(label, '');
+      }
     } else if (M9.step >= m9GetMaxSteps()) {
-      setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
+      // ⭐ 终局回溯态：保持柔声提示，绝不被"算出来啦"覆盖
+      if (M9.recheck) setFeedback(RECHECK_HINT);
+      else setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
     } else {
       setFeedback(`✅ 已算到第 ${M9.step + 1} 步`, 'ok');
-    }
-
-    if (stepBtn) {
-      stepBtn.disabled = !!M9.waitingFor;
-      stepBtn.style.opacity = M9.waitingFor ? '.5' : '';
     }
   }
 
@@ -501,6 +534,21 @@ export default async function mount(container, ctx) {
     mountSlot();
   }
 
+  /* ⭐ 探究式放行：把用户填写的值按标准答案的位数右对齐拆分。
+     渲染永远用用户输入（M9.filled），绝不用标准答案（steps[idx].prod/rem）兜底覆盖。 */
+  function splitFilled(key, standardVal) {
+    const v = M9.filled[key];
+    if (v == null) return null;
+    const s = String(v);
+    const len = String(standardVal).length;
+    const arr = new Array(len).fill('');
+    for (let i = 0; i < len; i++) {
+      const si = s.length - len + i;
+      if (si >= 0) arr[i] = s[si];
+    }
+    return arr;
+  }
+
   function refreshDiv() {
     const { steps, n } = grid.meta;
     if (!steps.length) { unmountSlot(); return; }
@@ -538,13 +586,14 @@ export default async function mount(container, ctx) {
     });
 
     steps.forEach((s, idx) => {
-      // 乘积：填过 → 被消耗档（减数）
-      const prodDigits = String(s.prod).split('');
-      prodDigits.forEach((_, i) => {
+      // 乘积：填过 → 被消耗档（减数）。⭐ 渲染用户输入，绝不用标准答案 s.prod 覆盖
+      const prodDigits = splitFilled(`product-${idx}`, s.prod);
+      const prodLen = String(s.prod).length;
+      for (let i = 0; i < prodLen; i++) {
         const el = grid.cells.get(`p-${idx}-${i}`);
-        setCellText(el, M9.filled[`product-${idx}`] != null ? prodDigits[i] : '');
-        setTier(el, M9.filled[`product-${idx}`] != null ? 'consumed' : 'init');
-      });
+        setCellText(el, prodDigits ? prodDigits[i] : '');
+        setTier(el, prodDigits ? 'consumed' : 'init');
+      }
 
       // 减法线：乘积落位后浮现
       const ln = grid.cells.get(`ln-${idx}`);
@@ -555,15 +604,16 @@ export default async function mount(container, ctx) {
       }
 
       // 中间余数行：正在供数的行（idx === curStep-1 且未完成）= 当前工作值 → 亮黄；
-      // 一旦算出新余数（步骤完成）→ 立刻褪成极暗灰
+      // 一旦算出新余数（步骤完成）→ 立刻褪成极暗灰。⭐ 渲染用户输入，绝不用 s.rem 覆盖
       if (idx < steps.length - 1) {
-        const remDigits = String(s.rem).split('');
-        const filled = M9.filled[`remainder-${idx}`] != null;
-        remDigits.forEach((_, i) => {
+        const remDigits = splitFilled(`remainder-${idx}`, s.rem);
+        const filled = remDigits != null;
+        const remLen = String(s.rem).length;
+        for (let i = 0; i < remLen; i++) {
           const el = grid.cells.get(`r-${idx}-${i}`);
           setCellText(el, filled ? remDigits[i] : '');
           setTier(el, filled ? (idx === curStep - 1 && !done ? 'focus' : 'consumed') : 'init');
-        });
+        }
         // 落位格：属于当前工作值 → 亮黄
         const bd = grid.cells.get(`bd-${idx}`);
         if (bd) {
@@ -573,15 +623,16 @@ export default async function mount(container, ctx) {
       }
     });
 
-    // 末步余数（最终结果的一部分）→ 历史档
+    // 末步余数（最终结果的一部分）→ 历史档。⭐ 渲染用户输入，绝不用 last.rem 覆盖
     const last = steps[steps.length - 1];
-    const finalDigits = String(last.rem).split('');
-    const finalFilled = M9.filled[`remainder-${steps.length - 1}`];
-    finalDigits.forEach((_, i) => {
+    const finalDigits = splitFilled(`remainder-${steps.length - 1}`, last.rem);
+    const finalFilled = finalDigits != null;
+    const finalLen = String(last.rem).length;
+    for (let i = 0; i < finalLen; i++) {
       const el = grid.cells.get(`rf-${i}`);
-      setCellText(el, finalFilled != null ? finalDigits[i] : '');
-      setTier(el, finalFilled != null ? 'history' : 'init');
-    });
+      setCellText(el, finalFilled ? finalDigits[i] : '');
+      setTier(el, finalFilled ? 'history' : 'init');
+    }
 
     // 输入框：只有 waitingFor 时挂载（绿细框，绝无杂乱底色）
     if (M9.waitingFor && target) mountSlot();
@@ -703,18 +754,20 @@ export default async function mount(container, ctx) {
   function setFeedback(html, type) {
     if (!fbEl) return;
     fbEl.innerHTML = html;
-    fbEl.className = 'feedback' + (type ? ' ' + type : '');
+    // ⭐ 保留 b1-hint 弱化档（模板语义：提示语恒安静；ok/error 才切换强调色）
+    fbEl.className = 'feedback b1-hint' + (type ? ' ' + type : '');
     if (type === 'ok' || type === 'error') {
       const isOk = type === 'ok';
       ctx.showThumbBar({
         text: html.replace(/<[^>]+>/g, '').replace(/^[✓❌🎉]\s*/, ''),
         ok: isOk,
+        // ⭐ 状态 A（终局正确）：按钮「下一题」→ 直接换题
+        nextLabel: '下一题',
         onNext: () => {
           if (M9.step >= m9GetMaxSteps()) {
             $('#m9random')?.click();
-          } else {
-            $('#m9step')?.click();
           }
+          // 过程中的「继续」：推进由 700ms 定时器接手、键盘已就位，无需额外动作
         }
       });
     }
@@ -725,6 +778,7 @@ export default async function mount(container, ctx) {
     M9.waitingFor = null;
     disarmOutsideConfirm();
     keypad.hide();
+    koji.hideToast();   // ⭐ 终局：Koji 使命完成，退场
     m9Render();
     setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
     emitUI('CORRECT', { moduleId: 'm9' });
@@ -741,24 +795,18 @@ export default async function mount(container, ctx) {
     }
   }
 
-  /* ---- 估算（先估算再动笔） ---- */
-  const M9_ESTIMATE = { passed: false };
-
-  function m9ShowEstimateBox() {
-    const box = $('#m9EstimateBox');
-    const opts = $('#m9EstimateOptions');
-    const fb = $('#m9EstimateFeedback');
-    if (!box || !opts) return;
-
+  /* ---- 估算（先估算再动笔）→ 下沉为 Koji 对话内容 ----
+     强制估算弹窗已下线：学生点击待填格直接开算，绝不阻断。
+     常规态 Koji 浮条轻声问「要不要先估一估」——点了才有估算对话卡片，
+     不点就完全放行（估算无记录/加分业务，旧的闸门状态一并废弃）。 */
+  function m9EstimateData() {
     const a = M9.a, b = M9.b, op = M9.op;
     let exact;
     if (op === '+') exact = a + b;
     else if (op === '−') exact = a - b;
     else if (op === '×') exact = a * b;
     else exact = Math.floor(a / b);
-
-    const roundTo = 100;
-    const base = Math.floor(exact / roundTo) * roundTo;
+    const base = Math.floor(exact / 100) * 100;
     const options = [
       { min: base - 100, max: base, label: `${base - 100}~${base}` },
       { min: base, max: base + 100, label: `${base}~${base + 100}` },
@@ -766,48 +814,47 @@ export default async function mount(container, ctx) {
     ];
     options.sort(() => Math.random() - 0.5);
     const correctIdx = options.findIndex(o => exact >= o.min && exact <= o.max);
+    return { exact, options, correctIdx };
+  }
 
-    opts.innerHTML = options.map((o, i) => `<button class="priority-opt" data-idx="${i}">${o.label}</button>`).join('');
-    fb.textContent = ''; fb.className = 'priority-feedback';
-
-    opts.querySelectorAll('.priority-opt').forEach((btn, i) => {
-      btn.addEventListener('click', () => {
-        const isCorrect = (i === correctIdx);
-        opts.querySelectorAll('.priority-opt').forEach(b => b.classList.remove('chosen', 'wrong', 'correct'));
-        btn.classList.add('chosen', isCorrect ? 'correct' : 'wrong');
-
-        if (isCorrect) {
-          fb.textContent = `✓ 对！精确结果是 ${exact}。开始一步步计算吧！`;
-          fb.className = 'priority-feedback ok';
-          M9_ESTIMATE.passed = true;
-          setTimeout(() => {
-            box.style.display = 'none';
-            m9Render();
-            setFeedback('✅ 估算正确！「下一步」开始计算。', 'ok');
-            M9.step = 0;
-            m9PromptCurrentStep();
-          }, 800);
-        } else {
-          fb.textContent = `❌ 再想想——精确结果在 ${options[correctIdx].label} 之间`;
-          fb.className = 'priority-feedback error';
-          setTimeout(() => btn.classList.remove('chosen', 'wrong'), 1200);
-        }
-      });
+  /* Koji 估算对话（聊天舱消息流）：推送区间选项消息，学生点选后
+     以"用户气泡"落史，再追加一条揭晓消息——无对错审判，无阻断 */
+  function m9OpenEstimateDialog() {
+    const { exact, options, correctIdx } = m9EstimateData();
+    if (!Number.isFinite(exact)) {
+      koji.sendMessage({ type: 'estimate', title: '先估一估', content: '先心里有数，再动笔不容易错。' });
+      return;
+    }
+    koji.sendMessage({
+      type: 'estimate',
+      title: '先估一估',
+      content: `<b>${M9.a} ${M9.op} ${M9.b}</b> 的得数大概是多少？选一个区间试试：`,
+      actions: options.map((o, i) => ({
+        text: o.label,
+        onClick: () => {
+          const picked = i === correctIdx;
+          koji.sendMessage({
+            type: 'estimate',
+            title: picked ? '✓ 对！' : '精确结果在这里',
+            content: picked
+              ? `精确结果是 <b>${exact}</b>——和你想的一样吗？开始一步步计算吧！`
+              : `精确结果是 <b>${exact}</b>，落在 <b>${options[correctIdx].label}</b> 之间。心里有数了就开始吧！`,
+          });
+        },
+      })),
     });
-    box.style.display = 'block';
   }
 
-  function m9HideEstimateBox() {
-    const box = $('#m9EstimateBox');
-    if (box) box.style.display = 'none';
-  }
-
-  function m9NextStep() {
-    if (M9.waitingFor) { setFeedback('请先填写当前格子哦', 'error'); return; }
-    if (M9.step === -1 && !M9_ESTIMATE.passed) { m9ShowEstimateBox(); return; }
+  /* ⭐ 统一点击心智（与 m1 一致，无「下一步」按钮）：
+     点击竖式中的任意待填格 / 运算符 → 直接进入输入态（键盘弹起）。
+     引擎按依赖链顺序提问并自动推进；估算只活在 Koji 里，开算绝不阻断。 */
+  function onGridClick(e) {
+    if (M9.submitting || M9.recheck) return;         // 回溯期的格子点击归 editable 管线
+    if (grid && grid.kind === 'div' && !grid.meta.steps?.length) return;   // a<b 占位无过程
+    if (M9.waitingFor) return;                        // 已在输入态：键盘已就位
     const maxSteps = m9GetMaxSteps();
-    if (M9.step >= maxSteps) return;
-    M9.step++;
+    if (M9.step >= maxSteps) return;                  // 已完成
+    M9.step = Math.max(0, M9.step);
     m9PromptCurrentStep();
   }
 
@@ -916,15 +963,224 @@ export default async function mount(container, ctx) {
     return true;
   }
 
-  function highlightM9WrongHint() {
-    container.querySelectorAll('#m9display .b9-colmark').forEach(el => {
-      el.classList.add('explore-highlight');
-      setTimeout(() => el.classList.remove('explore-highlight'), 1200);
+  /* ---------- 终局回溯（探究式，无倒计时）────────────────────
+     过程全程放行：错误值照常写入 M9.filled 并继续往下进位/相乘/求余，
+     M9.history 记录每一步 expected/actual/isCorrect（界面绝不明示）。
+     只有当"最后一步填完、最终得数与标准答案不符"时：
+     ① 提示语平滑切换为柔声的一句（无 error 档 → 无红、无缩略条）；
+     ② 系统静默等待：静置 45 秒（MOTION.recheckIdle，任何动作都重新起算）
+        或用户点开「不会做？点我看提示」求助 —— 才用主题暖黄 15%（SOFT_GLOW）
+        包住 M9.history 里第一个 isCorrect:false 的格子；
+     ③ 点击高亮格 → 级联重置：删掉该步及之后的所有键，重新填写；
+        一直不改就不催、不判 0，只有主动换题/放弃才结算并记为错。 ---------- */
+  const RECHECK_HINT = '最终的得数好像不对，我们一起回头看看？';
+
+  // ---------- Koji 主动式心流助教（唯一求助入口 = 右下角浮条，无任何显性按钮） ----------
+  const KOJI_HINT_CONTENT = '点击竖式中的待填格，直接输入。得数、进位、借位、商、余数都由你来填——系统不会替你判断对错，跟着竖式的节奏一步步来就好。';
+  const KOJI_TOAST_NORMAL = '做之前，要不要先估一估得数大概是多少？';   // 常规态（空闲 35s）→ 估算对话卡片
+  const KOJI_TOAST_RECHECK = '卡住了吗？需要我讲讲这一步吗？'; // 回溯期（空闲 20s）
+  function m9KojiOpen() {
+    // ⭐ 结构化消息推入 Koji 聊天流（错误回顾类型）
+    koji.sendMessage({
+      type: 'error_review',
+      title: '这一步怎么想？',
+      content: KOJI_HINT_CONTENT,
+      actions: [{ text: '我懂了', type: 'close' }],
     });
+    if (M9.recheck && !M9.submitting) m9ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错格
+  }
+  let recheckTimer = null;
+  let recheckActivityArmed = false;
+  let recheckGlowEl = null;
+
+  /* 逻辑 key → 所属 step（级联重置用：删除该步及之后的键） */
+  function m9StepOfKey(key) {
     if (M9.op === '÷') {
-      const divisor = grid?.cells.get('divisor');
-      if (divisor) { divisor.classList.add('explore-highlight'); setTimeout(() => divisor.classList.remove('explore-highlight'), 1200); }
+      const m = key.match(/^(quotient|product|remainder)-(\d+)$/);
+      return m ? +m[2] : -1;
     }
+    const m = key.match(/^(result|carry)-(\d+)$/);
+    if (!m) return -1;
+    const i = +m[2];
+    if (M9.op === '×') return i;                 // 乘：col 即 step
+    return getAddSubMaxLen() - 1 - i;            // 加减：curI = maxLen-1-step
+  }
+
+  /* 第一个错误的历史项（含 key） */
+  function m9FirstWrong() {
+    for (const k of Object.keys(M9.history)) {
+      if (!M9.history[k].isCorrect) return { key: k, ...M9.history[k] };
+    }
+    return null;
+  }
+  function m9HasAnyWrong() { return !!m9FirstWrong(); }
+
+  function m9EnterRecheck() {
+    const fw = m9FirstWrong();
+    M9.recheck = { firstWrongKey: fw ? fw.key : null };
+    setFeedback(RECHECK_HINT);   // ⭐ 直接柔声提示（此时 waitingFor=null，不能依赖 m9Render 分支）
+    // ⭐ 状态 B（终局回溯）：Thumb Bar「去修改」+「看答案」（Koji 浮条绝不在此阶段出现）
+    koji.hideToast();
+    ctx.showThumbBar({
+      text: RECHECK_HINT,
+      ok: false,
+      nextLabel: '去修改',
+      onNext: () => m9GoFix(),
+      retryLabel: '看答案',
+      onRetry: () => m9GiveUp(),
+    });
+    armRecheckTimer();
+    armRecheckActivity();
+    m9ArmEditable();   // ⭐ 全盘可编辑：所有已填格子恢复可点击
+  }
+
+  function armRecheckTimer() {
+    if (recheckTimer) clearTimeout(recheckTimer);
+    recheckTimer = setTimeout(() => { recheckTimer = null; m9ShowSoftGlow(); }, MOTION.recheckIdle * 1000);
+  }
+
+  /* 静置守护：回溯未决期间，用户的任何动作都让 45 秒重新起算 */
+  function onRecheckActivity() {
+    if (!M9.recheck) { disarmRecheckActivity(); return; }
+    armRecheckTimer();
+  }
+  function armRecheckActivity() {
+    if (recheckActivityArmed) return;
+    recheckActivityArmed = true;
+    document.addEventListener('pointerdown', onRecheckActivity, true);
+    document.addEventListener('keydown', onRecheckActivity, true);
+  }
+  function disarmRecheckActivity() {
+    recheckActivityArmed = false;
+    document.removeEventListener('pointerdown', onRecheckActivity, true);
+    document.removeEventListener('keydown', onRecheckActivity, true);
+  }
+
+  /* 微光：只给第一个错误格子加视觉引导（点击行为由 editable 统一处理） */
+  function m9ShowSoftGlow() {
+    m9ClearSoftGlow();
+    if (!M9.recheck) return;
+    const fw = m9FirstWrong();
+    const el = fw && grid?.cells.get(fw.cellKey);
+    if (!el) return;
+    el.classList.add('b9-glow');
+    recheckGlowEl = el;
+  }
+
+  function m9ClearSoftGlow() {
+    recheckGlowEl = null;
+    container.querySelectorAll('.b9-glow').forEach(el => el.classList.remove('b9-glow'));
+  }
+
+  /* ⭐ 全盘可编辑：回溯期所有已填格子恢复可点击，点击任一步即级联重置到该步 */
+  const m9EditableCells = [];
+  function m9ArmEditable() {
+    m9DisarmEditable();
+    Object.keys(M9.history).forEach(k => {
+      const h = M9.history[k];
+      const el = grid?.cells.get(h.cellKey);
+      if (!el) return;
+      el.classList.add('b9-editable');
+      const handler = () => m9ClickHistoryCell(h.cellKey);
+      el._m9EditableHandler = handler;
+      el.addEventListener('click', handler);
+      m9EditableCells.push(el);
+    });
+  }
+  function m9DisarmEditable() {
+    m9EditableCells.forEach(el => {
+      el.classList.remove('b9-editable');
+      if (el._m9EditableHandler) el.removeEventListener('click', el._m9EditableHandler);
+      el._m9EditableHandler = null;
+    });
+    m9EditableCells.length = 0;
+  }
+  function m9ClickHistoryCell(cellKey) {
+    if (!M9.recheck || M9.submitting) return;
+    let step = null;
+    for (const k of Object.keys(M9.history)) {
+      if (M9.history[k].cellKey === cellKey) { step = M9.history[k].step; break; }
+    }
+    if (step == null) return;
+    m9SettleRecheck();
+    m9RevertToStep(step);
+    // ⭐ 回溯静默期：20s 计时从这里起算（点格/改错=有效操作，自动重置；一直没修好才浮条）
+    koji.requestIdleToast(20000, KOJI_TOAST_RECHECK, m9KojiOpen);
+  }
+
+  /* 「去修改」：平滑滚动到第一个错格并激活输入 */
+  function m9GoFix() {
+    if (!M9.recheck) return;
+    const fw = m9FirstWrong();
+    const el = fw && grid?.cells.get(fw.cellKey);
+    if (el) { try { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
+    if (fw) m9ClickHistoryCell(fw.cellKey);
+  }
+
+  /* 「看答案」：放弃 → 判错 + 展示正确答案 + 「下一题」 */
+  function m9GiveUp() {
+    const r = M9.recheck;
+    const fw = m9FirstWrong();
+    m9SettleRecheck();   // ⭐ 清光清计时清可编辑
+    koji.hideToast();    // ⭐ Koji 浮条与计时一并退场
+    if (!r) return;
+    ctx.data?.historyAdd?.({
+      problemText: `${M9.a} ${M9.op} ${M9.b}`, problemSource: 'm9', moduleId: 'm9',
+      studentSteps: Object.keys(M9.filled).map(k => ({ rel: k, sub: '', res: M9.filled[k] })),
+      studentAnswer: fw ? fw.actual : '（未完成）', isCorrect: false, correctAnswer: String(calcFinalResult()), aiFeedback: null,
+    });
+    ctx.data?.masteryRecord?.(`${M9.a} ${M9.op} ${M9.b}`, false);
+    const ans = String(calcFinalResult());
+    if (fbEl) { fbEl.textContent = `正确答案是：${ans}。`; fbEl.className = 'feedback b1-hint'; }
+    // ⭐ 状态 C（放弃看答案）：展示答案 + 「下一题」
+    ctx.showThumbBar({
+      text: `正确答案是：${ans}`,
+      ok: false,
+      hideRetry: true,
+      nextLabel: '下一题',
+      onNext: () => $('#m9random')?.click(),
+    });
+  }
+
+  /* ⭐ 级联重置：删掉 targetStep 及之后的所有键，回退到该步重新填。
+     依赖链精准命中：step 以 M9.history[key].step（填写时的权威记录）为准——
+     ⚠️ 不能按 key 语法反推（如 × 的 carry-K 在 step K-1 询问，反推成 K 会误删更早的进位）；
+     修改后面的步骤，绝不回溯清空前面已填好的值。 */
+  function m9RevertToStep(targetStep) {
+    for (const k of Object.keys(M9.history)) {
+      const st = M9.history[k].step != null ? M9.history[k].step : m9StepOfKey(k);
+      if (st >= targetStep) { delete M9.filled[k]; delete M9.history[k]; }
+    }
+    M9.step = targetStep;
+    M9.waitingFor = null;
+    // 落位状态只清 targetStep 之后的（idx ≥ targetStep 的供数在重做时会重新摘取）；
+    // 前面步骤的落位与工作值原样保留
+    M9.broughtDown = new Set([...M9.broughtDown].filter(i => i < targetStep));
+    m9Render();
+    m9PromptCurrentStep();             // curStep = targetStep → 指向该步第一个未填格
+  }
+
+  /* 修正成功 / 换题 / 卸载：微光与守护无痕退场（recheck 相应清空或由结算方接管） */
+  function m9SettleRecheck() {
+    M9.recheck = null;
+    if (recheckTimer) { clearTimeout(recheckTimer); recheckTimer = null; }
+    disarmRecheckActivity();
+    m9ClearSoftGlow();
+    m9DisarmEditable();
+  }
+
+  /* 只有主动换题 / 放弃时才结束并记为错 —— 在此之前系统不催、不判 0 */
+  function m9SettleAbandoned() {
+    const r = M9.recheck;
+    m9SettleRecheck();   // ⭐ 无论是否未决，微光/守护都无痕退场（求助微光也随换题消散）
+    if (!r) return;
+    const fw = m9FirstWrong();
+    ctx.data?.historyAdd?.({
+      problemText: `${M9.a} ${M9.op} ${M9.b}`, problemSource: 'm9', moduleId: 'm9',
+      studentSteps: Object.keys(M9.filled).map(k => ({ rel: k, sub: '', res: M9.filled[k] })),
+      studentAnswer: fw ? fw.actual : '（未完成）', isCorrect: false, correctAnswer: String(calcFinalResult()), aiFeedback: null,
+    });
+    ctx.data?.masteryRecord?.(`${M9.a} ${M9.op} ${M9.b}`, false);
   }
 
   function submitBuffer() {
@@ -937,65 +1193,60 @@ export default async function mount(container, ctx) {
     if (!target) { M9.submitting = false; return; }
     const { key } = target;
     const expected = ANSWER[key];
+    const isCorrect = String(raw) === String(expected);
 
-    if (String(raw) === String(expected)) {
-      M9.filled[key] = raw;
-      M9.waitingFor = null;
-      setFeedback(getEncouragement('m9', COMBO.count), 'ok');
-      // ⭐ Brilliant 反馈：绿框消失，数字闪光落位，随后平滑过渡到稳定档（键盘保持原位）
-      const cell = slotEl?.parentElement || grid.cells.get(target.cellKey);
-      flashFilled(cell, raw, key);
+    // ⭐ 探究式放行：对错都写入 filled 并照常落位推进，界面绝不明示
+    //    （过程零判定：不弹任何"正确"暗示，避免"上一格错了、这一格却被夸"的心流污染）
+    M9.filled[key] = raw;
+    M9.history[key] = { expected, actual: raw, isCorrect, cellKey: target.cellKey, step: M9.step, type: M9.waitingFor };
+    M9.waitingFor = null;
+    if (!isCorrect) emitUI('WRONG', { moduleId: 'm9' });   // ⭐ 隐形埋点：界面绝不亮红灯
+    // ⭐ Brilliant 反馈：绿框消失，数字闪光落位（对错同款），随后平滑过渡到稳定档
+    const cell = slotEl?.parentElement || grid.cells.get(target.cellKey);
+    flashFilled(cell, raw, key);
 
-      setTimeout(() => {
-        M9.submitting = false;
-        if (isStepComplete()) {
-          M9.step++;
-          if (M9.step > m9GetMaxSteps()) {
-            M9.step--;
-            // ⭐ 终局：键盘滑下
-            disarmOutsideConfirm();
-            keypad.hide();
-            if (M9.op === '÷') finishDivision();
-            else {
-              M9.waitingFor = null; m9Render();
-              setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
-              emitUI('CORRECT', { moduleId: 'm9' });
-              const final = calcFinalResult();
-              ctx.data.historyAdd({
-                problemText: `${M9.a} ${M9.op} ${M9.b}`, problemSource: 'm9', moduleId: 'm9',
-                studentSteps: Object.keys(M9.filled).map(k => ({ rel: k, sub: '', res: M9.filled[k] })),
-                studentAnswer: String(final), isCorrect: true, correctAnswer: String(final), aiFeedback: null,
-              });
-              const mrec = ctx.data.masteryRecord(`${M9.a} ${M9.op} ${M9.b}`, true);
-              if (mrec && mrec.state === 'mastered') {
-                ctx.toast('🏆 这道题你掌握了！', 'success');
-                setTimeout(() => ctx.showMasteryCard({ problemText: `${M9.a} ${M9.op} ${M9.b}`, correctAnswer: String(calcFinalResult()), takeaway: takeawayLoad(`${M9.a} ${M9.op} ${M9.b}`) }), 800);
-              }
-            }
-            return;
-          }
-          m9Render(); m9PromptCurrentStep();
-        } else {
-          m9Render(); m9PromptCurrentStep();
-        }
-      }, 700);
-    } else {
-      // 答错：槽抖动 + 清空，键盘保持原位
-      if (slotEl) {
-        slotEl.classList.add('b9-wrong');
-        setTimeout(() => slotEl?.classList.remove('b9-wrong'), 400);
-      }
-      setFeedback('❌ 再想想', 'error');
-      emitUI('WRONG', { moduleId: 'm9' });
-      M9.answerBuf = '';
-      keypad.resetInput();   // ⭐ 缓冲在回调外被清空 → 同步键盘 maxLength 计数
-      setTimeout(() => renderSlot(), 420);
+    setTimeout(() => {
       M9.submitting = false;
-      highlightM9WrongHint();
-    }
+      if (isStepComplete()) {
+        M9.step++;
+        if (M9.step > m9GetMaxSteps()) {
+          M9.step--;
+          // ⭐ 终局：键盘滑下
+          disarmOutsideConfirm();
+          keypad.hide();
+          if (m9HasAnyWrong()) {
+            // ⭐ 终局回溯：最终得数与标准答案不符 → 静默等待，不判错、不催促、无倒计时
+            m9EnterRecheck();
+          } else if (M9.op === '÷') {
+            finishDivision();
+          } else {
+            koji.hideToast();   // ⭐ 终局：Koji 使命完成，退场
+            M9.waitingFor = null; m9Render();
+            setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
+            emitUI('CORRECT', { moduleId: 'm9' });
+            const final = calcFinalResult();
+            ctx.data.historyAdd({
+              problemText: `${M9.a} ${M9.op} ${M9.b}`, problemSource: 'm9', moduleId: 'm9',
+              studentSteps: Object.keys(M9.filled).map(k => ({ rel: k, sub: '', res: M9.filled[k] })),
+              studentAnswer: String(final), isCorrect: true, correctAnswer: String(final), aiFeedback: null,
+            });
+            const mrec = ctx.data.masteryRecord(`${M9.a} ${M9.op} ${M9.b}`, true);
+            if (mrec && mrec.state === 'mastered') {
+              ctx.toast('🏆 这道题你掌握了！', 'success');
+              setTimeout(() => ctx.showMasteryCard({ problemText: `${M9.a} ${M9.op} ${M9.b}`, correctAnswer: String(calcFinalResult()), takeaway: takeawayLoad(`${M9.a} ${M9.op} ${M9.b}`) }), 800);
+            }
+          }
+          return;
+        }
+        m9Render(); m9PromptCurrentStep();
+      } else {
+        m9Render(); m9PromptCurrentStep();
+      }
+    }, 700);
   }
 
   function m9Reset() {
+    m9SettleAbandoned();   // ⭐ 主动换题/放弃/改题设：终局答错且未修正的尝试，此刻才结算为错
     ctx.ui?.hideThumbBar?.();   // ⭐ 契约化：保留原 window.__shell?.hideThumbBar 的可选链守卫语义
     document.getElementById('thumbBar')?.classList.remove('show', 'ok', 'err');
 
@@ -1009,24 +1260,31 @@ export default async function mount(container, ctx) {
     M9.b = b;
 
     M9.step = -1; M9.waitingFor = null; M9.filled = {};
+    M9.history = {};
+    M9.recheck = null;
     M9.broughtDown = new Set();
     M9.submitting = false;
     M9.answerBuf = '';
     disarmOutsideConfirm();
     keypad.hide();
     closeSheet();
-    ANSWER = computeAnswerMap(); M9_ESTIMATE.passed = false; m9HideEstimateBox();
+    ANSWER = computeAnswerMap();
 
     if (M9.op === '÷' && M9.a < M9.b) {
       aInput.value = M9.a; bInput.value = M9.b;
       rebuild();
       setFeedback(`💡 ${M9.a} ÷ ${M9.b} = 0 余 ${M9.a}（被除数比除数小）`, 'ok');
+      koji.hideToast();
       return;
     }
 
     aInput.value = M9.a; bInput.value = M9.b;
-    setFeedback('点击「下一步」，开始计算');
+    setFeedback('点击竖式中的待填格，开始计算 👆');
     rebuild();
+    // ⭐ 常规态（初始/等待输入）：空闲 35s 才浮条；任何有效操作自动重置。
+    //    浮条点击 → 估算对话卡片（先估一估下沉进 Koji，开算绝不阻断）
+    koji.hideToast();
+    koji.requestIdleToast(35000, KOJI_TOAST_NORMAL, m9OpenEstimateDialog);
   }
 
   /* ---- 换题抽屉 ---- */
@@ -1051,6 +1309,11 @@ export default async function mount(container, ctx) {
   $('#m9gear')?.addEventListener('click', () => {
     if (sheet?.classList.contains('open')) closeSheet();
     else openSheet();
+  });
+  // ⭐ 求助入口 =「不会做？点我看提示」：用户主动求助时才给微光，系统绝不主动打扰
+  const hintEl = cardEl?.querySelector('details.lesson-hint');
+  hintEl?.addEventListener('toggle', () => {
+    if (hintEl.open && M9.recheck && !M9.submitting) m9ShowSoftGlow();
   });
   $('#m9random')?.addEventListener('click', closeSheet);
   $('#m9reset')?.addEventListener('click', closeSheet);
@@ -1093,13 +1356,16 @@ export default async function mount(container, ctx) {
   };
 
   $('#m9random')?.addEventListener('click', handleM9Random);
-  stepBtn.addEventListener('click', m9NextStep);
   resetBtn.addEventListener('click', m9Reset);
   aInput.addEventListener('input', m9Reset);
   bInput.addEventListener('input', m9Reset);
   opInput.addEventListener('change', m9Reset);
 
+  // ⭐ 统一点击心智：点竖式任意待填格 → 直接进入输入态（替代原「下一步」按钮）
+  display.addEventListener('click', onGridClick);
+
   m9Reset();
+  requestAnimationFrame(m9CenterStage);   // ⭐ 布局就绪后舞台居中
 
   ctx.registerLevelHandler('m9', (levelId) => {
     if (!aInput || !bInput || !opInput) return;
@@ -1130,6 +1396,11 @@ export default async function mount(container, ctx) {
     unregisterActiveModule('m9');
     themeObserver.disconnect();
     disarmOutsideConfirm();
+    m9SettleRecheck();   // ⭐ 心流守护（定时器/文档监听/微光）随卸载无痕退场
+    koji.hideToast();    // ⭐ 防旧计时器在后台触发
+    window.visualViewport?.removeEventListener('resize', m9OnStageReflow);
+    window.visualViewport?.removeEventListener('scroll', m9OnStageReflow);
+    window.removeEventListener('resize', m9OnStageReflow);
     keypad.hide();
     if (sheetMask) sheetMask.remove();
     unmountSlot();

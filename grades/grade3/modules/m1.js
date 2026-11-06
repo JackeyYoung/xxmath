@@ -12,16 +12,15 @@
 */
 import {
   parseExpression, tokensToString, tokensToMarkedHtml,
-  canClickOp, computeStep, evaluatesNonNegative,
+  canClickOp, computeStep, evaluatesNonNegative, evaluateExpression,
 } from '../scoring/m1.js';
-import { getLifecycle, applyThemeVars, EASE, MOTION, DIMENSION, STATUS, SURFACE, prefersReducedMotion, ensureMathTypoStyle } from '../design/tokens.js';
+import { getLifecycle, applyThemeVars, EASE, MOTION, DIMENSION, STATUS, SURFACE, SOFT_GLOW, prefersReducedMotion, ensureMathTypoStyle } from '../design/tokens.js';
 import { gsap } from '../design/motion.js';
-import { COMBO } from '../../../core/ui/celebrate.js';
-import { getEncouragement } from '../../../core/ui/encourage.js';
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 import { getGradeConfig } from '../../../app/grade-config.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getVirtualKeypad } from '../../../core/ui/virtual-keypad.js';
+import { getKoji } from '../../../core/ui/koji.js';
 
 const M1_PRESETS = [
   { name: '括号加法',  expr: '(3 + 6) ÷ (4 - 1)' },
@@ -150,11 +149,10 @@ export function reduceWithSrc(tokens, opIdx, val) {
 const STYLE_ID = 'b1-style';
 
 function buildCss() {
-  const D = DIMENSION, S = STATUS, F = SURFACE;
+  const D = DIMENSION, F = SURFACE;
   return `
-/* ── 顶栏（标题 + 边缘化的小图标按钮） ── */
-.b1-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.b1-topbar h2 { margin: 0; font-size: 19px; }
+/* ── 顶栏（无标题，仅右缘小图标按钮——主舞台让位给算式） ── */
+.b1-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 38px; }
 .b1-actions { display: flex; gap: 8px; }
 .b1-iconbtn { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--b1-history);
   background: transparent; color: var(--b1-history); font-size: 19px; cursor: pointer;
@@ -189,14 +187,14 @@ function buildCss() {
 .b1-op.b1-clickable:active { filter: brightness(.9); }
 .b1-op.b1-locked { cursor: default; pointer-events: none; }
 
-/* ── 输入行：答案槽（无原生 input、无括号/箭头/问号）
-      ⭐ 防跳动：行常驻占位（display 恒为 flex），激活只切 opacity，高度永不变化 ── */
-.b1-inputrow { display: flex; align-items: center; gap: 10px; height: ${D.rowH}px; flex: none;
+/* ── 输入行：答案槽（无原生 input、无等号/括号/箭头/问号）
+      ⭐ 防跳动：行常驻占位（display 恒为 flex），激活只切 opacity，高度永不变化
+      ⭐ 位置复用：答案槽绝对定位，由 JS 钉在"结果字形将出现的行内 x"上（弧底正下方），
+         输入在哪结果就在哪，消除输入→落地的横向跳动。居中分量走 gsap xPercent ── */
+.b1-inputrow { position: relative; display: flex; align-items: center; height: ${D.rowH}px; flex: none;
   opacity: 0; pointer-events: none; transition: opacity .25s ease; }
 .b1-inputrow.b1-active { opacity: 1; pointer-events: auto; }
-.b1-eq { color: var(--b1-history); font-family: var(--math-font-family, sans-serif); font-weight: var(--math-font-weight, 800);
-  font-variant-numeric: var(--math-font-variant-numeric, tabular-nums); font-size: ${Math.round(D.font * 0.8)}px; }
-.b1-answer { min-width: ${D.numW}px; height: ${D.rowH - 8}px; position: relative;
+.b1-answer { position: absolute; left: 0; min-width: ${D.numW}px; height: ${D.rowH - 8}px;
   display: inline-flex; align-items: center; justify-content: center;
   font-family: var(--math-font-family, sans-serif); font-weight: var(--math-font-weight, 800);
   font-variant-numeric: var(--math-font-variant-numeric, tabular-nums);
@@ -205,8 +203,11 @@ function buildCss() {
 .b1-answer::after { content: ''; position: absolute; right: 12px; bottom: 4px; width: 2.5px; height: 62%;
   background: var(--b1-focus); border-radius: 2px; animation: b1caret 1s steps(1) infinite; }
 @keyframes b1caret { 50% { opacity: 0; } }
-.b1-answer.b1-wrong { color: ${S.bad}; border-bottom-color: ${S.bad}; animation: b1shake .3s; }
-@keyframes b1shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+/* ⭐ 心流克制（探究式放行：错误照常提交，界面绝不明示）。
+   全模块唯一的"指引色"：求助 / 终局静置 45 秒后，用主题暖黄 15% 微光（SOFT_GLOW）
+   包住第一个错误步骤的结果数字 —— 可点击回滚重做；绝不出现红色 */
+.b1-cell.b1-glow { box-shadow: inset 0 0 0 9999px ${SOFT_GLOW}; border-radius: 10px; transition: box-shadow .8s ease; cursor: pointer; }
+.b1-cell.b1-editable { cursor: pointer; }
 
 /* ── 聚光灯：等待输入时页面其余部分退后 ── */
 .b1-card.b1-awaiting .lesson-hint,
@@ -218,7 +219,7 @@ function buildCss() {
 .b1-hint { margin-top: 32px; }
 .b1-hint:not(.ok):not(.error) { color: ${F.hint}; font-size: 16px; }
 .b1-placeholder { color: var(--b1-placeholder); font-size: 16px; padding: 14px 4px; }
-@media (prefers-reduced-motion: reduce) { .b1-answer.b1-wrong { animation: none; } .b1-answer::after { animation: none; } .b1-inputrow { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .b1-answer::after { animation: none; } .b1-inputrow { transition: none; } .b1-cell.b1-glow { transition: none; } }
 `;
 }
 
@@ -263,6 +264,34 @@ export default async function mount(container, ctx) {
   }
   const REDUCED = prefersReducedMotion();
   const keypad = getVirtualKeypad();
+  const koji = getKoji();   // ⭐ Koji 交互助教（主动式浮条 = 唯一求助入口）
+
+  /* ---------- 算式舞台视觉居中 + 键盘避让 ─────────────────────
+     标题下线后，主舞台（b1-board）占据「页头以下 ~ 软键盘以上」可视带的正中。
+     平移对象 = 舞台(b1-board) + 其下反馈行：同进退互不遮挡，卡片内 fixed 抽屉不受影响。
+     键盘弹起 → 可视带收窄，舞台平滑上移保证算式完全可见；收起 → 平滑回正中。 ---------- */
+  let m1StageCy = 0;   // 当前平移量（布局位置 = rect.top - cy）
+  function m1CenterStage() {
+    if (!cardEl || !board) return;
+    const vv = window.visualViewport;
+    const kb = vv ? Math.max(0, window.innerHeight - vv.height) : 0;
+    const bandTop = 64;                                   // 页头高度
+    const bandBottom = window.innerHeight - kb - 12;
+    // ⭐ 布局位置用 offsetTop 链计算（对 transform 免疫）——rect.top 在 gsap 补间中途读数会漂移
+    let el = board, docTop = 0;
+    while (el && el !== document.body) { docTop += el.offsetTop; el = el.offsetParent; }
+    const stageTop = docTop - (window.scrollY || 0);
+    const stageH = board.offsetHeight || DIMENSION.rowH * 2;
+    const targetTop = Math.max(bandTop, (bandTop + bandBottom) / 2 - stageH / 2);
+    const delta = Math.round(targetTop - stageTop);
+    if (delta === m1StageCy) return;
+    m1StageCy = delta;
+    gsap.to([board, $('#m1fb')].filter(Boolean), { y: delta, duration: 0.3, ease: EASE.entry, overwrite: 'auto' });
+  }
+  const m1OnStageReflow = () => m1CenterStage();
+  window.visualViewport?.addEventListener('resize', m1OnStageReflow);
+  window.visualViewport?.addEventListener('scroll', m1OnStageReflow);
+  window.addEventListener('resize', m1OnStageReflow);
 
   // ---------- 主题（跟随 <html data-theme> 实时切换） ----------
   let LC = getLifecycle();
@@ -288,8 +317,11 @@ export default async function mount(container, ctx) {
     waiting: null,          // { opIdx, op, left, right, result, markedHtml }
     busy: false,            // 动画进行中，锁点击
     answerBuf: '',          // 键盘输入缓冲
+    standardAnswer: null,   // ⭐ 原题标准答案（终局回溯的比对基准）
+    recheck: null,          // ⭐ 终局回溯：{ firstWrongIdx }——放弃时才结算为错
   };
-  const M1_PRIORITY = { passed: false, expectedOps: [] };
+  // ⭐ 「先算乘除」优先级测验已下线（强制弹窗违背心流）——算理教学下沉进 Koji 对话框，
+  //    学生直接开算，绝不阻断；无记录/加分业务可保留
   let presets = [...M1_PRESETS];
   const rowsMeta = [];      // [{ el, cells, tokens, freshCell|null }]，与 rowsEl 子元素一一对应
   let activeTl = null;
@@ -481,12 +513,15 @@ export default async function mount(container, ctx) {
     const fb = $('#m1fb');
     if (!fb) return;   // 卸载后的迟到定时器
     fb.textContent = msg;
-    fb.className = 'feedback' + (type ? ' ' + type : '');
+    // ⭐ 保留 b1-hint 弱化档（模板语义：提示语恒安静；ok/error 才切换强调色）
+    fb.className = 'feedback b1-hint' + (type ? ' ' + type : '');
     if (type === 'ok' || type === 'error') {
       const isOk = type === 'ok';
       ctx.showThumbBar({
         text: msg.replace(/^[✓❌🎉]\s*/, ''),
         ok: isOk,
+        // ⭐ 状态 A（终局正确）：按钮「下一题」→ 直接换题
+        nextLabel: '下一题',
         onNext: () => {
           if (M1.done) {
             $('#m1Random')?.click();
@@ -501,18 +536,70 @@ export default async function mount(container, ctx) {
     }
   }
 
+  /* ⭐ 首行度量校准：flex 行无列间距规则，首行按格子紧排渲染——
+     用真实 rect 把 row0 的 L/R 校准为实际渲染边缘，使 度量==渲染 同坐标系。
+     此后 弧底 / 输入框钉位 / 结果落地 三者严格共线（消除首步 8px 幻影间距偏移）。
+     jsdom 等无布局环境（rect 宽为 0）自动跳过，回落 cellMetrics。 */
+  function m1CalibrateRow0Metrics() {
+    const row0 = rowsMeta[0];
+    if (!row0 || !row0.cells.length) return;
+    // ⭐ 基准 = 行内容原点（.b1-rows 左缘，与 b1-inputrow 内容原点重合），
+    //    不能用 board 左缘（会把内边距双计进度量）
+    const br = rowsEl.getBoundingClientRect();
+    const L = [], R = [];
+    let ok = true;
+    row0.cells.forEach(c => {
+      const r = c.getBoundingClientRect();
+      if (!r.width) { ok = false; return; }
+      L.push(r.left - br.left);
+      R.push(r.right - br.left);
+    });
+    if (ok) { row0.L = L; row0.R = R; }
+  }
+
   // ---------- 输入行（答案槽：无原生 input，键盘认领输入） ----------
   function renderAnswerSlot() {
     answerEl.textContent = M1.answerBuf;
   }
 
-  /* ⭐ 极简输入区：不复写算式（无括号/箭头/问号），只出现 "= ___"；
+  /* ⭐ 输入框位置复用（消除视觉跳跃）：预演本步归并——用与 m1CommitSequence
+     完全相同的几何链（reduceWithSrc → computeRowLayout → mergedGlyphShift）
+     算出"结果字形将出现的行内 x"，把答案槽中心钉在这一点上。
+     输入在哪，结果就在哪（Δx = 0），且天然紧贴弧底正下方。 */
+  function m1AnswerTargetX(rowIdx, opIdx) {
+    const row = rowsMeta[rowIdx];
+    if (!row || !row.tokens[opIdx - 1]) return null;
+    const items = reduceWithSrc(row.tokens, opIdx, 0);
+    const freshIdx = items.findIndex(x => x.fresh);
+    if (freshIdx < 0) return null;
+    const prevMetrics = (row.L && row.R) ? { L: row.L, R: row.R } : cellMetrics(row.tokens);
+    const lay = computeRowLayout(items.map(x => x.src), prevMetrics);
+    const shift = mergedGlyphShift(prevMetrics, opIdx - 1, opIdx + 1, lay.L[freshIdx], lay.R[freshIdx]);
+    return (lay.L[freshIdx] + lay.R[freshIdx]) / 2 + shift;
+  }
+
+  /* 答案槽钉位：left = 目标 x（槽自身以 gsap xPercent:-50 居中）。
+     ⭐ 边界保护：靠右的结果不撑破行宽，两侧各留 4px。 */
+  function m1PlaceAnswerAt(x) {
+    if (x == null) { answerEl.style.left = ''; return; }
+    const half = Math.max(DIMENSION.numW, answerEl.offsetWidth) / 2;
+    const rowW = inputRow.clientWidth || half * 2;
+    const clamped = Math.max(half + 4, Math.min(x, rowW - half - 4));
+    answerEl.style.left = clamped + 'px';
+  }
+
+  /* ⭐ 极简输入区：不复写算式（无等号/括号/箭头/问号），只有干净的下划线答案槽；
      防跳动 —— 行常驻占位，激活只切 .b1-active（opacity），高度永不变化 */
   function showInputRow() {
     pendingEl.textContent = '';
     M1.answerBuf = '';
+    answerEl.classList.remove('b1-correct');   // ⭐ 上一题/上一步的判定残留不入新输入
     renderAnswerSlot();
     inputRow.classList.add('b1-active');
+    // ⭐ 居中分量走 gsap（CSS transform 会被补间整个覆盖）；弹出时 0.2s 轻滑入场
+    gsap.set(answerEl, { xPercent: -50 });
+    if (REDUCED) gsap.set(answerEl, { x: 0, opacity: 1 });
+    else gsap.fromTo(answerEl, { x: 12, opacity: 0 }, { x: 0, opacity: 1, duration: 0.2, ease: EASE.entry, overwrite: 'auto' });
   }
 
   function hideInputRow() {
@@ -542,6 +629,7 @@ export default async function mount(container, ctx) {
 
   // ---------- 载入新题 ----------
   function m1LoadExpression(str) {
+    m1SettleAbandoned();   // ⭐ 主动换题/放弃：终局答错且未修正的尝试，此刻才结算为错
     if (activeTl) { activeTl.kill(); activeTl = null; }
     // ⭐ 换题 = 场景复位：键盘收起、聚光灯解除
     disarmOutsideConfirm();
@@ -550,80 +638,101 @@ export default async function mount(container, ctx) {
     closeSheet();
     M1.original = str;
     M1.tokens = parseExpression(str);
+    M1.standardAnswer = evaluateExpression(M1.tokens);   // ⭐ 终局比对基准（非法算式 → null）
     M1.done = false;
     M1.steps = [];
     M1.waiting = null;
     M1.busy = false;
     M1.answerBuf = '';
-    M1_PRIORITY.passed = false;
-    M1_PRIORITY.expectedOps = [];
+    M1.recheck = null;
 
     if (M1.tokens.length === 0) {
       renderPlaceholder();
-      m1SetFeedback('❌ 无法识别这道算式，请检查输入', 'error');
-      m1HidePriorityBox();
+      m1SetFeedback('无法识别这道算式，请检查输入');
       return;
     }
 
     clearBoard();
     appendRow(buildRow(M1.tokens));
-    m1HidePriorityBox();
-    m1ShowPriorityBox();
-    if (M1_PRIORITY.passed) m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
-    else m1SetFeedback('🤔 先选一选：这道题先算哪一步？', '');
+    m1CalibrateRow0Metrics();
+    m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
+    m1AutoPromptFinalStep();   // ⭐ 载入即最后一步（如 5 − 3）→ 直通输入
+    // ⭐ 常规态（初始/等待输入）：空闲 35s 才浮条；任何有效操作自动重置
+    koji.hideToast();
+    koji.requestIdleToast(35000, KOJI_TOAST_NORMAL, m1KojiOpen);
+  }
+
+  /* ⭐ 消灭最后一步的冗余点击（直通输入）：行内只剩 数字 运算符 数字 时，
+     系统自动为这最后一步生成输入框并弹起键盘——用户不需要再点那个运算符。
+     载入即终局（如 5 − 3）与推导走到终局两种时刻都会触发。 */
+  function m1AutoPromptFinalStep() {
+    if (M1.done || M1.busy || M1.waiting || M1.recheck) return;
+    const toks = M1.tokens;
+    if (toks.length !== 3) return;
+    if (toks[0].type !== 'num' || toks[1].type !== 'op' || toks[2].type !== 'num') return;
+    if (!canClickOp(toks, 1).ok) return;   // 不合法（如除 0）就不自动弹，交给点击路径给原因
+    const row = rowsMeta[rowsMeta.length - 1];
+    if (!row || row.el.dataset.committed) return;
+    m1EnterWaiting(rowsMeta.length - 1, 1, row.cells[1]);
   }
 
   // ---------- 点击运算符 ----------
+  // ⭐ 心流克制：点错运算是"引导时机"不是"错误警报"——中性文案、无 error 红档、无 ❌
   const WRONG_REASON = {
-    'inner-paren': '❌ 先算括号里的哦！括号优先级最高。',
-    'muldiv-first': '❌ 先算乘除哦！',
-    'left-first': '❌ 要先算左边的这一步哦！从左到右。',
-    'negative': '❌ 这样算会出现负数，我们还没学负数哦！',
-    'div-zero': '❌ 不能除以 0 哦！',
+    'inner-paren': '先算括号里的哦！括号优先级最高。',
+    'muldiv-first': '先算乘除哦！',
+    'left-first': '要先算左边的这一步哦！从左到右。',
+    'negative': '这样算会出现负数，我们还没学负数哦！',
+    'div-zero': '不能除以 0 哦！',
     'not-ready': '',
     'not-op': '',
   };
 
   function m1ClickOp(i, cell) {
-    if (M1.done || M1.busy || M1.waiting || !M1_PRIORITY.passed) return;
+    if (M1.done || M1.busy || M1.waiting) return;
     if (cell?.closest('.b1-row')?.dataset.committed) return;   // ⭐ 已退役旧行的陈旧监听不再响应
 
-    const toks = M1.tokens;
-    const chk = canClickOp(toks, i);
+    const chk = canClickOp(M1.tokens, i);
     if (!chk.ok) {
       const msg = WRONG_REASON[chk.reason];
-      if (msg) m1SetFeedback(msg, 'error');
+      if (msg) m1SetFeedback(msg);
       return;
     }
+    m1EnterWaiting(rowsMeta.length - 1, i, cell);
+  }
 
+  /* 进入等待作答状态（DOM 仍在原行，不动布局）。
+     点击运算符 / 最后一步直通输入 / 回滚重做 三条路径共用此入口 */
+  function m1EnterWaiting(rowIdx, i, cell) {
+    const toks = rowsMeta[rowIdx].tokens;
     const left = toks[i - 1], right = toks[i + 1], op = toks[i].val;
     let result;
     try {
       result = computeStep(left.val, right.val, op);
     } catch (e) {
-      m1SetFeedback('❌ 不能除以 0 哦', 'error');
+      m1SetFeedback('不能除以 0 哦');
       return;
     }
 
-    // 进入等待作答状态（DOM 仍在原行，不动布局）
     M1.waiting = {
       opIdx: i, op,
       left: left.val, right: right.val, result,
       markedHtml: tokensToMarkedHtml(toks, i - 1, i + 1),
-      rowIdx: rowsMeta.length - 1,
+      rowIdx,
       cell,
     };
 
     // 呼吸降噪：焦点染色，非焦点降到 0.4
     applyTier(cell, 'focus');
     cell.classList.remove('b1-clickable');
-    const row = rowsMeta[M1.waiting.rowIdx];
+    const row = rowsMeta[rowIdx];
     row.cells.forEach((c, j) => {
       if (j >= i - 1 && j <= i + 1) return;
       gsap.to(c, { opacity: MOTION.dimOpacity, duration: 0.2, ease: EASE.entry });
     });
 
     showGuideArc();   // ⭐ 极淡引导弧：两个操作数要"合"成一个的空间提示
+    m1PlaceAnswerAt(m1AnswerTargetX(rowIdx, i));   // ⭐ 答案槽直落结果位（弧底正下方，Δx=0）
     showInputRow();
     // ⭐ 场景驱动：键盘弹出（持久 —— 确认后不收起，直到终局）
     showKeypad();
@@ -672,7 +781,7 @@ export default async function mount(container, ctx) {
     m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
   }
 
-  // ---------- 提交判卷 ----------
+  // ---------- 提交判卷（探究式放行：对错都提交，绝不打断） ----------
   function m1SubmitAnswer() {
     if (!M1.waiting || M1.busy) return;   // ⭐ busy 守卫：动画期间不重复进入
     const raw = M1.answerBuf.trim();
@@ -680,28 +789,207 @@ export default async function mount(container, ctx) {
 
     let userVal;
     if (/^-?\d+(\.\d+)?$/.test(raw)) userVal = parseFloat(raw);
-    else { m1ShowWrong('请输入一个数字'); return; }
+    else return;   // ⭐ 非数字同样静默：数字原样保留，等自己退格重输
 
-    if (Math.abs(userVal - M1.waiting.result) < 0.001) {
-      answerEl.classList.add('b1-correct');
-      m1SetFeedback(getEncouragement('m1', COMBO.count), '');
-      m1CommitSequence();   // ⭐ 键盘保持原位（持久），终局才收起
-    } else {
-      m1ShowWrong(`❌ 再想想～ 提示：${M1.waiting.op === '÷' ? '用乘法验算一下' : '再算一遍'}`);
-      emitUI('WRONG', { moduleId: 'm1' });
-    }
+    // ⭐ 探究式放行：无论对错都提交——带着用户的真实输入继续往下算，
+    //    界面绝不报错、绝不弹任何"正确"暗示（鼓励语/绿框都在禁止之列），对错只在内部登记。
+    const w = M1.waiting;
+    w.userVal = userVal;
+    w.isCorrect = Math.abs(userVal - w.result) < 0.001;
+    if (!w.isCorrect) emitUI('WRONG', { moduleId: 'm1' });   // ⭐ 隐形埋点：界面绝不亮红灯
+    m1CommitSequence();   // ⭐ 键盘保持原位（持久），终局才收起
   }
 
-  function m1ShowWrong(msg) {
-    answerEl.classList.remove('b1-correct');
-    answerEl.classList.add('b1-wrong');
-    m1SetFeedback(msg, 'error');
-    M1.answerBuf = '';
-    keypad.resetInput();   // ⭐ 缓冲在回调外被清空 → 同步键盘 maxLength 计数
-    setTimeout(() => {
-      renderAnswerSlot();
-      answerEl.classList.remove('b1-wrong');
-    }, 450);
+  /* ---------- 终局回溯（探究式，无倒计时）────────────────────
+     过程全程放行：错误的中间结果照常进入推导链（M1.steps 记录 expected/actual/isCorrect，
+     界面绝不明示）。只有当"推导到最后一步、最终得数与标准答案不符"时：
+     ① 提示语平滑切换为柔声的一句（无 error 档 → 无红、无缩略条）；
+     ② 系统静默等待：静置 45 秒（MOTION.recheckIdle，任何动作都重新起算）
+        或用户点开「不会做？点我看提示」求助 —— 才用主题暖黄 15%（SOFT_GLOW）
+        包住 M1.steps 中第一个 isCorrect:false 那一步的结果格；
+     ③ 点击高亮格 → 回滚到该步重新输入；答对后平滑清空后续所有行重新推导；
+        一直不改就不催、不判 0，只有主动换题/放弃才结算并记为错。 ---------- */
+  const RECHECK_HINT = '好像哪里出了一点小偏差，我们回头检查一下？';
+  let recheckTimer = null;
+  let recheckActivityArmed = false;
+  let recheckGlowCell = null;   // 被高亮的第一个错误结果格（可点击回滚）
+
+  function m1EnterRecheck() {
+    const k = M1.steps.findIndex(s => !s.isCorrect);
+    M1.recheck = { firstWrongIdx: k >= 0 ? k : M1.steps.length - 1 };
+    m1SetFeedback(RECHECK_HINT);
+    // ⭐ 状态 B（终局回溯）：Thumb Bar「去修改」+「看答案」（Koji 浮条绝不在此阶段出现）
+    koji.hideToast();
+    ctx.showThumbBar({
+      text: RECHECK_HINT,
+      ok: false,
+      nextLabel: '去修改',
+      onNext: () => m1GoFix(),
+      retryLabel: '看答案',
+      onRetry: () => m1GiveUp(),
+    });
+    armRecheckTimer();
+    armRecheckActivity();
+    m1ArmEditable();   // ⭐ 全盘可编辑：所有历史结果格恢复可点击
+  }
+
+  function armRecheckTimer() {
+    if (recheckTimer) clearTimeout(recheckTimer);
+    recheckTimer = setTimeout(() => { recheckTimer = null; m1ShowSoftGlow(); }, MOTION.recheckIdle * 1000);
+  }
+
+  /* 静置守护：回溯未决期间，用户的任何动作都让 45 秒重新起算 */
+  function onRecheckActivity() {
+    if (!M1.recheck) { disarmRecheckActivity(); return; }
+    armRecheckTimer();
+  }
+  function armRecheckActivity() {
+    if (recheckActivityArmed) return;
+    recheckActivityArmed = true;
+    document.addEventListener('pointerdown', onRecheckActivity, true);
+    document.addEventListener('keydown', onRecheckActivity, true);
+  }
+  function disarmRecheckActivity() {
+    recheckActivityArmed = false;
+    document.removeEventListener('pointerdown', onRecheckActivity, true);
+    document.removeEventListener('keydown', onRecheckActivity, true);
+  }
+
+  /* 微光：只给第一个错误步骤的结果格加视觉引导（点击行为由 editable 统一处理） */
+  function m1ShowSoftGlow() {
+    m1ClearSoftGlow();
+    if (!M1.recheck) return;
+    const cell = rowsMeta[M1.recheck.firstWrongIdx + 1]?.freshCell;
+    if (!cell) return;
+    cell.classList.add('b1-glow');
+    recheckGlowCell = cell;
+  }
+
+  function m1ClearSoftGlow() {
+    recheckGlowCell = null;
+    container.querySelectorAll('.b1-glow').forEach(el => el.classList.remove('b1-glow'));
+  }
+
+  /* ⭐ 全盘可编辑：回溯期所有历史结果格恢复可点击，点击任一步即级联重置到该步 */
+  const m1EditableCells = [];
+  function m1ArmEditable() {
+    m1DisarmEditable();
+    M1.steps.forEach((s, idx) => {
+      const cell = rowsMeta[idx + 1]?.freshCell;
+      if (!cell) return;
+      cell.classList.add('b1-editable');
+      const handler = () => m1ClickHistoryStep(idx);
+      cell._m1EditableHandler = handler;
+      cell.addEventListener('click', handler);
+      m1EditableCells.push(cell);
+    });
+  }
+  function m1DisarmEditable() {
+    m1EditableCells.forEach(cell => {
+      cell.classList.remove('b1-editable');
+      if (cell._m1EditableHandler) cell.removeEventListener('click', cell._m1EditableHandler);
+      cell._m1EditableHandler = null;
+    });
+    m1EditableCells.length = 0;
+  }
+  function m1ClickHistoryStep(idx) {
+    if (!M1.recheck || M1.busy) return;
+    const opIdx = M1.steps[idx]?.opIdx;
+    m1SettleRecheck();
+    if (opIdx != null) m1RevertToStep(idx, opIdx);
+    // ⭐ 回溯静默期：20s 计时从这里起算（点格/改错=有效操作，自动重置；一直没修好才浮条）
+    koji.requestIdleToast(20000, KOJI_TOAST_RECHECK, m1KojiOpen);
+  }
+
+  /* 「去修改」：平滑滚动到第一个错步并激活输入 */
+  function m1GoFix() {
+    if (!M1.recheck) return;
+    const idx = M1.recheck.firstWrongIdx;
+    const cell = rowsMeta[idx + 1]?.freshCell;
+    if (cell) { try { cell.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) {} }
+    m1ClickHistoryStep(idx);
+  }
+
+  /* 「看答案」：放弃 → 判错 + 展示正确答案 + 「下一题」 */
+  function m1GiveUp() {
+    const r = M1.recheck;
+    m1SettleRecheck();   // ⭐ 清光清计时清可编辑
+    koji.hideToast();    // ⭐ Koji 浮条与计时一并退场
+    if (!r) return;
+    const s = M1.steps[r.firstWrongIdx];
+    if (ctx.data?.historyAdd) {
+      ctx.data.historyAdd({
+        problemText: M1.original, problemSource: 'm1', moduleId: 'm1',
+        studentSteps: M1.steps.map((st, idx) => ({ rel: `第 ${idx + 1} 步`, sub: st.markedHtml, res: st.resultStr })),
+        studentAnswer: s ? fmtNum(s.actual) : '（未完成）',
+        isCorrect: false,
+        correctAnswer: s ? fmtNum(s.expected) : fmtNum(M1.standardAnswer ?? 0),
+        aiFeedback: null,
+      });
+    }
+    if (ctx.data?.masteryRecord) ctx.data.masteryRecord(M1.original, false);
+    const ans = fmtNum(M1.standardAnswer ?? 0);
+    const fb = $('#m1fb');
+    if (fb) { fb.textContent = `正确答案是：${ans}。`; fb.className = 'feedback b1-hint'; }
+    // ⭐ 状态 C（放弃看答案）：展示答案 + 「下一题」
+    ctx.showThumbBar({
+      text: `正确答案是：${ans}`,
+      ok: false,
+      hideRetry: true,
+      nextLabel: '下一题',
+      onNext: () => $('#m1Random')?.click(),
+    });
+    M1.done = true;
+  }
+
+  /* ⭐ 级联重置：回滚到第 k 步之前——清掉 k+1 起的行与步骤，重开第 k 步输入 */
+  function m1RevertToStep(k, opIdx) {
+    const rowK = rowsMeta[k];
+    if (!rowK) return;
+    while (rowsMeta.length > k + 1) {   // 含错误结果行与后续所有行
+      const r = rowsMeta.pop();
+      r.el.remove();
+    }
+    M1.steps.length = k;
+    M1.tokens = rowK.tokens;
+    M1.done = false;
+    svgEl.innerHTML = '';               // 清掉残留弧线
+    rowK.el.dataset.committed = '';     // 解除退役
+    const opCell = rowK.cells[opIdx];
+    if (opCell) {
+      opCell.classList.add('b1-clickable');
+      opCell.classList.remove('b1-locked');
+      applyTier(opCell, 'init');
+    }
+    m1ClickOp(opIdx, opCell);           // 直接重开这一步的输入
+  }
+
+  /* 修正成功 / 换题 / 卸载：微光与守护无痕退场（recheck 相应清空或由结算方接管） */
+  function m1SettleRecheck() {
+    M1.recheck = null;
+    if (recheckTimer) { clearTimeout(recheckTimer); recheckTimer = null; }
+    disarmRecheckActivity();
+    m1ClearSoftGlow();
+    m1DisarmEditable();
+  }
+
+  /* 只有主动换题 / 放弃时才结束并记为错 —— 在此之前系统不催、不判 0 */
+  function m1SettleAbandoned() {
+    const r = M1.recheck;
+    m1SettleRecheck();   // ⭐ 无论是否未决，微光/守护都无痕退场（求助微光也随换题消散）
+    if (!r) return;
+    const s = M1.steps[r.firstWrongIdx];
+    if (ctx.data?.historyAdd) {
+      ctx.data.historyAdd({
+        problemText: M1.original, problemSource: 'm1', moduleId: 'm1',
+        studentSteps: M1.steps.map((st, idx) => ({ rel: `第 ${idx + 1} 步`, sub: st.markedHtml, res: st.resultStr })),
+        studentAnswer: s ? fmtNum(s.actual) : '（未完成）',
+        isCorrect: false,
+        correctAnswer: s ? fmtNum(s.expected) : fmtNum(M1.standardAnswer ?? 0),
+        aiFeedback: null,
+      });
+    }
+    if (ctx.data?.masteryRecord) ctx.data.masteryRecord(M1.original, false);
   }
 
   // ---------- 合并动画（核心时间轴） ----------
@@ -729,7 +1017,8 @@ export default async function mount(container, ctx) {
 
     // 1. 源区间归并：拿到新 tokens 的同时拿到每个格的横向区间映射
     //    （合并格中心 = 弧底 = 运算符中心，其余格与上一行逐列对齐）
-    const items = reduceWithSrc(row.tokens, w.opIdx, w.result);
+    //    ⭐ 探究式放行：用学生的真实输入值归并（对错都照常砸落）
+    const items = reduceWithSrc(row.tokens, w.opIdx, w.userVal);
     const newTokens = items.map(x => x.t);
     const freshIdx = items.findIndex(x => x.fresh);
     // ⭐ 传上一行的真实渲染边缘（含加宽合并格），不能按 token 重估
@@ -833,19 +1122,41 @@ export default async function mount(container, ctx) {
     row.cells[opIdx - 1] = lNew;
     row.cells[opIdx] = oNew;
     row.cells[opIdx + 1] = rNew;
+    // ⭐ 同步 freshCell 引用：结果格被消耗替换后，回溯微光仍需指到"活着的"DOM 格
+    if (row.freshCell === l) row.freshCell = lNew;
+    else if (row.freshCell === o) row.freshCell = oNew;
+    else if (row.freshCell === r) row.freshCell = rNew;
   }
 
   // ---------- 状态提交（动画 onComplete 之后才执行 —— 铁律 4） ----------
   function finishCommit(newTokens) {
     const w = M1.waiting;
-    M1.steps.push({ markedHtml: w.markedHtml, resultStr: tokensToString(newTokens) });
+    // ⭐ 内部登记每一步的期望/实际/对错（界面绝不明示）
+    M1.steps.push({
+      opIdx: w.opIdx,
+      markedHtml: w.markedHtml,
+      resultStr: tokensToString(newTokens),
+      expected: w.result, actual: w.userVal, isCorrect: w.isCorrect,
+    });
     M1.tokens = newTokens;
     M1.waiting = null;
     M1.busy = false;
 
     if (M1.tokens.length === 1) {
+      const finalVal = M1.tokens[0].val;
+      const offTarget = M1.standardAnswer != null && Math.abs(finalVal - M1.standardAnswer) >= 0.001;
+      const hasErrorInProcess = M1.steps.some(s => !s.isCorrect);   // ⭐ 过程轨迹有任何错误 → 同样视为答错
+      if (offTarget || hasErrorInProcess) {
+        // ⭐ 终局审判：最终结果错，或过程输入有错 → 回溯（错就是错，错得有逻辑）
+        disarmOutsideConfirm();
+        keypad.hide();
+        cardEl?.classList.remove('b1-awaiting');
+        m1EnterRecheck();
+        return;
+      }
       M1.done = true;
-      // ⭐ 终局谢幕：键盘平滑滑下，页面中央由拇指条接管
+      // ⭐ 终局谢幕：键盘平滑滑下，页面中央由拇指条接管（Koji 使命完成，退场）
+      koji.hideToast();
       disarmOutsideConfirm();
       keypad.hide();
       cardEl?.classList.remove('b1-awaiting');
@@ -885,102 +1196,9 @@ export default async function mount(container, ctx) {
       }
     }, (MOTION.restPause + 0.1) * 1000);
 
-    // 同级混合 → 再考一次"先算哪步"
-    const hasMulDiv = M1.tokens.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
-    const hasAddSub = M1.tokens.some(t => t.type === 'op' && (t.val === '+' || t.val === '-'));
-    if (hasMulDiv && hasAddSub) {
-      M1_PRIORITY.passed = false;
-      m1ShowPriorityBox();
-    } else {
-      M1_PRIORITY.passed = true;
-      m1SetFeedback('✅ 正确！继续点击下一步的运算符。', 'ok');
-    }
-  }
-
-  // ---------- 优先级测验（先算哪步） ----------
-  const PRIORITY_OPTS = [
-    { key: 'muldiv', label: '先算 乘除（× ÷）' },
-    { key: 'addsub', label: '先算 加减（+ −）' },
-  ];
-
-  function m1InitPriorityOptions() {
-    const opts = $('#m1PriorityOptions');
-    if (!opts) return;
-    // 只构建一次；之后仅切换 class，不再重写 DOM
-    PRIORITY_OPTS.forEach(({ key, label }) => {
-      const btn = document.createElement('button');
-      btn.className = 'priority-opt';
-      btn.dataset.key = key;
-      btn.textContent = label;
-      btn.addEventListener('click', () => {
-        const isCorrect = M1_PRIORITY.expectedOps.includes(key);
-        opts.querySelectorAll('.priority-opt').forEach(b => b.classList.remove('chosen', 'wrong', 'correct'));
-        btn.classList.add('chosen', isCorrect ? 'correct' : 'wrong');
-        const fb = $('#m1PriorityFeedback');
-        if (isCorrect) {
-          fb.textContent = '✓ 对！先算乘除，再算加减。';
-          fb.className = 'priority-feedback ok';
-          M1_PRIORITY.passed = true;
-          try {
-            const d = new Date();
-            const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            ctx.storage.set('grade3_priority_passed_date', todayStr);
-          } catch (e) { console.warn('[m1] 写入优先级测验日期失败', e); }
-          setTimeout(() => {
-            m1HidePriorityBox();
-            m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
-          }, 800);
-        } else {
-          fb.textContent = '再想想哦～';
-          fb.className = 'priority-feedback error';
-        }
-      });
-      opts.appendChild(btn);
-    });
-  }
-
-  function m1ShowPriorityBox() {
-    const box = $('#m1PriorityBox');
-    const opts = $('#m1PriorityOptions');
-    const fb = $('#m1PriorityFeedback');
-    if (!box || !opts) return;
-
-    try {
-      const d = new Date();
-      const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      if (ctx.storage.get('grade3_priority_passed_date') === todayStr) {
-        M1_PRIORITY.passed = true;
-        box.style.display = 'none';
-        return;
-      }
-    } catch (e) { console.warn('[m1] 读取优先级测验日期失败', e); }
-
-    const toks = M1.tokens;
-    const hasParen = toks.some(t => t.type === 'lparen');
-    const hasMulDiv = toks.some(t => t.type === 'op' && (t.val === '×' || t.val === '÷'));
-    const hasAddSub = toks.some(t => t.type === 'op' && (t.val === '+' || t.val === '-'));
-
-    if (hasParen) {
-      M1_PRIORITY.passed = true;
-      box.style.display = 'none';
-      m1SetFeedback('✏️ 有括号，先算括号里的！', '');
-      return;
-    }
-    if (!hasMulDiv || !hasAddSub) {
-      M1_PRIORITY.passed = true;
-      box.style.display = 'none';
-      return;
-    }
-
-    M1_PRIORITY.expectedOps = ['muldiv'];
-    opts.querySelectorAll('.priority-opt').forEach(b => b.classList.remove('chosen', 'wrong', 'correct'));
-    if (fb) { fb.textContent = ''; fb.className = 'priority-feedback'; }
-    box.style.display = 'block';
-  }
-
-  function m1HidePriorityBox() {
-    const box = $('#m1PriorityBox');
-    if (box) box.style.display = 'none';
+    // ⭐ 过程零判定：不弹任何"正确"暗示，只给中性引导（先算乘除的算理在 Koji 对话框里）
+    m1SetFeedback('点击下一个运算符，继续算 👆', '');
+    m1AutoPromptFinalStep();   // ⭐ 推导走到最后一步（num op num）→ 直通输入，不再点运算符
   }
 
   // ---------- 控件（与旧版行为一致） ----------
@@ -1013,7 +1231,7 @@ export default async function mount(container, ctx) {
     const reader = new FileReader();
     reader.onload = ev => {
       const lines = ev.target.result.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      if (lines.length === 0) { m1SetFeedback('❌ 文件为空', 'error'); return; }
+      if (lines.length === 0) { m1SetFeedback('文件是空的，换一个试试吧'); return; }
       presets = lines.map((line, i) => ({ name: '第' + (i + 1) + '题', expr: line }));
       m1InitSelect(presets);
       m1LoadExpression(lines[0]);
@@ -1093,6 +1311,19 @@ export default async function mount(container, ctx) {
     if (sheet?.classList.contains('open')) closeSheet();
     else openSheet();
   });
+  // ---------- Koji 主动式心流助教（唯一求助入口 = 右下角浮条 → 全局聊天舱） ----------
+  const KOJI_TOAST_NORMAL = '有点卡壳？点击看看我怎么想。';   // 常规态（空闲 35s）
+  const KOJI_TOAST_RECHECK = '卡住了吗？需要我讲讲这一步吗？'; // 回溯期（空闲 20s）
+  function m1KojiOpen() {
+    // ⭐ 结构化消息推入 Koji 聊天流（带回上下文记忆）
+    koji.sendMessage({
+      type: M1.recheck ? 'error_review' : 'hint',
+      title: '这一步怎么想？',
+      content: '先算乘除，后算加减；有括号先算括号里的。点击算式中的运算符，把它先算出来。',
+      actions: [{ text: '我懂了', type: 'close' }],
+    });
+    if (M1.recheck && !M1.busy) m1ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错步
+  }
   // 抽屉里的换题动作完成后自动收起
   $('#m1Load')?.addEventListener('click', closeSheet);
   $('#m1UseCustom')?.addEventListener('click', closeSheet);
@@ -1110,9 +1341,9 @@ export default async function mount(container, ctx) {
   });
 
   // ---------- 启动 ----------
-  m1InitPriorityOptions();
   m1InitSelect(presets);
   m1LoadExpression(presets[0].expr);
+  requestAnimationFrame(m1CenterStage);   // ⭐ 布局就绪后舞台居中
 
   registerActiveModule('m1', {
     loadCustom: (text) => {
@@ -1129,6 +1360,11 @@ export default async function mount(container, ctx) {
     unregisterActiveModule('m1');
     themeObserver.disconnect();
     disarmOutsideConfirm();
+    m1SettleRecheck();   // ⭐ 心流守护（定时器/文档监听/微光）随卸载无痕退场
+    koji.hideToast();    // ⭐ 防旧计时器在后台触发
+    window.visualViewport?.removeEventListener('resize', m1OnStageReflow);
+    window.visualViewport?.removeEventListener('scroll', m1OnStageReflow);
+    window.removeEventListener('resize', m1OnStageReflow);
     keypad.hide();
     if (sheetMask) sheetMask.remove();
     if (activeTl) { activeTl.kill(); activeTl = null; }

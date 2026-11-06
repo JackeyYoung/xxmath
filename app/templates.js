@@ -15,16 +15,11 @@ export function injectTemplates() {
       <template id="tpl-m1">
         <div class="card b1-card">
           <div class="b1-topbar">
-            <h2>① 混合运算 · 步步为营</h2>
             <div class="b1-actions">
               <button class="b1-iconbtn" id="m1reset" title="重来一次" aria-label="重来一次">↻</button>
               <button class="b1-iconbtn" id="m1gear" title="换题 / 设置" aria-label="换题或设置">⚙</button>
             </div>
           </div>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>先算乘除，后算加减。点击算式中的运算符，把它先算出来。</p>
-          </details>
 
           <div class="problem-bar b1-sheet" id="m1sheet" style="display:none;">
             <select id="m1Select"></select>
@@ -39,17 +34,9 @@ export function injectTemplates() {
             <svg class="b1-arcs" id="m1arcs" aria-hidden="true"></svg>
             <div class="b1-rows" id="m1rows"></div>
             <div class="b1-inputrow" id="m1inputrow" style="display:none;">
-              <span class="b1-eq">=</span>
               <span class="b1-pending" id="m1pending"></span>
-              <span class="b1-arrow">→</span>
               <span class="b1-answer" id="m1answer" data-empty="1"></span>
             </div>
-          </div>
-
-          <div id="m1PriorityBox" class="priority-box" style="display:none;">
-            <div class="priority-label">🤔 想一想：这道题应该先算哪一步？</div>
-            <div class="priority-options" id="m1PriorityOptions"></div>
-            <div id="m1PriorityFeedback" class="priority-feedback"></div>
           </div>
 
           <div class="feedback b1-hint" id="m1fb">点击算式中的运算符，把它先算出来 👆</div>
@@ -313,18 +300,11 @@ export function injectTemplates() {
       <template id="tpl-m9">
         <div class="card b1-card b9-card">
           <div class="b1-topbar">
-            <h2>⑨ 竖式运算 · 加减乘除</h2>
             <div class="b1-actions">
-              <button class="b1-iconbtn" id="m9step" title="下一步" aria-label="下一步">▶</button>
               <button class="b1-iconbtn" id="m9reset" title="重来" aria-label="重来">↻</button>
               <button class="b1-iconbtn" id="m9gear" title="换题 / 设置" aria-label="换题或设置">⚙</button>
             </div>
           </div>
-
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>选择运算类型，输入数字，点击「▶」逐步计算。每一步的得数、进位、借位都由你来填。</p>
-          </details>
 
           <div class="controls b1-sheet" id="m9sheet" style="display:none;">
             <input type="text" inputmode="decimal" id="m9a" value="348"
@@ -342,12 +322,6 @@ export function injectTemplates() {
           </div>
 
           <div id="m9display" style="display:flex;justify-content:center;margin:24px 0 12px;"></div>
-
-          <div id="m9EstimateBox" class="priority-box" style="display:none;">
-            <div class="priority-label">🤔 先估一估：这道题的结果大约是多少？</div>
-            <div class="priority-options" id="m9EstimateOptions"></div>
-            <div id="m9EstimateFeedback" class="priority-feedback"></div>
-          </div>
 
           <div class="feedback b1-hint" id="m9fb">点击「▶」开始计算</div>
         </div>

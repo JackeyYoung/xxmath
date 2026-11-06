@@ -5,8 +5,7 @@
 */
 
 const CSS = `
-.b1-topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.b1-topbar h2 { margin: 0; font-size: 19px; }
+.b1-topbar { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-height: 38px; }
 .b1-actions { display: flex; gap: 8px; }
 .b1-iconbtn { min-width: 38px; height: 38px; padding: 0 8px; border-radius: 10px;
   border: 1px solid rgba(100,116,139,.45); background: transparent; color: #64748b;
@@ -30,7 +29,6 @@ const CSS = `
 /* 聚光灯：等待输入时页面其余部分退后 */
 .b1-card.b1-awaiting .lesson-hint,
 .b1-card.b1-awaiting .b1-topbar,
-.b1-card.b1-awaiting .priority-box,
 .b1-card.b1-awaiting .b1-hint { opacity: .4; transition: opacity .25s; }
 `;
 
