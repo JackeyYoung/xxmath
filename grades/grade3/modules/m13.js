@@ -22,6 +22,7 @@ import { buildAiInsightHtml } from '../../../core/ui/ai-insight.js';
 import { findCachedFeedback } from '../../../core/feedback-resolver.js';
 import { showExplainModal } from '../../../core/ui/wrongbook-ui.js';
 import { consumePendingRedoTask } from '../../../core/events.js';
+import { aji } from '../../../core/ui/aji.js';
 
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 
@@ -76,31 +77,33 @@ export default async function mount(container, ctx) {
 
   let isBankReady = false;
 
-  // ⭐ 快捷提示词
-  const takeawayWrap = $('#pTakeaway')?.closest('.takeaway');
-  if (takeawayWrap && !takeawayWrap.querySelector('.takeaway-quick')) {
-    const hints = [
-      { label: '还剩多少 → 减法', text: '遇到「还剩多少」用减法，先算一共用去多少，再减。' },
-      { label: '一共 → 加法', text: '遇到「一共」用加法，把各部分加起来。' },
-      { label: '平均分 → 除法', text: '遇到「平均分」用除法，总数 ÷ 份数 = 每份数。' },
-      { label: '几倍 → 乘法', text: '遇到「是……的几倍」用乘法，一份数 × 倍数 = 总数。' },
-      { label: '先算乘除后加减', text: '遇到混合运算，先算乘除，后算加减。' }
-    ];
-    const quick = document.createElement('div');
-    quick.className = 'takeaway-quick';
-    quick.innerHTML = hints.map(h => `<button type="button" class="takeaway-quick-btn">${h.label}</button>`).join('');
-    takeawayWrap.appendChild(quick);
-    
-    quick.querySelectorAll('.takeaway-quick-btn').forEach((btn, i) => {
-      btn.addEventListener('click', () => {
-        const input = $('#pTakeaway');
-        const cur = input.value.trim();
-        input.value = cur ? cur + '；' + hints[i].text : hints[i].text;
-        input.focus();
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-    });
-  }
+  // ⭐ 旧版「快捷提示词」按钮行（.takeaway-quick）已下线：
+  //    显性求助入口全站收敛到 Aji 悬浮球（方法要点见下方 registerModuleContext 的通识卡片）。
+
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm13',
+    topic: '四步法解题',
+    knowledgeCards: [
+      { title: '第 1 步 · 读题圈画', content: '把题目<b>读两遍</b>，圈出关键数字，看清问句到底问的是什么。' },
+      { title: '第 2 步 · 草稿分区', content: '草稿纸分区写，一步一块，<b>别全混在一起</b>，回头检查才看得清。' },
+      { title: '第 3 步 · 分步列式', content: '每一步写清<b>关系式 → 代入 → 得数</b>，一步只做一件事。' },
+      { title: '第 4 步 · 回头检查', content: '算完再看一遍：数抄对了吗？单位写了吗？得数合不合理？' },
+      { title: '关键词找运算', content: '「一共」用加法，「还剩」用减法，「平均分」用除法，「是……的几倍」用乘法。' },
+    ],
+    problemText: () => {
+      const t = $('#problem-text');
+      const shown = t && typeof t.innerText === 'string' ? t.innerText.trim() : '';
+      if (shown) return shown;
+      return (M13_CurrentProblem && M13_CurrentProblem.text) || '';
+    },
+    progress: () => {
+      const filled = M13_STEPS.steps.filter((s) => String(s.rel || '').trim() || String(s.sub || '').trim() || String(s.res || '').trim()).length;
+      if (!filled) return '（尚未开始填写步骤）';
+      const idx = m13Machine ? m13Machine.activeIndex + 1 : filled;
+      return `已填写 ${filled} / ${M13_STEPS.steps.length} 步，当前在第 ${idx} 步`;
+    },
+  });
 
   // ⭐ 修复：切换层级后，自动过滤题库、随机选题，并判断按钮文案
   // ================= 抽取层级切换逻辑 =================
@@ -743,7 +746,7 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
         if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
         else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
       } else {
-        setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
+        setBadge('no', '❌ 再检查一下：读题时圈出的数字都用上了吗？单位写了吗？卡住就问 Aji。');
         const stdSteps = $$('#m13StandardSteps .std-fold');
         if (stdSteps.length > 0) { stdSteps[0].classList.add('open'); $('#m13StandardSteps').scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
         
@@ -833,7 +836,7 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
         if (ctx.handleRedoSuccess) ctx.handleRedoSuccess(problemText);
         else if (window.__handleRedoSuccess) window.__handleRedoSuccess(problemText);
       } else {
-        setBadge('no', `❌ 再检查一下。提示：答案中应出现的数字有 ${cNums.join('、')}`);
+        setBadge('no', '❌ 再检查一下：读题时圈出的数字都用上了吗？单位写了吗？卡住就问 Aji。');
         ctx.data.masteryRecord(problemText, false);
         // 展开第一步标准解法
         const stdSteps = $$('#m13StandardSteps .std-fold');

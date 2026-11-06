@@ -46,11 +46,6 @@ export function injectTemplates() {
       <!-- ② 乘法面积 -->
       <template id="tpl-m2">
         <div class="card">
-          <h2>② 多位数乘一位数 · 铺地砖</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>一块一块地铺满地面，看看 12 × 3 到底是怎么算出来的。</p>
-          </details>
           <div class="controls">
             <label>每行 <input type="range" id="m2a" min="11" max="25" value="12"> <span class="val" id="m2aval">12</span> 块</label>
             <label>共 <input type="range" id="m2b" min="2" max="6" value="3"> <span class="val" id="m2bval">3</span> 行</label>
@@ -68,11 +63,6 @@ export function injectTemplates() {
       <!-- ③ 分数披萨 -->
       <template id="tpl-m3">
         <div class="card">
-          <h2>③ 分数的初步认识 · 披萨分一分</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>拖动滑块改变份数，点击披萨上的每一块来"取走"它。</p>
-          </details>
           <div class="controls" style="justify-content:center;margin-bottom:22px;">
             <label>平均分成 <input type="range" id="m3denRange" min="2" max="12" value="4"> <span class="val" id="m3denval">4</span> 份</label>
           </div>
@@ -101,11 +91,6 @@ export function injectTemplates() {
       <!-- ④ 长度单位 -->
       <template id="tpl-m4">
         <div class="card">
-          <h2>④ 毫米、分米和千米 · 单位换算器</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>长度单位每相邻两个之间都是 10 倍关系（千米和米之间是 1000 倍）。</p>
-          </details>
           <div class="ladder">
             <div class="rung"><span class="unit-name">千米</span><span class="unit-sym">km</span></div>
             <div class="arrow-row">↓ × 1000 &nbsp;&nbsp; ↑ ÷ 1000</div>
@@ -142,11 +127,6 @@ export function injectTemplates() {
       <!-- ⑤ 面积周长 -->
       <template id="tpl-m5">
         <div class="card">
-          <h2>⑤ 长方形和正方形的面积 · 围栏与地砖</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>拖动滑块改变长和宽，观察面积和周长各自怎么变化。</p>
-          </details>
           <div class="controls" style="justify-content:center;">
             <label>长 <input type="range" id="m5w" min="1" max="10" value="5"> <span class="val" id="m5wval">5</span></label>
             <label>宽 <input type="range" id="m5h" min="1" max="10" value="3"> <span class="val" id="m5hval">3</span></label>
@@ -180,11 +160,6 @@ export function injectTemplates() {
       <!-- ⑥ 小数认识 -->
       <template id="tpl-m6">
         <div class="card">
-          <h2>⑥ 小数的初步认识 · 元角分</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>1 元 = 10 角 = 100 分。往钱包里放硬币，看看一共是多少元。</p>
-          </details>
           <div class="coin-row" id="m6coins"></div>
           <div class="money-display">
             <div class="money-big" id="m6total">0.00<small>元</small></div>
@@ -200,11 +175,6 @@ export function injectTemplates() {
       <!-- ⑦ 时分秒 -->
       <template id="tpl-m7">
         <div class="card">
-          <h2>⑦ 时、分、秒 · 时钟与秒表</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>拖动分针或让秒针自动走，观察时分秒的关系。切换到秒表模式，体验正计时和倒计时。</p>
-          </details>
 
           <div class="clock-wrap">
             <canvas id="m7canvas" width="320" height="320"></canvas>
@@ -255,12 +225,12 @@ export function injectTemplates() {
 
       <!-- ⑧ 倍的认识 -->
       <template id="tpl-m8">
-        <div class="card">
-          <h2>⑧ 倍的认识 · 图形倍数</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>第一行摆几个图形，第二行摆的是它的几倍。拖动滑块，数一数、圈一圈。</p>
-          </details>
+        <div class="card b1-card">
+          <div class="b1-topbar">
+            <div class="b1-actions">
+              <button class="b1-iconbtn" id="m8gear" title="老师配置" aria-label="老师配置">⚙</button>
+            </div>
+          </div>
 
           <div class="controls" style="justify-content:center; flex-wrap:wrap;">
             <label>第一行 <input type="range" id="m8base" min="1" max="5" value="3"> <span class="val" id="m8baseval">3</span> 个</label>
@@ -275,24 +245,19 @@ export function injectTemplates() {
             <div id="m8result"></div>
           </div>
 
-          <details style="margin-top:26px;font-size:13px;color:var(--muted);">
-            <summary style="cursor:pointer;font-weight:600;user-select:none;list-style:none;padding:6px 0;text-align:center;">
-              ⚙️ 老师配置（点击展开）
-            </summary>
-            <div style="display:flex;gap:20px;flex-wrap:wrap;justify-content:center;align-items:center;padding:14px 16px;margin-top:8px;background:var(--bg);border-radius:10px;border:1px dashed var(--border);">
-              <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;">
-                第一行上限
-                <input type="text" inputmode="decimal" id="m8baseMax" min="1" max="20" value="5"
-                        style="width:56px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center;font-family:inherit;outline:none;color:var(--text-soft);background:var(--card);">
-              </label>
-              <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;">
-                倍的上限
-                <input type="text" inputmode="decimal" id="m8max" min="2" max="50" value="20"
-                        style="width:56px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center;font-family:inherit;outline:none;color:var(--text-soft);background:var(--card);">
-              </label>
-              <span style="color:var(--muted);font-weight:500;font-size:12px;">数字越小越适合低年级</span>
-            </div>
-          </details>
+          <div class="controls b1-sheet" id="m8sheet" style="display:none;">
+            <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;">
+              第一行上限
+              <input type="text" inputmode="decimal" id="m8baseMax" min="1" max="20" value="5"
+                      style="width:56px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center;font-family:inherit;outline:none;color:var(--text-soft);background:var(--card);">
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;color:var(--muted);font-weight:600;">
+              倍的上限
+              <input type="text" inputmode="decimal" id="m8max" min="2" max="50" value="20"
+                      style="width:56px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-size:13px;font-weight:700;text-align:center;font-family:inherit;outline:none;color:var(--text-soft);background:var(--card);">
+            </label>
+            <span style="color:var(--muted);font-weight:500;font-size:12px;">数字越小越适合低年级</span>
+          </div>
         </div>
       </template>
 
@@ -330,11 +295,6 @@ export function injectTemplates() {
       <!-- ⑩ 年月日 -->
       <template id="tpl-m10">
         <div class="card">
-          <h2>⑩ 年月日 · 日历探索</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>切换年份和月份，看看每个月的天数有什么规律。</p>
-          </details>
           <div class="controls" style="justify-content:center; align-items:center;">
             <label>年份 <input type="text" inputmode="decimal" id="m10year" value="2026" style="width:100px;padding:8px 10px;border:1.5px solid var(--border);border-radius:8px;font-size:15px;font-weight:700;text-align:center;font-family:inherit;outline:none;"></label>
             <label>月份
@@ -354,11 +314,6 @@ export function injectTemplates() {
       <!-- ⑪ 位置方向 -->
       <template id="tpl-m11">
         <div class="card">
-          <h2>⑪ 位置与方向 · 方阵坐标</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>点击方阵中的任意格子，看看它在第几列、第几行。</p>
-          </details>
           <div id="m11grid-wrap" style="overflow-x:auto;"></div>
           <div class="calc-display"><div class="calc-final" id="m11result">还没有选位置</div></div>
         </div>
@@ -367,11 +322,6 @@ export function injectTemplates() {
       <!-- ⑫ 吨的认识 -->
       <template id="tpl-m12">
         <div class="card">
-          <h2>⑫ 吨的认识 · 质量单位换算</h2>
-          <details class="lesson-hint">
-            <summary>💡 不会做？点我看提示</summary>
-            <p>1 吨 = 1000 千克，1 千克 = 1000 克。</p>
-          </details>
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:20px 0;">
             <div class="rung"><span>吨</span><span style="color:var(--text);font-family:monospace;">t</span></div>
             <div class="arrow-row">↓ × 1000 &nbsp;&nbsp; ↑ ÷ 1000</div>
@@ -584,7 +534,6 @@ export function injectTemplates() {
       <!-- ⑭ 我的成长 -->
       <template id="tpl-m14">
         <div class="card">
-          <h2>📊 我的成长</h2>
           <p class="sub">这里记录你做过的每一道题、每一条心得、每一周的变化。</p>
 
           <div id="dashboard" class="dashboard-bar">

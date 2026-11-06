@@ -1,5 +1,6 @@
 /* m6.js 小数 */
 import { getTemplate } from '../../../core/ui/template.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '小数认识', icon: '💰' };
 
@@ -8,6 +9,21 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm6',
+    topic: '小数（元角分）',
+    knowledgeCards: [
+      { title: '元角分', content: '1 元 = 10 角，1 角 = 10 分，所以 1 元 = 100 分。' },
+      { title: '小数点右边', content: '小数点右边<b>第一位是角，第二位是分</b>：3.45 元 = 3 元 4 角 5 分。' },
+      { title: '比大小', content: '先比整数部分（元），一样大再比角，再比分——<b>一位一位比下去</b>。' },
+      { title: '小数加减', content: '<b>小数点要对齐</b>再加减，就像整数竖式的数位对齐一样。' },
+    ],
+    problemText: () => ((M6.yuan || M6.jiao || M6.fen)
+      ? `用人民币摆出 ${M6.yuan} 元 ${M6.jiao} 角 ${M6.fen} 分，合起来写作多少元？` : ''),
+    progress: () => `当前摆出：${M6.yuan} 元 ${M6.jiao} 角 ${M6.fen} 分`,
+  });
+
   const $ = sel => container.querySelector(sel);
 
   const M6 = { yuan:0, jiao:0, fen:0 };

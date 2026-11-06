@@ -22,7 +22,7 @@ import { takeawayLoad } from '../../../core/takeaway.js';
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getVirtualKeypad } from '../../../core/ui/virtual-keypad.js';
-import { getKoji } from '../../../core/ui/koji.js';
+import { getAji } from '../../../core/ui/aji.js';
 import { ensureChromeStyle } from '../../../core/ui/brilliant-chrome.js';
 
 export const meta = {
@@ -99,7 +99,7 @@ export default async function mount(container, ctx) {
 
   ensureChromeStyle();
   ensureMathTypoStyle();   // ⭐ 全局数学排版（TYPOGRAPHY，幂等）
-  const koji = getKoji();  // ⭐ Koji 交互助教（主动式浮条 = 唯一求助入口）
+  const aji = getAji();    // ⭐ Aji 交互助教（双引擎；主动式浮条 = 唯一求助入口）
   const keypad = getVirtualKeypad();
 
   /* ---------- 算式舞台视觉居中 + 键盘避让（与 m1 同规） ─────────────────────
@@ -778,7 +778,7 @@ export default async function mount(container, ctx) {
     M9.waitingFor = null;
     disarmOutsideConfirm();
     keypad.hide();
-    koji.hideToast();   // ⭐ 终局：Koji 使命完成，退场
+    aji.hideToast();    // ⭐ 终局：Aji 使命完成，退场
     m9Render();
     setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
     emitUI('CORRECT', { moduleId: 'm9' });
@@ -795,9 +795,9 @@ export default async function mount(container, ctx) {
     }
   }
 
-  /* ---- 估算（先估算再动笔）→ 下沉为 Koji 对话内容 ----
+  /* ---- 估算（先估算再动笔）→ 下沉为 Aji 对话内容 ----
      强制估算弹窗已下线：学生点击待填格直接开算，绝不阻断。
-     常规态 Koji 浮条轻声问「要不要先估一估」——点了才有估算对话卡片，
+     常规态 Aji 浮条轻声问「要不要先估一估」——点了才有估算对话卡片，
      不点就完全放行（估算无记录/加分业务，旧的闸门状态一并废弃）。 */
   function m9EstimateData() {
     const a = M9.a, b = M9.b, op = M9.op;
@@ -817,15 +817,14 @@ export default async function mount(container, ctx) {
     return { exact, options, correctIdx };
   }
 
-  /* Koji 估算对话（聊天舱消息流）：推送区间选项消息，学生点选后
-     以"用户气泡"落史，再追加一条揭晓消息——无对错审判，无阻断 */
-  function m9OpenEstimateDialog() {
+  /* Aji 估算消息（结构化）：推送区间选项，学生点选后以"用户气泡"落史，
+     再追加一条揭晓消息——无对错审判，无阻断 */
+  function m9BuildEstimateMsg() {
     const { exact, options, correctIdx } = m9EstimateData();
     if (!Number.isFinite(exact)) {
-      koji.sendMessage({ type: 'estimate', title: '先估一估', content: '先心里有数，再动笔不容易错。' });
-      return;
+      return { type: 'estimate', title: '先估一估', content: '先心里有数，再动笔不容易错。' };
     }
-    koji.sendMessage({
+    return {
       type: 'estimate',
       title: '先估一估',
       content: `<b>${M9.a} ${M9.op} ${M9.b}</b> 的得数大概是多少？选一个区间试试：`,
@@ -833,7 +832,7 @@ export default async function mount(container, ctx) {
         text: o.label,
         onClick: () => {
           const picked = i === correctIdx;
-          koji.sendMessage({
+          aji.sendMessage({
             type: 'estimate',
             title: picked ? '✓ 对！' : '精确结果在这里',
             content: picked
@@ -842,12 +841,12 @@ export default async function mount(container, ctx) {
           });
         },
       })),
-    });
+    };
   }
 
   /* ⭐ 统一点击心智（与 m1 一致，无「下一步」按钮）：
      点击竖式中的任意待填格 / 运算符 → 直接进入输入态（键盘弹起）。
-     引擎按依赖链顺序提问并自动推进；估算只活在 Koji 里，开算绝不阻断。 */
+     引擎按依赖链顺序提问并自动推进；估算只活在 Aji 里，开算绝不阻断。 */
   function onGridClick(e) {
     if (M9.submitting || M9.recheck) return;         // 回溯期的格子点击归 editable 管线
     if (grid && grid.kind === 'div' && !grid.meta.steps?.length) return;   // a<b 占位无过程
@@ -969,26 +968,52 @@ export default async function mount(container, ctx) {
      只有当"最后一步填完、最终得数与标准答案不符"时：
      ① 提示语平滑切换为柔声的一句（无 error 档 → 无红、无缩略条）；
      ② 系统静默等待：静置 45 秒（MOTION.recheckIdle，任何动作都重新起算）
-        或用户点开「不会做？点我看提示」求助 —— 才用主题暖黄 15%（SOFT_GLOW）
+        或用户点开 Aji 悬浮球求助 —— 才用主题暖黄 15%（SOFT_GLOW）
         包住 M9.history 里第一个 isCorrect:false 的格子；
      ③ 点击高亮格 → 级联重置：删掉该步及之后的所有键，重新填写；
         一直不改就不催、不判 0，只有主动换题/放弃才结算并记为错。 ---------- */
   const RECHECK_HINT = '最终的得数好像不对，我们一起回头看看？';
 
-  // ---------- Koji 主动式心流助教（唯一求助入口 = 右下角浮条，无任何显性按钮） ----------
-  const KOJI_HINT_CONTENT = '点击竖式中的待填格，直接输入。得数、进位、借位、商、余数都由你来填——系统不会替你判断对错，跟着竖式的节奏一步步来就好。';
-  const KOJI_TOAST_NORMAL = '做之前，要不要先估一估得数大概是多少？';   // 常规态（空闲 35s）→ 估算对话卡片
-  const KOJI_TOAST_RECHECK = '卡住了吗？需要我讲讲这一步吗？'; // 回溯期（空闲 20s）
-  function m9KojiOpen() {
-    // ⭐ 结构化消息推入 Koji 聊天流（错误回顾类型）
-    koji.sendMessage({
-      type: 'error_review',
-      title: '这一步怎么想？',
-      content: KOJI_HINT_CONTENT,
-      actions: [{ text: '我懂了', type: 'close' }],
-    });
-    if (M9.recheck && !M9.submitting) m9ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错格
-  }
+  // ---------- Aji 全站陪学助教（模块只报数据 + 本地规则，UI 全在 aji.js） ----------
+  const AJI_HINT_CONTENT = '点击竖式中的待填格，直接输入。得数、进位、借位、商、余数都由你来填——系统不会替你判断对错，跟着竖式的节奏一步步来就好。';
+  const AJI_TOAST_NORMAL = '做之前，要不要先估一估得数大概是多少？';   // 常规态（空闲 35s）→ 估算对话卡片
+  const AJI_TOAST_RECHECK = '卡住了吗？需要我讲讲这一步吗？'; // 回溯期（空闲 20s）
+  aji.registerModuleContext({
+    moduleId: 'm9',
+    topic: '竖式运算',
+    knowledgeCards: [
+      { title: '加减法竖式', content: '相同数位对齐，从个位算起。<b>满十进一</b>：哪一位相加满十，就向前一位进 1。' },
+      { title: '减法借位', content: '哪一位不够减，就向前一位借 1 当 10。<b>借来的 1 要记得在前一位减去</b>，别忘了。' },
+      { title: '乘法进位', content: '先用一位数去乘各位，个位起。<b>乘积满几十就向前进几</b>，下一位的积要加上进位的数。' },
+      { title: '除法竖式四步', content: '一<b>商</b>（想除数乘几最接近）、二<b>乘</b>、三<b>减</b>、四<b>落</b>（把下一位落下来）。余数一定要比除数小。' },
+      { title: '先估一估', content: '动笔前先估个大概范围，算完一眼就能看出得数是不是离谱——这是最省时间的检查法。' },
+    ],
+    // ⭐ 当前题目（无则空串 → Aji 判为"无题目上下文"场景）
+    problemText: () => (M9.a && M9.b && M9.op ? `${M9.a} ${M9.op} ${M9.b}` : ''),
+    // ⭐ 是否已动过手：场景一（刚进页面未做题 = 打招呼 + 核心法则）与场景二（做到一半）的分水岭
+    isStarted: () => Object.keys(M9.history).length > 0,
+    // ⭐ 当前步骤与错误记录
+    progress: () => {
+      const keys = Object.keys(M9.history);
+      if (!keys.length) return '（尚未开始填写）';
+      const wrong = keys.filter(k => !M9.history[k].isCorrect);
+      const done = keys.map(k => `${k}=${M9.history[k].actual}`).join('，');
+      return `已填第 ${M9.step} 步：${done}${wrong.length ? `；其中 ${wrong.length} 处填错` : '；暂无错误'}`;
+    },
+    // ⭐ 本地规则优先（快思考）：常规态 = 先估一估（区间选项）；回溯/修复态 = 错误回顾 + 微光
+    resolveLocal: (intent) => {
+      if (intent === 'review' || (M9.recheck && !M9.submitting)) {
+        if (M9.recheck && !M9.submitting) m9ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错格
+        return {
+          type: 'error_review',
+          title: '这一步怎么想？',
+          content: AJI_HINT_CONTENT,
+          actions: [{ text: '我懂了', type: 'close' }],
+        };
+      }
+      return m9BuildEstimateMsg();
+    },
+  });
   let recheckTimer = null;
   let recheckActivityArmed = false;
   let recheckGlowEl = null;
@@ -1019,8 +1044,8 @@ export default async function mount(container, ctx) {
     const fw = m9FirstWrong();
     M9.recheck = { firstWrongKey: fw ? fw.key : null };
     setFeedback(RECHECK_HINT);   // ⭐ 直接柔声提示（此时 waitingFor=null，不能依赖 m9Render 分支）
-    // ⭐ 状态 B（终局回溯）：Thumb Bar「去修改」+「看答案」（Koji 浮条绝不在此阶段出现）
-    koji.hideToast();
+    // ⭐ 状态 B（终局回溯）：Thumb Bar「去修改」+「看答案」（Aji 浮条绝不在此阶段出现）
+    aji.hideToast();
     ctx.showThumbBar({
       text: RECHECK_HINT,
       ok: false,
@@ -1105,7 +1130,7 @@ export default async function mount(container, ctx) {
     m9SettleRecheck();
     m9RevertToStep(step);
     // ⭐ 回溯静默期：20s 计时从这里起算（点格/改错=有效操作，自动重置；一直没修好才浮条）
-    koji.requestIdleToast(20000, KOJI_TOAST_RECHECK, m9KojiOpen);
+    aji.requestIdleToast(20000, AJI_TOAST_RECHECK, () => aji.handleAsk('', 'review'));   // 修复期求助 → 错误回顾
   }
 
   /* 「去修改」：平滑滚动到第一个错格并激活输入 */
@@ -1122,7 +1147,7 @@ export default async function mount(container, ctx) {
     const r = M9.recheck;
     const fw = m9FirstWrong();
     m9SettleRecheck();   // ⭐ 清光清计时清可编辑
-    koji.hideToast();    // ⭐ Koji 浮条与计时一并退场
+    aji.hideToast();     // ⭐ Aji 浮条与计时一并退场
     if (!r) return;
     ctx.data?.historyAdd?.({
       problemText: `${M9.a} ${M9.op} ${M9.b}`, problemSource: 'm9', moduleId: 'm9',
@@ -1220,7 +1245,7 @@ export default async function mount(container, ctx) {
           } else if (M9.op === '÷') {
             finishDivision();
           } else {
-            koji.hideToast();   // ⭐ 终局：Koji 使命完成，退场
+            aji.hideToast();    // ⭐ 终局：Aji 使命完成，退场
             M9.waitingFor = null; m9Render();
             setFeedback(`🎉 算出来啦！${M9.a} ${M9.op} ${M9.b} = <b>${calcFinalResult()}</b>`, 'ok');
             emitUI('CORRECT', { moduleId: 'm9' });
@@ -1274,7 +1299,7 @@ export default async function mount(container, ctx) {
       aInput.value = M9.a; bInput.value = M9.b;
       rebuild();
       setFeedback(`💡 ${M9.a} ÷ ${M9.b} = 0 余 ${M9.a}（被除数比除数小）`, 'ok');
-      koji.hideToast();
+      aji.hideToast();
       return;
     }
 
@@ -1282,9 +1307,10 @@ export default async function mount(container, ctx) {
     setFeedback('点击竖式中的待填格，开始计算 👆');
     rebuild();
     // ⭐ 常规态（初始/等待输入）：空闲 35s 才浮条；任何有效操作自动重置。
-    //    浮条点击 → 估算对话卡片（先估一估下沉进 Koji，开算绝不阻断）
-    koji.hideToast();
-    koji.requestIdleToast(35000, KOJI_TOAST_NORMAL, m9OpenEstimateDialog);
+    //    浮条点击 → 估算对话卡片（先估一估下沉进 Aji，开算绝不阻断）
+    aji.hideToast();
+    // 点浮条 → 显式 'estimate' 场景：先估一估（本地规则，开算绝不阻断）
+    aji.requestIdleToast(35000, AJI_TOAST_NORMAL, () => aji.handleAsk('', 'estimate'));
   }
 
   /* ---- 换题抽屉 ---- */
@@ -1309,11 +1335,6 @@ export default async function mount(container, ctx) {
   $('#m9gear')?.addEventListener('click', () => {
     if (sheet?.classList.contains('open')) closeSheet();
     else openSheet();
-  });
-  // ⭐ 求助入口 =「不会做？点我看提示」：用户主动求助时才给微光，系统绝不主动打扰
-  const hintEl = cardEl?.querySelector('details.lesson-hint');
-  hintEl?.addEventListener('toggle', () => {
-    if (hintEl.open && M9.recheck && !M9.submitting) m9ShowSoftGlow();
   });
   $('#m9random')?.addEventListener('click', closeSheet);
   $('#m9reset')?.addEventListener('click', closeSheet);
@@ -1397,7 +1418,7 @@ export default async function mount(container, ctx) {
     themeObserver.disconnect();
     disarmOutsideConfirm();
     m9SettleRecheck();   // ⭐ 心流守护（定时器/文档监听/微光）随卸载无痕退场
-    koji.hideToast();    // ⭐ 防旧计时器在后台触发
+    aji.hideToast();     // ⭐ 防旧计时器在后台触发
     window.visualViewport?.removeEventListener('resize', m9OnStageReflow);
     window.visualViewport?.removeEventListener('scroll', m9OnStageReflow);
     window.removeEventListener('resize', m9OnStageReflow);

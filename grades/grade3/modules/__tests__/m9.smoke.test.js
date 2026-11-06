@@ -7,7 +7,7 @@ vi.mock('../../../app/shell.js', () => ({
   unregisterActiveModule: vi.fn(),
 }));
 
-const { getKoji } = await import('../../../../core/ui/koji.js');
+const { getAji } = await import('../../../../core/ui/aji.js');
 
 const TPL = `
 <template id="tpl-m9">
@@ -57,8 +57,8 @@ const slot = (container) => container.querySelector('[data-m9slot]');
 const currentTargetOf = (container) => slot(container)?.closest('[data-m9key]')?.dataset.m9key;
 // ⭐ 无「下一步」按钮：点击竖式待填格 = 启动/继续（统一点击心智）
 const startFlow = (container) => (key(container, 'q-0') || key(container, 'r-1')).click();
-// ⭐ Koji 浮条（唯一求助入口）：右下角气泡
-const kojiToastVisible = () => getKoji().isToastVisible;
+// ⭐ Aji 浮条（唯一求助入口）：右下角气泡
+const ajiToastVisible = () => getAji().isToastVisible;
 
 async function fillAnswer(container, input, value) {
   input.value = value;
@@ -96,7 +96,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     ctx = makeCtx();
-    getKoji().hideToast();   // ⭐ 清掉上一个用例遗留的 Koji 空闲计时/浮条
+    getAji().hideToast();   // ⭐ 清掉上一个用例遗留的 Aji 空闲计时/浮条
     cleanup = await mount(container, ctx);
     // 设题为 338 ÷ 7
     const a = container.querySelector('#m9a');
@@ -163,7 +163,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
   });
 
   it('落位：step0 完成后，被除数的 8 摘进余数行，源数字原地变灰，且不重复动画', { timeout: 20000 }, async () => {
-    // 点击待填格 → 直通 step0（估算已下沉 Koji，开算无阻断）
+    // 点击待填格 → 直通 step0（估算已下沉 Aji，开算无阻断）
     startFlow(container);
     await wait(50);
 
@@ -275,8 +275,8 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     const r0 = key(container, 'r-0');                         // 十位 = result-0，错误值 5
     expect(r0.textContent).toBe('5');
     expect(ctx.data.historyAdd).not.toHaveBeenCalled();       // 不判 0
-    // ⭐ 回溯期由 Thumb Bar 主导：Koji 浮条绝不出现（常规态挂起的空闲请求已收）
-    expect(kojiToastVisible()).toBe(false);
+    // ⭐ 回溯期由 Thumb Bar 主导：Aji 浮条绝不出现（常规态挂起的空闲请求已收）
+    expect(ajiToastVisible()).toBe(false);
 
     // 学生点「去修改」→ 级联重置 → 重新填十位 4 → 终局达成、记为对
     const goFix = [...ctx.showThumbBar.mock.calls].reverse().find(c => c[0].nextLabel === '去修改');
@@ -291,7 +291,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     cleanup();
   });
 
-  it('回溯静默期：去修改后无弹窗，20s 无动作 Koji 浮条才出现；点击浮条弹对话框', { timeout: 20000 }, async () => {
+  it('回溯静默期：去修改后无弹窗，20s 无动作 Aji 浮条才出现；点击浮条弹对话框', { timeout: 20000 }, async () => {
     const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
     a.value = '12'; b.value = '34'; op.value = '+';
     a.dispatchEvent(new Event('input', { bubbles: true }));
@@ -305,34 +305,34 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     await wait(800);
     pressDigits('5'); pressConfirm();   // 十位（终局）答错 → 回溯
     await wait(1300);
-    expect(kojiToastVisible()).toBe(false);   // Thumb Bar 阶段：Koji 静默
+    expect(ajiToastVisible()).toBe(false);   // Thumb Bar 阶段：Aji 静默
 
     const goFix = [...ctx.showThumbBar.mock.calls].reverse().find(c => c[0].nextLabel === '去修改');
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       goFix[0].onNext();                      // 去修改 → 级联重置 + 20s 静默起算
-      expect(kojiToastVisible()).toBe(false); // ⭐ 立刻无任何弹窗
+      expect(ajiToastVisible()).toBe(false); // ⭐ 立刻无任何弹窗
 
       vi.advanceTimersByTime(20000);          // 一直发呆 → 20s 后浮条才出现
-      expect(kojiToastVisible()).toBe(true);
-      const toastEl = document.querySelector('.koji-toast');
+      expect(ajiToastVisible()).toBe(true);
+      const toastEl = document.querySelector('.aji-float-bubble');
       expect(toastEl.textContent).toContain('卡住了吗');
 
       toastEl.click();                        // 点击浮条 → 聊天舱滑出（结构化消息入流）
-      expect(kojiToastVisible()).toBe(false);
-      expect(getKoji().isDrawerOpen).toBe(true);
-      const drawer = document.querySelector('.koji-drawer');
+      expect(ajiToastVisible()).toBe(false);
+      expect(getAji().isDrawerOpen).toBe(true);
+      const drawer = document.querySelector('.aji-chat-hub');
       expect(drawer.style.display).toBe('flex');
       expect(drawer.textContent).toContain('竖式');
       expect(drawer.textContent).toContain('这一步怎么想？');   // ⭐ 结构化消息（title）
-      expect(drawer.querySelector('.koji-act').textContent).toContain('我懂了');
+      expect(drawer.querySelector('.aji-msg-chip').textContent).toContain('我懂了');
     } finally {
       vi.useRealTimers();
     }
     cleanup();
   });
 
-  it('估算下沉 Koji：直通开算无拦截；静置浮条点击 → 估算对话卡片选区间揭晓', { timeout: 20000 }, async () => {
+  it('估算下沉 Aji：直通开算无拦截；静置浮条点击 → 估算对话卡片选区间揭晓', { timeout: 20000 }, async () => {
     const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
     a.value = '12'; b.value = '34'; op.value = '+';
     a.dispatchEvent(new Event('input', { bubbles: true }));
@@ -345,29 +345,29 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     await wait(50);
     expect(keypadVisible()).toBe(true);
 
-    // 静置 → Koji 浮条（估算邀请）→ 点击 → 估算对话卡片
-    const koji = getKoji();
-    koji.hideToast();   // 清掉真实时钟上的挂起计时
+    // 静置 → Aji 浮条（估算邀请）→ 点击 → 估算对话卡片
+    const aji = getAji();
+    aji.hideToast();   // 清掉真实时钟上的挂起计时
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       container.querySelector('#m9reset').click();   // 重新载入 → 估算邀请落在虚拟时钟
       vi.advanceTimersByTime(35000);
-      expect(kojiToastVisible()).toBe(true);
-      expect(document.querySelector('.koji-toast').textContent).toContain('估一估');
+      expect(ajiToastVisible()).toBe(true);
+      expect(document.querySelector('.aji-float-bubble').textContent).toContain('估一估');
 
-      document.querySelector('.koji-toast').click();
-      expect(getKoji().isDrawerOpen).toBe(true);
-      const drawer = document.querySelector('.koji-drawer');
+      document.querySelector('.aji-float-bubble').click();
+      expect(getAji().isDrawerOpen).toBe(true);
+      const drawer = document.querySelector('.aji-chat-hub');
       expect(drawer.style.display).toBe('flex');
       expect(drawer.textContent).toContain('先估一估');
       // 点选正确区间（12+34=46 → 0~100）→ 用户气泡入流 → 追加揭晓消息
-      const right = [...drawer.querySelectorAll('.koji-act')].find(b => b.textContent === '0~100');
+      const right = [...drawer.querySelectorAll('.aji-msg-chip')].find(b => b.textContent === '0~100');
       expect(right).toBeTruthy();
       right.click();
       expect(drawer.textContent).toContain('精确结果是');
       expect(drawer.textContent).toContain('46');
       // ⭐ 聊天舱状态记忆：点选以用户气泡落史
-      expect(drawer.querySelectorAll('.koji-msg-user').length).toBe(1);
+      expect(drawer.querySelectorAll('.aji-msg-user').length).toBe(1);
     } finally {
       vi.useRealTimers();
     }

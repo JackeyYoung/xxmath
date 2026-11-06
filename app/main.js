@@ -123,64 +123,8 @@ function handleRedoSuccess(problemText) {
 // 将重做函数挂到全局以供模块使用
 window.__handleRedoSuccess = handleRedoSuccess;
 
-// ========== 3. Koji 点击逻辑 ==========
-(function hookKoji() {
-  const btn = _lessonQ('kojiBtn');
-  if (!btn || btn.dataset._hooked) return;
-  btn.dataset._hooked = '1';
-
-  btn.addEventListener('click', () => {
-    const hash = location.hash; 
-    let id = null;
-    if (hash.startsWith('#lesson/')) {
-      id = hash.split('/')[1];
-    }
-
-    if (!id) { 
-      showToast('先进一个知识岛，再来找 Koji 💡', 'info'); 
-      return; 
-    }
-
-    let problemText = '';
-    if (id === 'm1') {
-      problemText = _lessonQ('m1expr')?.textContent?.trim() || '';
-    } else if (id === 'm9') {
-      const a = _lessonQ('m9a')?.value || '';
-      const op = _lessonQ('m9op')?.value || '';
-      const b = _lessonQ('m9b')?.value || '';
-      problemText = `${a} ${op} ${b}`;
-    } else  if (id === 'm13') {
-      problemText = _lessonQ('problem-text')?.innerText?.trim() || '';
-      // ⭐ 核心修复：把用户填写的答案和步骤收集起来
-      const currentAnswer = _lessonQ('pAnswer')?.value.trim() || '';
-      const currentSteps = [];
-      document.querySelectorAll('#formulaSteps .formula-step').forEach(step => {
-        const rel = step.querySelector('input[data-field="rel"]')?.value || '';
-        const sub = step.querySelector('input[data-field="sub"]')?.value || '';
-        const res = step.querySelector('input[data-field="res"]')?.value || '';
-        if (rel || sub || res) currentSteps.push({ rel, sub, res });
-      });
-      // ⭐ Koji 弹窗只弹一次：移出循环（原先每收集一步就会弹一次）
-      if (problemText) {
-        showExplainModal(problemText, {
-          studentAnswer: currentAnswer,
-          studentSteps: currentSteps
-        });
-      }
-    } else {
-      problemText = document.querySelector('#lesson-stage-main .card h2')?.textContent || '';
-    }
-
-    if (!problemText) {
-      showToast('这一题还没开始，先做一步再问 Koji 吧', 'info');
-      return;
-    }
-
-    if (id === 'm1' || id === 'm9') {
-      showExplainModal(problemText);
-    }
-  });
-})();
+// ========== 3. 全局助手入口 ===========
+// 旧版 #kojiBtn 悬浮球已下线：全站唯一求助入口 = Aji 悬浮球（core/ui/aji.js，壳层挂载）。
 
 // ========== 4. 家长设置与留言弹窗 ==========
 function showParentSettingsModal() {

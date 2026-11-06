@@ -4,6 +4,7 @@
 */
 import { createScope } from '../../../core/lesson/scope.js';
 import { el, replace } from '../../../core/lesson/dom.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '年月日', icon: '📅' };
 
@@ -36,6 +37,26 @@ export function buildMonthGrid(y, m) {
 }
 
 export default async function mount(container, ctx) {
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm10',
+    topic: '年月日',
+    knowledgeCards: [
+      { title: '大月小月', content: '大月 31 天：1、3、5、7、8、10、12 月；小月 30 天：4、6、9、11 月。' },
+      { title: '二月最特殊', content: '平年二月 28 天，闰年二月 29 天——所以闰年全年 366 天。' },
+      { title: '判断闰年', content: '普通年份除以 4 没有余数就是闰年；整百年要能除以 400 才是闰年。' },
+      { title: '一天 24 时', content: '一年 = 12 个月 = 365 天（闰年 366 天）；一天 = 24 小时。' },
+    ],
+    problemText: () => {
+      const y = $('#m10year'), m = $('#m10month');
+      return (y && m) ? `${y.value} 年 ${m.value} 月一共有多少天？` : '';
+    },
+    progress: () => {
+      const t = $('#m10title');
+      return t ? `正在查看：${t.textContent}` : '（日历尚未渲染）';
+    },
+  });
+
   const scope = createScope(container, 'tpl-m10');
   const { $, on, dispose } = scope;
 

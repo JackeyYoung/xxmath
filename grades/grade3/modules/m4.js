@@ -10,6 +10,7 @@
 */
 import { createApp, defineComponent, ref, computed } from '../../../js/vendor/vue.esm-browser.prod.js';
 import { createJudge } from '../../../core/lesson/judge.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '长度单位', icon: '📏' };
 
@@ -113,12 +114,6 @@ const M4View = defineComponent({
   },
   template: `
 <div class="card">
-  <h2>④ 毫米、分米和千米 · 单位换算器</h2>
-  <details class="lesson-hint">
-    <summary>💡 不会做？点我看提示</summary>
-    <p>长度单位每相邻两个之间都是 10 倍关系（千米和米之间是 1000 倍）。</p>
-  </details>
-
   <div class="ladder">
     <div class="rung"><span class="unit-name">千米</span><span class="unit-sym">km</span></div>
     <div class="arrow-row">↓ × 1000 &nbsp;&nbsp; ↑ ÷ 1000</div>
@@ -165,6 +160,30 @@ const M4View = defineComponent({
 
 export default async function mount(container, ctx) {
   container.innerHTML = '';
+
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  // m4 的状态在 Vue 组件内部（setupLength），这里通过 DOM 只读取当前输入值。
+  aji.registerModuleContext({
+    moduleId: 'm4',
+    topic: '长度单位',
+    knowledgeCards: [
+      { title: '单位阶梯', content: '千米 > 米 > 分米 > 厘米 > 毫米，<b>相邻两个单位之间是 10 倍</b>（米到千米是 1000）。' },
+      { title: '大化小乘', content: '大单位换小单位要<b>乘</b>进率：3 米 = 3 × 100 = 300 厘米。' },
+      { title: '小化大除', content: '小单位换大单位要<b>除</b>进率：500 厘米 = 500 ÷ 100 = 5 米。' },
+      { title: '别忘了单位', content: '换算完一定要把单位写上，再回头看看方向有没有换反。' },
+    ],
+    problemText: () => {
+      const v = container.querySelector('.converter input');
+      const u = container.querySelector('.converter select');
+      return (v && v.value) ? `${v.value} ${(u && u.selectedOptions[0] && u.selectedOptions[0].textContent) || ''} 换算成其他单位` : '';
+    },
+    progress: () => {
+      const q = container.querySelector('.quiz-q');
+      const a = container.querySelector('.quiz-row input');
+      if (!q) return '（尚未开始小测）';
+      return `小测题：${q.textContent.trim()}；已填答案：${(a && a.value) || '（还未填写）'}`;
+    },
+  });
 
   const app = createApp(M4View, {
     onActivity: (label, detail) => {

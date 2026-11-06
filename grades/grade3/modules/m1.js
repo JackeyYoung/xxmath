@@ -20,7 +20,7 @@ import { registerActiveModule, unregisterActiveModule } from '../../../app/shell
 import { getGradeConfig } from '../../../app/grade-config.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getVirtualKeypad } from '../../../core/ui/virtual-keypad.js';
-import { getKoji } from '../../../core/ui/koji.js';
+import { getAji } from '../../../core/ui/aji.js';
 
 const M1_PRESETS = [
   { name: '括号加法',  expr: '(3 + 6) ÷ (4 - 1)' },
@@ -210,7 +210,6 @@ function buildCss() {
 .b1-cell.b1-editable { cursor: pointer; }
 
 /* ── 聚光灯：等待输入时页面其余部分退后 ── */
-.b1-card.b1-awaiting .lesson-hint,
 .b1-card.b1-awaiting .b1-topbar,
 .b1-card.b1-awaiting .priority-box,
 .b1-card.b1-awaiting .b1-hint { opacity: .4; transition: opacity .25s; }
@@ -264,7 +263,7 @@ export default async function mount(container, ctx) {
   }
   const REDUCED = prefersReducedMotion();
   const keypad = getVirtualKeypad();
-  const koji = getKoji();   // ⭐ Koji 交互助教（主动式浮条 = 唯一求助入口）
+  const aji = getAji();     // ⭐ Aji 交互助教（双引擎；主动式浮条 = 唯一求助入口）
 
   /* ---------- 算式舞台视觉居中 + 键盘避让 ─────────────────────
      标题下线后，主舞台（b1-board）占据「页头以下 ~ 软键盘以上」可视带的正中。
@@ -320,7 +319,7 @@ export default async function mount(container, ctx) {
     standardAnswer: null,   // ⭐ 原题标准答案（终局回溯的比对基准）
     recheck: null,          // ⭐ 终局回溯：{ firstWrongIdx }——放弃时才结算为错
   };
-  // ⭐ 「先算乘除」优先级测验已下线（强制弹窗违背心流）——算理教学下沉进 Koji 对话框，
+  // ⭐ 「先算乘除」优先级测验已下线（强制弹窗违背心流）——算理教学下沉进 Aji 对话框，
   //    学生直接开算，绝不阻断；无记录/加分业务可保留
   let presets = [...M1_PRESETS];
   const rowsMeta = [];      // [{ el, cells, tokens, freshCell|null }]，与 rowsEl 子元素一一对应
@@ -658,8 +657,9 @@ export default async function mount(container, ctx) {
     m1SetFeedback('点击算式中的运算符，把它先算出来 👆', '');
     m1AutoPromptFinalStep();   // ⭐ 载入即最后一步（如 5 − 3）→ 直通输入
     // ⭐ 常规态（初始/等待输入）：空闲 35s 才浮条；任何有效操作自动重置
-    koji.hideToast();
-    koji.requestIdleToast(35000, KOJI_TOAST_NORMAL, m1KojiOpen);
+    aji.hideToast();
+    // 点浮条 → 显式 'hint' 场景：给"这一步"的算理拆解（本地规则优先，零网络）
+    aji.requestIdleToast(35000, AJI_TOAST_NORMAL, () => aji.handleAsk('', 'hint'));
   }
 
   /* ⭐ 消灭最后一步的冗余点击（直通输入）：行内只剩 数字 运算符 数字 时，
@@ -805,7 +805,7 @@ export default async function mount(container, ctx) {
      界面绝不明示）。只有当"推导到最后一步、最终得数与标准答案不符"时：
      ① 提示语平滑切换为柔声的一句（无 error 档 → 无红、无缩略条）；
      ② 系统静默等待：静置 45 秒（MOTION.recheckIdle，任何动作都重新起算）
-        或用户点开「不会做？点我看提示」求助 —— 才用主题暖黄 15%（SOFT_GLOW）
+        或用户点开 Aji 悬浮球求助 —— 才用主题暖黄 15%（SOFT_GLOW）
         包住 M1.steps 中第一个 isCorrect:false 那一步的结果格；
      ③ 点击高亮格 → 回滚到该步重新输入；答对后平滑清空后续所有行重新推导；
         一直不改就不催、不判 0，只有主动换题/放弃才结算并记为错。 ---------- */
@@ -818,8 +818,8 @@ export default async function mount(container, ctx) {
     const k = M1.steps.findIndex(s => !s.isCorrect);
     M1.recheck = { firstWrongIdx: k >= 0 ? k : M1.steps.length - 1 };
     m1SetFeedback(RECHECK_HINT);
-    // ⭐ 状态 B（终局回溯）：Thumb Bar「去修改」+「看答案」（Koji 浮条绝不在此阶段出现）
-    koji.hideToast();
+    // ⭐ 状态 B（终局回溯）：Thumb Bar「去修改」+「看答案」（Aji 浮条绝不在此阶段出现）
+    aji.hideToast();
     ctx.showThumbBar({
       text: RECHECK_HINT,
       ok: false,
@@ -898,7 +898,7 @@ export default async function mount(container, ctx) {
     m1SettleRecheck();
     if (opIdx != null) m1RevertToStep(idx, opIdx);
     // ⭐ 回溯静默期：20s 计时从这里起算（点格/改错=有效操作，自动重置；一直没修好才浮条）
-    koji.requestIdleToast(20000, KOJI_TOAST_RECHECK, m1KojiOpen);
+    aji.requestIdleToast(20000, AJI_TOAST_RECHECK, () => aji.handleAsk('', 'review'));   // 修复期求助 → 错误回顾
   }
 
   /* 「去修改」：平滑滚动到第一个错步并激活输入 */
@@ -914,7 +914,7 @@ export default async function mount(container, ctx) {
   function m1GiveUp() {
     const r = M1.recheck;
     m1SettleRecheck();   // ⭐ 清光清计时清可编辑
-    koji.hideToast();    // ⭐ Koji 浮条与计时一并退场
+    aji.hideToast();     // ⭐ Aji 浮条与计时一并退场
     if (!r) return;
     const s = M1.steps[r.firstWrongIdx];
     if (ctx.data?.historyAdd) {
@@ -1155,8 +1155,8 @@ export default async function mount(container, ctx) {
         return;
       }
       M1.done = true;
-      // ⭐ 终局谢幕：键盘平滑滑下，页面中央由拇指条接管（Koji 使命完成，退场）
-      koji.hideToast();
+      // ⭐ 终局谢幕：键盘平滑滑下，页面中央由拇指条接管（Aji 使命完成，退场）
+      aji.hideToast();
       disarmOutsideConfirm();
       keypad.hide();
       cardEl?.classList.remove('b1-awaiting');
@@ -1196,7 +1196,7 @@ export default async function mount(container, ctx) {
       }
     }, (MOTION.restPause + 0.1) * 1000);
 
-    // ⭐ 过程零判定：不弹任何"正确"暗示，只给中性引导（先算乘除的算理在 Koji 对话框里）
+    // ⭐ 过程零判定：不弹任何"正确"暗示，只给中性引导（先算乘除的算理在 Aji 对话框里）
     m1SetFeedback('点击下一个运算符，继续算 👆', '');
     m1AutoPromptFinalStep();   // ⭐ 推导走到最后一步（num op num）→ 直通输入，不再点运算符
   }
@@ -1311,19 +1311,40 @@ export default async function mount(container, ctx) {
     if (sheet?.classList.contains('open')) closeSheet();
     else openSheet();
   });
-  // ---------- Koji 主动式心流助教（唯一求助入口 = 右下角浮条 → 全局聊天舱） ----------
-  const KOJI_TOAST_NORMAL = '有点卡壳？点击看看我怎么想。';   // 常规态（空闲 35s）
-  const KOJI_TOAST_RECHECK = '卡住了吗？需要我讲讲这一步吗？'; // 回溯期（空闲 20s）
-  function m1KojiOpen() {
-    // ⭐ 结构化消息推入 Koji 聊天流（带回上下文记忆）
-    koji.sendMessage({
-      type: M1.recheck ? 'error_review' : 'hint',
-      title: '这一步怎么想？',
-      content: '先算乘除，后算加减；有括号先算括号里的。点击算式中的运算符，把它先算出来。',
-      actions: [{ text: '我懂了', type: 'close' }],
-    });
-    if (M1.recheck && !M1.busy) m1ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错步
-  }
+  // ---------- Aji 全站陪学助教（模块只报数据 + 本地规则，UI 全在 aji.js） ----------
+  const AJI_TOAST_NORMAL = '有点卡壳？点击看看我怎么想。';   // 常规态（空闲 35s）
+  const AJI_TOAST_RECHECK = '卡住了吗？需要我讲讲这一步吗？'; // 回溯期（空闲 20s）
+  const AJI_HINT_CONTENT = '先算乘除，后算加减；有括号先算括号里的。点击算式中的运算符，把它先算出来。';
+  aji.registerModuleContext({
+    moduleId: 'm1',
+    topic: '混合运算',
+    knowledgeCards: [
+      { title: '运算顺序', content: '先算乘除，后算加减。<b>有括号就先算括号里的</b>，括号优先级最高。' },
+      { title: '从左到右', content: '同级运算（都是加减、或都是乘除）要<b>从左往右</b>依次算：15 − 9 − 8 先算 15 − 9。' },
+      { title: '算完要检查', content: '算完再回头看一眼每一步，看看有没有进位忘了加、或者顺序取错了。' },
+    ],
+    // ⭐ 当前题目（无则空串 → Aji 判为"无题目上下文"场景）
+    problemText: () => M1.original || '',
+    // ⭐ 是否已动过手：场景一（刚进页面未做题 = 打招呼 + 核心法则）与场景二（做到一半）的分水岭
+    isStarted: () => M1.steps.length > 0,
+    // ⭐ 当前步骤与错误记录
+    progress: () => {
+      if (!M1.steps.length) return '（尚未开始计算）';
+      const wrong = M1.steps.filter(s => !s.isCorrect).length;
+      const done = M1.steps.map((st, i) => `第${i + 1}步=${st.resultStr}`).join('，');
+      return `已算 ${M1.steps.length} 步：${done}${wrong ? `；其中 ${wrong} 步算错` : '；暂无错误'}`;
+    },
+    // ⭐ 本地规则优先（快思考）：常规态 = 算理提示；回溯/修复态 = 错误回顾 + 微光
+    resolveLocal: (intent) => {
+      if (M1.recheck && !M1.busy) m1ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错步
+      return {
+        type: (intent === 'review' || M1.recheck) ? 'error_review' : 'hint',
+        title: '这一步怎么想？',
+        content: AJI_HINT_CONTENT,
+        actions: [{ text: '我懂了', type: 'close' }],
+      };
+    },
+  });
   // 抽屉里的换题动作完成后自动收起
   $('#m1Load')?.addEventListener('click', closeSheet);
   $('#m1UseCustom')?.addEventListener('click', closeSheet);
@@ -1361,7 +1382,7 @@ export default async function mount(container, ctx) {
     themeObserver.disconnect();
     disarmOutsideConfirm();
     m1SettleRecheck();   // ⭐ 心流守护（定时器/文档监听/微光）随卸载无痕退场
-    koji.hideToast();    // ⭐ 防旧计时器在后台触发
+    aji.hideToast();     // ⭐ 防旧计时器在后台触发
     window.visualViewport?.removeEventListener('resize', m1OnStageReflow);
     window.visualViewport?.removeEventListener('scroll', m1OnStageReflow);
     window.removeEventListener('resize', m1OnStageReflow);

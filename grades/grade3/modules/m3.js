@@ -2,6 +2,7 @@
 import { getTemplate } from '../../../core/ui/template.js';
 
 import { createJudge } from '../../../core/lesson/judge.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '分数披萨', icon: '🍕' };
 
@@ -10,6 +11,23 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm3',
+    topic: '分数',
+    knowledgeCards: [
+      { title: '分数的意思', content: '把一个整体<b>平均分成几份</b>，再取其中几份。分母是分几份，分子是取几份。' },
+      { title: '比较大小', content: '分母相同看分子，分子大就大；分子相同看分母，<b>分母越大，每一份反而越小</b>。' },
+      { title: '同分母加减', content: '<b>分母不变，分子相加减</b>：2/5 + 1/5 = 3/5。' },
+      { title: '通分', content: '分母不同先通分，把两个分数变成分母一样的，再比大小或加减。' },
+    ],
+    problemText: () => (M3.den ? `把整体平均分成 ${M3.den} 份` : ''),
+    progress: () => {
+      const picked = (M3.selected || []).filter(Boolean).length;
+      return picked ? `已选 ${picked} / ${M3.den || 4} 份` : '（尚未开始选取）';
+    },
+  });
+
   const $ = sel => container.querySelector(sel);
 
   const M3 = { den: 4, selected: [], geom: {} };
