@@ -1,5 +1,6 @@
 /* m11.js 方向 */
 import { getTemplate } from '../../../core/ui/template.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '位置方向', icon: '📍' };
 
@@ -8,6 +9,23 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm11',
+    topic: '方向与位置',
+    knowledgeCards: [
+      { title: '先列后行', content: '说位置要<b>先说第几列（竖着数），再说第几行（横着数）</b>。' },
+      { title: '从哪边开始数', content: '一般<b>从左往右</b>数列，<b>从前往后</b>数行，起点是第 1 个不是第 0 个。' },
+      { title: '地图上的方向', content: '地图上通常是<b>上北下南、左西右东</b>。' },
+    ],
+    problemText: () => (M11.selected
+      ? `找出第 ${M11.selected.c} 列、第 ${M11.selected.r} 行的位置`
+      : `在 ${M11.cols} 列 ${M11.rows} 行的格子里找位置`),
+    progress: () => (M11.selected
+      ? `已选：第 ${M11.selected.c} 列，第 ${M11.selected.r} 行`
+      : '（尚未选择位置）'),
+  });
+
   const $ = sel => container.querySelector(sel);
 
   const M11 = { cols:6, rows:5, selected:null };

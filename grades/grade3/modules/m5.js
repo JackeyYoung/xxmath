@@ -7,6 +7,7 @@ const _pageQ = (id) => {
 
 /* m5.js 面积与周长 */
 import { getTemplate } from '../../../core/ui/template.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '面积与周长', icon: '📐' };
 
@@ -15,6 +16,26 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm5',
+    topic: '面积与周长',
+    knowledgeCards: [
+      { title: '面积是什么', content: '面积是图形<b>占了多大一块地方</b>。用方格铺一铺，数一数有多少格。' },
+      { title: '长方形面积', content: '长方形面积 = <b>长 × 宽</b>：长 5 宽 3 → 5 × 3 = 15 平方厘米。' },
+      { title: '周长和面积别混', content: '周长是<b>外面一圈的总长</b>（长 + 宽）× 2；面积是<b>里面的大小</b>，长 × 宽。两个不一样！' },
+      { title: '别忘了平方', content: '面积单位要带「平方」：平方厘米、平方米。' },
+    ],
+    problemText: () => {
+      const w = $('#m5w'), h = $('#m5h');
+      return (w && h) ? `长 ${w.value}、宽 ${h.value} 的长方形：面积是多少？周长是多少？` : '';
+    },
+    progress: () => {
+      const a = $('#m5area'), p = $('#m5perim');
+      return `已答对 ${m5RecordIdx} 题${a ? `；当前图形面积 ${a.textContent} 平方米、周长 ${p.textContent} 米` : ''}`;
+    },
+  });
+
   const $ = sel => container.querySelector(sel);
 
   let m5RecordIdx = 0;

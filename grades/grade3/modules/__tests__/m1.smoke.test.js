@@ -58,7 +58,7 @@ function makeCtx() {
 
 const { default: mount, reduceWithSrc, cellMetrics, computeRowLayout, mergedGlyphShift } = await import('../m1.js');
 const { parseExpression, cleanParens } = await import('../../scoring/m1.js');
-const { getKoji } = await import('../../../../core/ui/koji.js');
+const { getAji } = await import('../../../../core/ui/aji.js');
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 const keypadEl = () => document.querySelector('.vkp');
@@ -67,8 +67,8 @@ const keypadVisible = () => !!keypadEl() && keypadEl().style.visibility === 'vis
 const pressKeyEl = (el) => el.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
 const pressDigit = (d) => pressKeyEl(keypadEl().querySelector(`.vkp-key[data-digit="${d}"]`));
 const pressConfirm = () => pressKeyEl(keypadEl().querySelector('.vkp-key[data-confirm]'));
-// ⭐ Koji 浮条（唯一求助入口）：右下角气泡
-const kojiToastVisible = () => getKoji().isToastVisible;
+// ⭐ Aji 浮条（唯一求助入口）：右下角气泡
+const ajiToastVisible = () => getAji().isToastVisible;
 
 describe('m1 · Brilliant 重构冒烟', () => {
   let container, ctx;
@@ -78,7 +78,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     ctx = makeCtx();
-    getKoji().hideToast();   // ⭐ 清掉上一个用例遗留的 Koji 空闲计时/浮条
+    getAji().hideToast();   // ⭐ 清掉上一个用例遗留的 Aji 空闲计时/浮条
   });
 
   it('挂载后：首行算式渲染，格子数正确，可点运算符只有括号内的；原生 input 已移除', async () => {
@@ -90,7 +90,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
     // ⭐ 所有运算符都可点（点错给提示，不再静默锁定为"点了没反应"）
     expect(rows[0].querySelectorAll('.b1-op.b1-clickable').length).toBe(3);
     expect(rows[0].querySelectorAll('.b1-op.b1-locked').length).toBe(0);
-    // ⭐ 场景化：无原生输入框；优先级测验强制弹窗已下线（算理在 Koji 对话框里）
+    // ⭐ 场景化：无原生输入框；优先级测验强制弹窗已下线（算理在 Aji 对话框里）
     expect(container.querySelector('input.b1-input')).toBeNull();
     expect(container.querySelector('#m1answer')).toBeTruthy();
     expect(container.querySelector('#m1PriorityBox')).toBeNull();
@@ -236,7 +236,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
     cleanup();
   });
 
-  it('终局回溯：柔声提示 + Thumb Bar 主导（Koji 静默）；去修改回滚改正记对', { timeout: 20000 }, async () => {
+  it('终局回溯：柔声提示 + Thumb Bar 主导（Aji 静默）；去修改回滚改正记对', { timeout: 20000 }, async () => {
     const cleanup = await mount(container, ctx);
     const custom = container.querySelector('#m1Custom');
     custom.value = '5 - 3';                                   // 单步题：唯一一步即终局
@@ -251,8 +251,8 @@ describe('m1 · Brilliant 重构冒烟', () => {
     expect(fb.className).not.toContain('error');               // 无红、无缩略条
     expect(keypadVisible()).toBe(false);                       // 终局谢幕，键盘滑下
     expect(ctx.data.historyAdd).not.toHaveBeenCalled();        // 不判 0、不记错
-    // ⭐ 回溯期由 Thumb Bar 主导：Koji 浮条绝不出现（常规态挂起的空闲请求已收）
-    expect(kojiToastVisible()).toBe(false);
+    // ⭐ 回溯期由 Thumb Bar 主导：Aji 浮条绝不出现（常规态挂起的空闲请求已收）
+    expect(ajiToastVisible()).toBe(false);
 
     // 学生点「去修改」→ 级联重置：行清空、重开该步输入
     const goFix = [...ctx.showThumbBar.mock.calls].reverse().find(c => c[0].nextLabel === '去修改');
@@ -308,7 +308,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
     // 终局：13 ≠ 标准 12 → 回溯
     expect(container.querySelector('#m1fb').textContent).toContain('回头检查');
     expect(ctx.data.historyAdd).not.toHaveBeenCalled();
-    expect(kojiToastVisible()).toBe(false);   // ⭐ 回溯期由 Thumb Bar 主导，Koji 静默
+    expect(ajiToastVisible()).toBe(false);   // ⭐ 回溯期由 Thumb Bar 主导，Aji 静默
 
     // 点「去修改」→ 后续行被清空，只剩原始行；重输 7
     const goFix = [...ctx.showThumbBar.mock.calls].reverse().find(c => c[0].nextLabel === '去修改');
@@ -358,28 +358,28 @@ describe('m1 · Brilliant 重构冒烟', () => {
     cleanup();
   });
 
-  it('Koji 智能延迟：常规态空闲 35s 浮条浮现；任何有效操作立刻淡出且计时重置', async () => {
+  it('Aji 智能延迟：常规态空闲 35s 浮条浮现；任何有效操作立刻淡出且计时重置', async () => {
     const cleanup = await mount(container, ctx);
-    const koji = getKoji();
-    koji.hideToast();   // 清掉 mount 时挂在真实时钟上的空闲计时（防泄漏）
-    const toast = () => document.querySelector('.koji-toast');
+    const aji = getAji();
+    aji.hideToast();   // 清掉 mount 时挂在真实时钟上的空闲计时（防泄漏）
+    const toast = () => document.querySelector('.aji-float-bubble');
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      koji.requestIdleToast(35000, '有点卡壳？点击看看我怎么想。', null);
+      aji.requestIdleToast(35000, '有点卡壳？点击看看我怎么想。', null);
       vi.advanceTimersByTime(34000);
-      expect(kojiToastVisible()).toBe(false);   // 差 1 秒不浮现
+      expect(ajiToastVisible()).toBe(false);   // 差 1 秒不浮现
 
       // 任何有效操作 → 计时重新起算
       document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
       vi.advanceTimersByTime(34000);
-      expect(kojiToastVisible()).toBe(false);   // 距操作仅 34s，仍静默
+      expect(ajiToastVisible()).toBe(false);   // 距操作仅 34s，仍静默
       vi.advanceTimersByTime(1000);             // 静置满 35s
-      expect(kojiToastVisible()).toBe(true);
+      expect(ajiToastVisible()).toBe(true);
       expect(toast().textContent).toContain('有点卡壳');
 
       // 浮条出现后再有操作 → 立刻淡出（绝不打扰）
       document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
-      expect(kojiToastVisible()).toBe(false);
+      expect(ajiToastVisible()).toBe(false);
     } finally {
       vi.useRealTimers();
     }

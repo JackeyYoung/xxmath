@@ -7,6 +7,7 @@ const _pageQ = (id) => {
 
 /* m7.js 时钟 */
 import { getTemplate } from '../../../core/ui/template.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '时分秒', icon: '🕐' };
 
@@ -15,6 +16,22 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm7',
+    topic: '时间（时分秒）',
+    knowledgeCards: [
+      { title: '时分秒进率', content: '1 时 = 60 分，1 分 = 60 秒。<b>时间满 60 才进 1，不是满 100</b>。' },
+      { title: '读钟表', content: '短针是时针（几时），长针是分针（几分）。分针指 6 就是 30 分。' },
+      { title: '算经过时间', content: '<b>先看时、再看分</b>；分钟不够减，就向前借 1 时 = 60 分。' },
+      { title: '别忘了换算', content: '80 分 = 1 时 20 分——满 60 分就要换成 1 时。' },
+    ],
+    problemText: () => `钟面显示 ${M7.hour} 时 ${M7.minute} 分 ${M7.second} 秒`,
+    progress: () => (M7.mode === 'stopwatch'
+      ? `秒表模式：已计时 ${(M7.swElapsed / 1000).toFixed(1)} 秒`
+      : (M7.running ? '钟表正在走时' : '钟表已暂停（可点击开始）')),
+  });
+
   const $ = sel => container.querySelector(sel);
 
   const M7 = {

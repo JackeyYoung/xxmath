@@ -1,5 +1,6 @@
 /* grades/grade3/modules/m2.js */
 import { getTemplate } from '../../../core/ui/template.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '面积模型', icon: '🧱' };
 
@@ -8,6 +9,24 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm2',
+    topic: '铺地砖（乘法的面积模型）',
+    knowledgeCards: [
+      { title: '一行有几块', content: '横着数一遍，<b>一行有几块</b>就是每份数。' },
+      { title: '铺了几行', content: '竖着数一遍，<b>铺了几行</b>就是份数。' },
+      { title: '总数 = 每份 × 份数', content: '一行 4 块、铺 3 行，就是 4 × 3 = 12 块。<b>乘法就是求几个相同加数的和</b>。' },
+    ],
+    problemText: () => (M2.a && M2.b ? `${M2.a} × ${M2.b}（每行 ${M2.a} 块，铺 ${M2.b} 行）` : ''),
+    progress: () => {
+      const total = M2.a * M2.b;
+      if (!total) return '（尚未开始铺砖）';
+      const done = M2.filled || 0;
+      return done >= total ? `已铺满 ${total} 块` : `已铺 ${done} / ${total} 块`;
+    },
+  });
 
   const $ = sel => container.querySelector(sel);
   const M2 = { a:12, b:3, filled:0, split:false, busy:false };

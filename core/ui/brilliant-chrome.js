@@ -27,7 +27,6 @@ const CSS = `
 .b1-hint:not(.ok):not(.error) { color: #64748b; font-size: 16px; }
 
 /* 聚光灯：等待输入时页面其余部分退后 */
-.b1-card.b1-awaiting .lesson-hint,
 .b1-card.b1-awaiting .b1-topbar,
 .b1-card.b1-awaiting .b1-hint { opacity: .4; transition: opacity .25s; }
 `;

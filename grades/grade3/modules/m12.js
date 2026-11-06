@@ -1,5 +1,6 @@
 /* m12.js 吨 */
 import { getTemplate } from '../../../core/ui/template.js';
+import { aji } from '../../../core/ui/aji.js';
 
 export const meta = { title: '质量单位', icon: '⚖️' };
 
@@ -8,6 +9,28 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm12',
+    topic: '质量单位',
+    knowledgeCards: [
+      { title: '单位阶梯', content: '吨 > 千克 > 克，<b>相邻两个单位之间是 1000 倍</b>。' },
+      { title: '大化小乘', content: '大单位换小单位要<b>乘 1000</b>：2 千克 = 2000 克。' },
+      { title: '小化大除', content: '小单位换大单位要<b>除 1000</b>：3000 千克 = 3 吨。' },
+      { title: '先估一估', content: '一个苹果约 200 克，一袋米约 25 千克——先估再算，不容易差得离谱。' },
+    ],
+    problemText: () => {
+      const v = $('#m12val'), u = $('#m12unit');
+      if (!v || !v.value) return '';
+      const label = u && u.selectedOptions[0] ? u.selectedOptions[0].textContent : '';
+      return `${v.value} ${label} 换算成其他质量单位是多少？`;
+    },
+    progress: () => {
+      const box = $('#m12results');
+      return box ? `换算结果：${box.textContent.replace(/\s+/g, ' ').trim()}` : '（尚未开始换算）';
+    },
+  });
+
   const $ = sel => container.querySelector(sel);
 
   const MASS_UNITS = [

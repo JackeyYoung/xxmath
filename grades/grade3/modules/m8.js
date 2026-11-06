@@ -1,5 +1,7 @@
 /* m8.js 倍数 */
 import { getTemplate } from '../../../core/ui/template.js';
+import { aji } from '../../../core/ui/aji.js';
+import { ensureChromeStyle } from '../../../core/ui/brilliant-chrome.js';
 
 export const meta = { title: '倍的认识', icon: '🍎' };
 
@@ -8,6 +10,20 @@ export default async function mount(container, ctx) {
   if (!tpl) return;
   container.innerHTML = '';
   container.appendChild(tpl.content.cloneNode(true));
+  ensureChromeStyle();   // .b1-topbar / .b1-sheet / .b1-mask（老师配置抽屉，与 m1/m9 同源）
+  // ---------- Aji 全站陪学助教（模块只报数据，不画 UI） ----------
+  aji.registerModuleContext({
+    moduleId: 'm8',
+    topic: '倍数关系',
+    knowledgeCards: [
+      { title: '几倍是什么意思', content: '「是它的 3 倍」就是<b>有几个它那么多</b>，用乘法。' },
+      { title: '求几倍是多少', content: '一份数 × 倍数 = 总数：3 的 4 倍 → 3 × 4 = 12。' },
+      { title: '画图看倍数', content: '第一行画一份，第二行照着一份一份画下来，<b>画了几份就是几倍</b>。' },
+    ],
+    problemText: () => `${M8.base} 的 ${M8.times} 倍是多少？`,
+    progress: () => `已设定：每份 ${M8.base}，共 ${M8.times} 份`,
+  });
+
   const $ = sel => container.querySelector(sel);
 
   const M8 = { base: 3, times: 3, maxBase: 5, maxTimes: 20 };
@@ -98,6 +114,35 @@ export default async function mount(container, ctx) {
     m8Render();
   });
 
+  /* ---- 老师配置抽屉（Bottom Sheet，与 m1/m9 同一套视觉） ---- */
+  const sheet = $('#m8sheet');
+  let sheetMask = null;
+  function openSheet() {
+    if (!sheet) return;
+    if (!sheetMask) {
+      sheetMask = document.createElement('div');
+      sheetMask.className = 'b1-mask';
+      sheetMask.addEventListener('click', closeSheet);
+      document.body.appendChild(sheetMask);
+    }
+    sheetMask.style.display = 'block';
+    sheet.style.display = 'flex';
+    requestAnimationFrame(() => sheet.classList.add('open'));
+  }
+  function closeSheet() {
+    if (!sheet) return;
+    sheet.classList.remove('open');
+    if (sheetMask) sheetMask.style.display = 'none';
+  }
+  $('#m8gear')?.addEventListener('click', () => {
+    if (sheet?.classList.contains('open')) closeSheet();
+    else openSheet();
+  });
+
   m8Render();
-  return () => { container.innerHTML = ''; };
+  return () => {
+    closeSheet();
+    sheetMask?.remove();
+    container.innerHTML = '';
+  };
 }

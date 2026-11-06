@@ -1381,9 +1381,7 @@ min-height: 100dvh;
 .level-btn.done { background: var(--green-soft); border-color: var(--primary); color: var(--primary-d); }
 
 .lesson-stage { max-width: 1200px; margin: 0 auto; padding: 16px; }
-.lesson-hint { margin-bottom: 16px; border: 1.5px dashed var(--border); border-radius: var(--r-sm); padding: 10px 14px; background: var(--card); }
-.lesson-hint summary { cursor: pointer; font-size: 13px; font-weight: 700; color: var(--muted); }
-.lesson-hint p { font-size: 13px; color: var(--text-soft); line-height: 1.7; margin-top: 8px; }
+/* .lesson-hint（旧版 <details> 显性提示入口）已下线：显性求助全站收敛到 Aji 悬浮球 */
 
 .problem-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px dashed var(--border); }
 .problem-bar select, .problem-bar input[type="text"] { flex: 1 1 140px; height: 44px; border-radius: var(--r-pill); padding: 0 16px; }
@@ -2409,31 +2407,7 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
   color: var(--green-text); /* 已保存时变成绿色提示 */
 }
 
-/* 2. M13 快捷提示词标签云 */
-.takeaway-quick {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.takeaway-quick-btn {
-  padding: 6px 12px;
-  border-radius: var(--r-pill);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text-soft);
-  font-size: 12.5px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.takeaway-quick-btn:hover {
-  border-color: var(--primary);
-  color: var(--primary-d);
-  background: var(--primary-soft);
-}
+/* 2. M13 快捷提示词标签云已删除（入口收敛到 Aji 悬浮球）*/
 
 /* ============================================================
    ⭐ M14 我的成长页面 完整排版与深色模式修复
@@ -2789,8 +2763,7 @@ table.data-table th { background: var(--bg); font-size: 13px; color: var(--muted
 }
 
 /* 当底部的拇指条处于打开状态时，触发上移 */
-body.thumb-bar-open .wrong-book-btn,
-body.thumb-bar-open .koji-btn {
+body.thumb-bar-open .wrong-book-btn {
   /* 向上平移 80px（大概是一个拇指条的高度），你可以根据实际效果微调这个数值 */
   transform: translateY(-80px) scale(0.95);
 }
@@ -3287,12 +3260,6 @@ body.input-focused .thumb-bar {
   right: max(24px, env(safe-area-inset-right)); width: 52px; height: 52px; border-radius: 50%; 
   border: 1.5px solid var(--border); background: var(--card); color: var(--red-text); font-size: 22px; 
   box-shadow: var(--shadow-md); z-index: 998; display: flex; align-items: center; justify-content: center; 
-  transition: transform 0.28s cubic-bezier(.34,1.3,.64,1), background-color 0.15s, box-shadow 0.15s !important;
-}
-.koji-btn { position: fixed; bottom: max(24px, env(safe-area-inset-bottom)); right: max(88px, calc(env(safe-area-inset-right) + 88px)); 
-  width: 52px; height: 52px; border-radius: 50%; border: 1.5px solid var(--border); background: var(--card); 
-  color: #7c3aed; font-size: 22px; box-shadow: var(--shadow-md); z-index: 998; 
-  display: flex; align-items: center; justify-content: center; 
   transition: transform 0.28s cubic-bezier(.34,1.3,.64,1), background-color 0.15s, box-shadow 0.15s !important;
 }
 .wrong-book-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 360px; max-width: 90vw; background: var(--card); box-shadow: -8px 0 32px rgba(0, 0, 0, .15); z-index: 1000; transform: translateX(100%); transition: transform .28s ease; display: flex; flex-direction: column; }
@@ -5987,7 +5954,6 @@ min-height: calc(100dvh - 60px);
   <div id="settingsStage" class="settings-stage"></div>
 </div>
 
-<button id="kojiBtn" class="koji-btn" title="Koji 助手" aria-label="Koji 助手">🤖</button>
 <button id="wrongBookBtn" class="wrong-book-btn" title="错题本" aria-label="错题本">📕
   <span class="wrong-book-badge" id="wrongBookBadge" style="display:none;">0</span>
 </button>
