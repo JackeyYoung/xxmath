@@ -254,16 +254,18 @@ export function ensureThumbBar() {
   });
 }
 
-export function showThumbBar({ text, ok, onNext }) {
+export function showThumbBar({ text, ok, onNext, nextLabel, retryLabel, onRetry, hideRetry } = {}) {
   const bar = _lessonQ('thumbBar');
   if (!bar) return;
   bar.classList.add('show', ok ? 'ok' : 'err');
   _lessonQ('thumbBarBody').innerHTML = text;
   const retry = _lessonQ('thumbRetry');
   const next = _lessonQ('thumbNext');
-  retry.hidden = ok;
+  retry.hidden = hideRetry || ok;
+  if (retryLabel) retry.textContent = retryLabel;
+  if (onRetry) retry.onclick = onRetry;   // ⭐ 回溯期「看答案」覆盖默认 reset
   next.hidden = false;
-  next.textContent = ok ? '继续' : '看看为什么';
+  next.textContent = nextLabel || (ok ? '继续' : '看看为什么');
   next.onclick = () => { hideThumbBar(); onNext?.(); };
 }
 

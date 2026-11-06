@@ -199,6 +199,51 @@ export function evaluatesNonNegative(str) {
   return true;
 }
 
+/* 标准答案求值：递归下降（括号 → 乘除 → 加减，同级左结合）。
+   探究式容错用：学生带着错误的中间结果继续推导，终局时用它判定最终得数是否吻合。
+   除以 0 等非法算式返回 null（终局比对跳过）。 */
+export function evaluateExpression(tokens) {
+  let pos = 0;
+  const peek = () => tokens[pos];
+  function parseExpr() {
+    let v = parseTerm();
+    while (peek()?.type === 'op' && (peek().val === '+' || peek().val === '-')) {
+      const op = tokens[pos++].val;
+      const r = parseTerm();
+      v = op === '+' ? v + r : v - r;
+    }
+    return v;
+  }
+  function parseTerm() {
+    let v = parseFactor();
+    while (peek()?.type === 'op' && (peek().val === '×' || peek().val === '÷')) {
+      const op = tokens[pos++].val;
+      const r = parseFactor();
+      v = op === '×' ? v * r : v / r;
+    }
+    return v;
+  }
+  function parseFactor() {
+    const t = tokens[pos];
+    if (!t) throw new Error('表达式不完整');
+    if (t.type === 'lparen') {
+      pos++;
+      const v = parseExpr();
+      if (peek()?.type === 'rparen') pos++;
+      return v;
+    }
+    if (t.type !== 'num') throw new Error('意外 token: ' + t.val);
+    pos++;
+    return t.val;
+  }
+  try {
+    const v = parseExpr();
+    return Number.isFinite(v) ? v : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /* 生成"把某段用括号 + 高亮包起来"的 HTML（不转义，交给调用方） */
 export function tokensToMarkedHtml(tokens, markL, markR) {
   return tokens.map((t, idx) => {

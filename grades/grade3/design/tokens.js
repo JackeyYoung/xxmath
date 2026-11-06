@@ -22,15 +22,15 @@ export const LIFECYCLE_THEMES = {
     init:     { color: '#F8FAFC', opacity: 1 },
     focus:    { color: '#F5C542', opacity: 1, ring: 'rgba(245,197,66,.45)', glow: '0 0 12px rgba(245,197,66,.35)' },
     result:   { color: '#FFFFFF', opacity: 1, glow: '0 0 16px rgba(41,204,87,.45)' },
-    history:  { color: '#94A3B8', opacity: 0.8 },
-    consumed: { color: '#475569', opacity: 0.4 },
+    history:  { color: '#94A3B8', opacity: 0.85 },
+    consumed: { color: '#94A3B8', opacity: 0.6 },
   },
   light: {
     init:     { color: '#0F172A', opacity: 1 },
     focus:    { color: '#92400E', opacity: 1, ring: 'rgba(245,197,66,.95)', glow: '0 0 10px rgba(245,197,66,.45)', bg: 'rgba(245,197,66,.18)', bgStrong: 'rgba(245,197,66,.28)' },
     result:   { color: '#0F172A', opacity: 1, glow: '0 0 14px rgba(41,204,87,.55)' },
-    history:  { color: '#64748B', opacity: 0.75 },
-    consumed: { color: '#475569', opacity: 0.4 },
+    history:  { color: '#64748B', opacity: 0.8 },
+    consumed: { color: '#64748B', opacity: 0.6 },
   },
 };
 
@@ -69,7 +69,12 @@ export const MOTION = {
   strokeWidth:  1.5,    // 弧线宽（必须比数字字重小）
   tickLen:      GOLDEN_ARC.tick,    // 弧底垂直指示线长度（= golden ARC.tick = 20，真机验收值）
   hintPulseDur: 0.18,   // 下一步运算符的提示脉动
+  recheckIdle: 45,      // 终局回溯守护：静置 45 秒无动作才给微光（用户有任何动作就重新起算）
 };
+
+/* 心流克制（m1 / m9 共用）：终局回溯/求助的唯一引导 —— 主题暖黄 @ 15% 微光。
+   答错的一切红/抖/弹窗反馈都被禁止，这是全模块唯一的"指引色"，绝不出现红色。 */
+export const SOFT_GLOW = 'rgba(245,197,66,0.15)';
 
 /* 布局锁（防止 Layout Shift 的固定尺寸）——超大字号场景 */
 export const DIMENSION = {

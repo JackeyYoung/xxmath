@@ -21,7 +21,6 @@ const TPL = `
 <template id="tpl-m1">
   <div class="card b1-card">
     <div class="b1-topbar">
-      <h2>① 混合运算</h2>
       <div class="b1-actions">
         <button id="m1reset">↻</button>
         <button id="m1gear">⚙</button>
@@ -39,15 +38,9 @@ const TPL = `
       <svg class="b1-arcs" id="m1arcs"></svg>
       <div class="b1-rows" id="m1rows"></div>
       <div class="b1-inputrow" id="m1inputrow" style="display:none;">
-        <span class="b1-eq">=</span>
         <span class="b1-pending" id="m1pending"></span>
-        <span class="b1-arrow">→</span>
         <span class="b1-answer" id="m1answer" data-empty="1"></span>
       </div>
-    </div>
-    <div id="m1PriorityBox" style="display:none;">
-      <div class="priority-options" id="m1PriorityOptions"></div>
-      <div id="m1PriorityFeedback"></div>
     </div>
     <div class="feedback b1-hint" id="m1fb"></div>
   </div>
@@ -65,6 +58,7 @@ function makeCtx() {
 
 const { default: mount, reduceWithSrc, cellMetrics, computeRowLayout, mergedGlyphShift } = await import('../m1.js');
 const { parseExpression, cleanParens } = await import('../../scoring/m1.js');
+const { getKoji } = await import('../../../../core/ui/koji.js');
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 const keypadEl = () => document.querySelector('.vkp');
@@ -73,6 +67,8 @@ const keypadVisible = () => !!keypadEl() && keypadEl().style.visibility === 'vis
 const pressKeyEl = (el) => el.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
 const pressDigit = (d) => pressKeyEl(keypadEl().querySelector(`.vkp-key[data-digit="${d}"]`));
 const pressConfirm = () => pressKeyEl(keypadEl().querySelector('.vkp-key[data-confirm]'));
+// ⭐ Koji 浮条（唯一求助入口）：右下角气泡
+const kojiToastVisible = () => getKoji().isToastVisible;
 
 describe('m1 · Brilliant 重构冒烟', () => {
   let container, ctx;
@@ -82,6 +78,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     ctx = makeCtx();
+    getKoji().hideToast();   // ⭐ 清掉上一个用例遗留的 Koji 空闲计时/浮条
   });
 
   it('挂载后：首行算式渲染，格子数正确，可点运算符只有括号内的；原生 input 已移除', async () => {
@@ -93,9 +90,11 @@ describe('m1 · Brilliant 重构冒烟', () => {
     // ⭐ 所有运算符都可点（点错给提示，不再静默锁定为"点了没反应"）
     expect(rows[0].querySelectorAll('.b1-op.b1-clickable').length).toBe(3);
     expect(rows[0].querySelectorAll('.b1-op.b1-locked').length).toBe(0);
-    // ⭐ 场景化：无原生输入框
+    // ⭐ 场景化：无原生输入框；优先级测验强制弹窗已下线（算理在 Koji 对话框里）
     expect(container.querySelector('input.b1-input')).toBeNull();
     expect(container.querySelector('#m1answer')).toBeTruthy();
+    expect(container.querySelector('#m1PriorityBox')).toBeNull();
+    expect(container.querySelector('details.lesson-hint')).toBeNull();   // 无显性提示入口
     cleanup();
   });
 
@@ -107,13 +106,18 @@ describe('m1 · Brilliant 重构冒烟', () => {
     // ⭐ 防跳动：输入行常驻占位（display 恒为 flex），激活态只切 .b1-active（opacity）
     expect(inputRow_state(container)).toBe('flex');
     expect(container.querySelector('#m1inputrow').style.display).toBe('');
-    // ⭐ 告别复写算式：pending 恒为空，输入区无括号/箭头/问号
+    // ⭐ 告别复写算式：pending 恒为空，输入区无等号/括号/箭头/问号
     expect(container.querySelector('#m1pending').textContent).toBe('');
     expect(container.querySelector('.b1-arrow')).toBeNull();
+    expect(container.querySelector('.b1-eq')).toBeNull();
     expect(container.querySelector('#m1fb').textContent).toContain('得数');
     // ⭐ 虚拟键盘弹出 + 聚光灯
     expect(keypadVisible()).toBe(true);
     expect(container.querySelector('.b1-card').classList.contains('b1-awaiting')).toBe(true);
+    // ⭐ 答案槽直落结果位：与提交同一几何链预演，left 已被钉位（弧底正下方）
+    const ans = container.querySelector('#m1answer');
+    expect(document.getElementById('b1-style').textContent).toContain('.b1-answer { position: absolute;');
+    expect(ans.style.left).not.toBe('');
     // 键盘按键：点 9 → 答案槽显示 9
     pressDigit('9');
     expect(container.querySelector('#m1answer').textContent).toBe('9');
@@ -131,22 +135,22 @@ describe('m1 · Brilliant 重构冒烟', () => {
     cleanup();
   });
 
-  it('判卷：答错提示且键盘保持；Esc 取消键盘收起', async () => {
+  it('判卷：答错放行——砸落动画照常播放，无红无抖无提示，键盘保持', { timeout: 20000 }, async () => {
     const cleanup = await mount(container, ctx);
     const row = container.querySelector('.b1-row');
     row.querySelectorAll('.b1-op.b1-clickable')[0].click();
 
-    pressDigit('8');
+    pressDigit('8');   // (3+6)=9，故意答 8
     pressConfirm();
-    expect(container.querySelector('#m1fb').textContent).toContain('再想想');
-    // ⭐ 持久性：答错键盘绝不收起
-    expect(keypadVisible()).toBe(true);
-
-    // Esc 取消 → 键盘收起
-    window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
-    await wait(450);
-    expect(keypadVisible()).toBe(false);
-    expect(inputRow_state(container)).toBe('none');
+    // ⭐ 探究式放行：错误也提交，界面绝不明示
+    const fb = container.querySelector('#m1fb');
+    expect(fb.className).not.toContain('error');               // 无红档
+    expect(container.querySelector('.b1-answer.b1-wrong')).toBeNull();   // 无红框无抖
+    expect(keypadVisible()).toBe(true);                        // 键盘保持（持久）
+    await wait(2300);   // 等合并动画完成
+    const rows = container.querySelectorAll('.b1-row');
+    expect(rows.length).toBe(2);                               // ⭐ 带着错误值 8 生成了新行
+    expect(rows[1].textContent).toContain('8');
     cleanup();
   });
 
@@ -159,19 +163,17 @@ describe('m1 · Brilliant 重构冒烟', () => {
     document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
     expect(container.querySelector('#m1fb').textContent).toContain('得数');
 
-    // 有缓冲点外部 → 自动提交（8 是错答案 → 再想想，键盘不收）
+    // 有缓冲点外部 → 自动提交（8 是错答案 → 放行，照常砸落）
     pressDigit('8');
     document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
-    expect(container.querySelector('#m1fb').textContent).toContain('再想想');
+    expect(container.querySelector('#m1fb').textContent).not.toContain('再想想');
     expect(keypadVisible()).toBe(true);
 
-    // 键盘内部按下 → 不触发外部确认（改输 9 确认 → 正确）
-    pressDigit('9');
-    pressConfirm();
-    await wait(800);
+    // 键盘内部按下 → 不触发外部确认（等合并走完再清理）
+    await wait(2300);
     const rows = container.querySelectorAll('.b1-row');
     expect(rows.length).toBe(2);   // 提交成功，合并开始
-    await wait(1600);              // 等提交定时器走完再清理，避免迟到回调
+    await wait(300);               // 等提交定时器走完再清理，避免迟到回调
     cleanup();
   });
 
@@ -207,14 +209,11 @@ describe('m1 · Brilliant 重构冒烟', () => {
     pressDigit('3');
     pressConfirm();
     await wait(2300);
-    // 还剩 ÷：再一步
-    const nextOp = canOp();
-    if (nextOp) {
-      nextOp.click();
-      pressDigit('3');
-      pressConfirm();
-      await wait(2300);
-    }
+    // 还剩 ÷ → 行内只剩 数字 运算符 数字：⭐ 直通输入，无需再点运算符
+    expect(keypadVisible()).toBe(true);
+    pressDigit('3');
+    pressConfirm();
+    await wait(2300);
     // ⭐ 终局：算完 → 键盘平滑滑下
     await wait(400);
     expect(container.querySelector('#m1fb').textContent).toContain('全部算完');
@@ -234,6 +233,156 @@ describe('m1 · Brilliant 重构冒烟', () => {
     container.querySelector('#m1Load').click();
     await wait(50);
     expect(sheet.classList.contains('open')).toBe(false);
+    cleanup();
+  });
+
+  it('终局回溯：柔声提示 + Thumb Bar 主导（Koji 静默）；去修改回滚改正记对', { timeout: 20000 }, async () => {
+    const cleanup = await mount(container, ctx);
+    const custom = container.querySelector('#m1Custom');
+    custom.value = '5 - 3';                                   // 单步题：唯一一步即终局
+    container.querySelector('#m1UseCustom').click();
+    // ⭐ 直通输入：载入即自动弹出输入框（无需点运算符）
+    pressDigit('9');
+    pressConfirm();                                           // 终局答错
+    await wait(2300);                                         // 等合并动画 + 终局判定
+
+    const fb = container.querySelector('#m1fb');
+    expect(fb.textContent).toContain('好像哪里出了一点小偏差，我们回头检查一下？');
+    expect(fb.className).not.toContain('error');               // 无红、无缩略条
+    expect(keypadVisible()).toBe(false);                       // 终局谢幕，键盘滑下
+    expect(ctx.data.historyAdd).not.toHaveBeenCalled();        // 不判 0、不记错
+    // ⭐ 回溯期由 Thumb Bar 主导：Koji 浮条绝不出现（常规态挂起的空闲请求已收）
+    expect(kojiToastVisible()).toBe(false);
+
+    // 学生点「去修改」→ 级联重置：行清空、重开该步输入
+    const goFix = [...ctx.showThumbBar.mock.calls].reverse().find(c => c[0].nextLabel === '去修改');
+    goFix[0].onNext();
+    await wait(100);
+    expect(container.querySelectorAll('.b1-row').length).toBe(1);   // 后续行清空
+    expect(keypadVisible()).toBe(true);                        // 重新输入，键盘弹出
+    pressDigit('2');
+    pressConfirm();
+    await wait(2300);
+    expect(fb.textContent).toContain('全部算完');
+    expect(ctx.data.historyAdd).toHaveBeenCalledTimes(1);
+    expect(ctx.data.historyAdd.mock.calls[0][0].isCorrect).toBe(true);
+    cleanup();
+  });
+
+  it('终局答错后一直不改：不催不判；主动重来（↻）此刻才结算为错', { timeout: 20000 }, async () => {
+    const cleanup = await mount(container, ctx);
+    const custom = container.querySelector('#m1Custom');
+    custom.value = '5 - 3';
+    container.querySelector('#m1UseCustom').click();
+    // ⭐ 直通输入：载入即自动弹出输入框
+    pressDigit('9');
+    pressConfirm();
+    await wait(2300);
+    expect(ctx.data.historyAdd).not.toHaveBeenCalled();   // 静默等待，绝不判 0
+
+    container.querySelector('#m1reset').click();          // 主动放弃 → 重来
+    expect(ctx.data.historyAdd).toHaveBeenCalledTimes(1);
+    const rec = ctx.data.historyAdd.mock.calls[0][0];
+    expect(rec.isCorrect).toBe(false);
+    expect(rec.studentAnswer).toBe('9');
+    expect(rec.correctAnswer).toBe('2');
+    // 换题后微光/守护无痕退场
+    expect(container.querySelector('.b1-glow')).toBeNull();
+    cleanup();
+  });
+
+  it('级联重置：早期答错→带错继续→终局回溯→点首个错步回滚→清后续重推→对', { timeout: 30000 }, async () => {
+    const cleanup = await mount(container, ctx);
+    const custom = container.querySelector('#m1Custom');
+    custom.value = '3 + 4 + 5';                              // 3+4=7，7+5=12
+    container.querySelector('#m1UseCustom').click();
+    // 第 0 步：3+4，故意答 8（错）——多步题首步仍需点运算符
+    container.querySelector('.b1-row .b1-op.b1-clickable').click();
+    pressDigit('8'); pressConfirm();
+    await wait(2300);
+    expect(container.querySelectorAll('.b1-row').length).toBe(2);
+    // 第 1 步：8+5=13 —— 行内只剩 num op num → ⭐ 直通输入，无需点运算符
+    expect(keypadVisible()).toBe(true);
+    pressDigit('1'); pressDigit('3'); pressConfirm();
+    await wait(2300);
+    // 终局：13 ≠ 标准 12 → 回溯
+    expect(container.querySelector('#m1fb').textContent).toContain('回头检查');
+    expect(ctx.data.historyAdd).not.toHaveBeenCalled();
+    expect(kojiToastVisible()).toBe(false);   // ⭐ 回溯期由 Thumb Bar 主导，Koji 静默
+
+    // 点「去修改」→ 后续行被清空，只剩原始行；重输 7
+    const goFix = [...ctx.showThumbBar.mock.calls].reverse().find(c => c[0].nextLabel === '去修改');
+    goFix[0].onNext();
+    await wait(100);
+    expect(container.querySelectorAll('.b1-row').length).toBe(1);   // ⭐ 后续行清空
+    pressDigit('7'); pressConfirm();
+    await wait(2300);
+    expect(container.querySelectorAll('.b1-row').length).toBe(2);
+    // 第 1 步：7+5=12 → ⭐ 直通输入（自动弹出），答 12 → 终局对
+    pressDigit('1'); pressDigit('2'); pressConfirm();
+    await wait(2300);
+    expect(container.querySelector('#m1fb').textContent).toContain('全部算完');
+    expect(ctx.data.historyAdd).toHaveBeenCalledTimes(1);
+    expect(ctx.data.historyAdd.mock.calls[0][0].isCorrect).toBe(true);
+    cleanup();
+  });
+
+  it('最后一步直通输入：载入即 num op num（5 − 3）→ 自动弹输入框，无需点运算符', async () => {
+    const cleanup = await mount(container, ctx);
+    container.querySelector('#m1Custom').value = '5 - 3';
+    container.querySelector('#m1UseCustom').click();
+    await wait(50);
+    // ⭐ 消灭冗余点击：没有点任何运算符，输入框已就位、键盘已弹起
+    expect(inputRow_state(container)).toBe('flex');
+    expect(keypadVisible()).toBe(true);
+    expect(container.querySelector('#m1fb').textContent).toContain('请算出这一步的得数');
+    pressDigit('2'); pressConfirm();
+    await wait(2300);
+    expect(container.querySelector('#m1fb').textContent).toContain('全部算完');
+    cleanup();
+  });
+
+  it('过程零判定：算对中间步骤不弹任何"正确"暗示（无鼓励语/无绿框/无缩略条）', { timeout: 20000 }, async () => {
+    const cleanup = await mount(container, ctx);
+    const row = container.querySelector('.b1-row');
+    row.querySelectorAll('.b1-op.b1-clickable')[0].click();
+    pressDigit('9'); pressConfirm();   // (3+6)=9，答对
+    // ⭐ 过程全放行：不弹鼓励语、不切 ok 档、不召唤缩略条——对错只在内部登记
+    const fb = container.querySelector('#m1fb');
+    expect(fb.className).not.toContain('ok');
+    expect(fb.textContent).toContain('请算出这一步的得数');   // 提示语原样，未被正确暗示覆盖
+    expect(ctx.showThumbBar).not.toHaveBeenCalled();
+    await wait(2300);
+    // 提交后继续推导的中性引导，也不含"正确"字样
+    expect(container.querySelector('#m1fb').textContent).not.toContain('正确');
+    cleanup();
+  });
+
+  it('Koji 智能延迟：常规态空闲 35s 浮条浮现；任何有效操作立刻淡出且计时重置', async () => {
+    const cleanup = await mount(container, ctx);
+    const koji = getKoji();
+    koji.hideToast();   // 清掉 mount 时挂在真实时钟上的空闲计时（防泄漏）
+    const toast = () => document.querySelector('.koji-toast');
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      koji.requestIdleToast(35000, '有点卡壳？点击看看我怎么想。', null);
+      vi.advanceTimersByTime(34000);
+      expect(kojiToastVisible()).toBe(false);   // 差 1 秒不浮现
+
+      // 任何有效操作 → 计时重新起算
+      document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+      vi.advanceTimersByTime(34000);
+      expect(kojiToastVisible()).toBe(false);   // 距操作仅 34s，仍静默
+      vi.advanceTimersByTime(1000);             // 静置满 35s
+      expect(kojiToastVisible()).toBe(true);
+      expect(toast().textContent).toContain('有点卡壳');
+
+      // 浮条出现后再有操作 → 立刻淡出（绝不打扰）
+      document.body.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true }));
+      expect(kojiToastVisible()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
     cleanup();
   });
 
