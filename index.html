@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- ⭐ maximum-scale=1 + user-scalable=no：JS 拦不住 iOS 聚焦/双击的自动放大，
+     "点输入框页面不缩放漂移"这条验收只能靠 viewport 兑现。
+     （全站字号已冻结 38px，禁缩放不牺牲可读性。） -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>数学互动课堂</title>
 
 <!-- ============ 1. 依赖 ============ -->

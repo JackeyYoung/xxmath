@@ -60,16 +60,33 @@
    悬浮球常驻右下角（唯一入口）。requestIdleToast(ms, text, onClick) 只控制
    球旁那句**轻推文案**（nudge）——任何有效操作立刻收起，静置够久再浮现。
 
+   ── 移动端交互（吸附 + 输入） ──
+   · 拖拽吸附：只有移动端可拖（桌面是"不遮挡"的浮窗，拖全屏反而毁掉这个意义）。
+     手柄 + 消息列表都能起拖，但**列表未滚到顶时下拉一律还给原生滚动**——
+     判定必须在 pointermove 里实时做（学生会先滚到顶再接着往下拉）。
+   · 高度唯一权威 = `_hubTargetH(state)`：吸附态 × "算式不许被顶出去"的交集，
+     一处算出。刻意不再有第二个控制器（历史上 _fitDrawerToViewport 是独立第二个）。
+   · 输入禁用原生键盘（readonly + inputmode=none）、改用聊天键盘
+     core/ui/chat-keypad.js —— **与做题键盘虚拟键盘完全隔离的两个实例**，
+     复用会覆盖 m1/m9 的 maxLength 计数、打断判卷链路。
+
    ── 其它约定 ──
    - 键盘避让：visualViewport resize/scroll 动态抬升 hub 与球。
    - 位移一律走 GSAP 分量（xPercent/yPercent/x/y）——CSS transform 会被补间覆盖，
      严禁给聊天舱/球写 CSS translate(-50%,-50%)。
    - 样式类全部带 aji 命名空间（.aji-chat-hub / .aji-float-bubble / .aji-msg-chip…），
      防全局污染（历史上 .koji-btn 曾与旧页面类名撞车）。
-   - 主题跟随 <html data-theme>；hub z-index 9996（键盘 9990、换题表 9995 之上）。
+   - 主题跟随 <html data-theme>；hub z-index 9996（键盘 9990、聊天键盘 9997、换题表 9995 之上）。
+   - ⭐ 绝不写 document.body.style.paddingBottom —— 那是"背后算式重排跳动"的唯一来源
+     （做题键盘 virtual-keypad.show() 就是这么干的，聊天键盘刻意不跟）。
 */
 import { gsap } from '../../js/vendor/gsap/index.js';
 import { resolveApiUrl, LLM_CONFIG } from '../llm.js';
+import { getChatKeypad } from './chat-keypad.js';
+import {
+  captureInterests, learnerTagSummary, interestSummary,
+  wrongDigest, topWrongTags, eventsLoad,
+} from '../learner.js';
 
 let instance = null;
 
@@ -79,6 +96,12 @@ const CONCEPT_RE = /什么是|是什么|啥是|啥意思|什么意思|为什么|
 /* 指代「当前这题/这一步」的问法 → 仍是场景二，必须保留题目与进度上下文。
    否则"为什么这一步要进位？"会被误判成通识提问、把最该带的上下文丢掉。 */
 const CONTEXT_RE = /这题|这道|这个题|这一步|这步|这里|这儿|上面|刚才|我(算|写|填)的|我的答案|接下来|下一步|第\s*[一二三四五六七八九十\d]+\s*步/;
+
+/* ⭐ 记忆检索问法（本地规则，毫秒级，零 LLM 成本）：
+   "我哪里错得最多 / 我所有的错题 / 我的错题本" → 聚合 Tag + 给一个错题本跳转按钮。
+   刻意不走大模型：这类问题的答案是本地数据，LLM 只会瞎编。 */
+const WRONGBOOK_RE = /错题本|错题(清单|列表|记录)|所有.{0,3}错题|我的错题|错得最多|错的最多|哪里错|哪些错|最薄弱|学得不好|哪里学得不好|薄弱/;
+const HISTORY_RE = /上(一道|道)题|刚才(那道|这题)|上一题|我(错|算错)哪/;
 
 const CSS = `
 /* ── 聊天舱（.aji-chat-hub） ── */
@@ -151,7 +174,7 @@ const CSS = `
 .aji-ball-msg { display: block; }
 .aji-float-bubble.aji-nudging .aji-ball-text { display: block; }
 
-/* ── 拖拽手柄：仅移动端底部抽屉形态显示 ── */
+/* ── 拖拽手柄：仅移动端底部抽屉形态显示；桌面端不拖（浮窗语义是"不遮挡"） ── */
 .aji-hub-grip { display: none; }
 
 /* ══════════════════════════════════════════════════════════════
@@ -165,17 +188,45 @@ const CSS = `
     left: 0; right: 0; width: 100%; border-radius: 20px 20px 0 0;
     /* ⭐ 键盘托举用 bottom（不是 transform！）：GSAP 首次补间会把 CSS transform
        解析烘焙成 px 分量，导致后续 x/y 补间清不掉、抽屉永远卡在屏外 —— 项目已有此坑实录。
-       --kb-height 由 visualViewport 写入，抽屉整体坐在键盘正上方。 */
-    bottom: var(--kb-height, 0px);
-    max-height: min(50dvh, 460px);
-    height: min(50dvh, 420px);
+       --kb-height 由 visualViewport 写入；聊天键盘升起时它还额外叠加 --aji-kp 的高度
+       （输入行始终悬浮在虚拟键盘正上方）。 */
+    bottom: calc(var(--kb-height, 0px) + var(--aji-kp, 0px));
+    /* ⭐ 高度只有一个来源：--aji-h，由 JS 的 _hubTargetH(state) 统一算出
+       （吸附态 ∩ "算式不许被顶出去"）。CSS 不再自己下 50dvh 的判断，
+       否则与 JS 抢同一把尺子、必抖。max-height 只做兜底护栏。 */
+    height: var(--aji-h, 50dvh);
+    /* 兜底护栏：绝不超出「键盘之上的可用高度」。
+       ⚠️ 刻意不给页头留余量 —— 留了会把「上拉全屏」压成 724/780，
+          而全屏的语义正是**覆盖背后**，那 56px 会让它名不副实。 */
+    max-height: calc(100dvh - var(--kb-height, 0px) - var(--aji-kp, 0px));
+    /* 拖拽是"贴在手指上"的，任何 CSS 过渡都会让它像在追手 */
+    transition: none;
   }
-  .aji-hub-grip { display: flex; justify-content: center; padding: 8px 0 2px; flex: none;
-    cursor: grab; touch-action: none; }
+  /* 松手吸附时恢复过渡（回弹/吸附有惯性感） */
+  .aji-chat-hub.aji-settling { transition: height .28s cubic-bezier(.22,.61,.36,1); }
+  .aji-hub-grip { display: flex; justify-content: center; align-items: center;
+    padding: 10px 0 4px; flex: none; cursor: grab; touch-action: none; }
   .aji-hub-grip::before { content: ''; width: 40px; height: 4px; border-radius: 2px;
     background: rgba(100,116,139,.4); }
   .aji-hub-grip:active { cursor: grabbing; }
+  /* ⭐ 消息列表是拖拽的第二入手区（微信/iOS 惯例），但列表未滚到顶时
+     纵向手势必须还给原生滚动 —— touch-action 设 pan-y 交给浏览器，
+     真正的"滚到顶才转拖拽"判定在 _bindDrag 的 pointermove 里实时做。 */
+  .aji-chat-msgs { touch-action: pan-y; }
+  /* ⭐ 关闭态：列表不滚、键盘不收，学生正好在打字（收起由 ✕ 负责） */
+  .aji-chat-hub.aji-input-mode { transition: height .24s ease-out; }
   .aji-hub-input { font-size: 16px; }   /* ⭐ ≥16px：iOS 聚焦时不再自动放大页面 */
+  /* 自绘光标 + 缓冲：input 被 readonly 锁死后要自己给"正在输入"的反馈 */
+  .aji-hub-input { caret-color: transparent; }
+  .aji-hub-inputbar { position: relative; }
+  .aji-input-buf { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap;
+    text-overflow: ellipsis; font-size: 16px; line-height: 1.3;
+    display: flex; align-items: center; }
+  .aji-input-buf.aji-buf-empty { color: var(--aji-text-soft, #94a3b8); }
+  .aji-buf-caret { display: inline-block; width: 1.5px; height: 17px; margin: 0 1px;
+    background: var(--aji-caret, #29CC57); vertical-align: -3px;
+    animation: aji-caret 1.05s steps(1, end) infinite; }
+  @keyframes aji-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
 }
 @media (prefers-reduced-motion: reduce) { .aji-chat-hub, .aji-float-bubble { transition: none; } }
 `;
@@ -202,7 +253,16 @@ class Aji {
     this.msgsEl = this.hub.querySelector('.aji-chat-msgs');
     this.inputEl = this.hub.querySelector('.aji-hub-input');
     this.sendBtn = this.hub.querySelector('.aji-hub-send');
+    this.inputBarEl = this.hub.querySelector('.aji-hub-inputbar');
     this.gripEl = this.hub.querySelector('.aji-hub-grip');
+
+    /* ⭐ 移动端输入缓冲：input 被 readonly 锁死（防原生键盘）后，改由虚拟键盘
+       写 this._buf，再用这层自绘气泡呈现（含假光标）。桌面端不创建、不启用
+       —— 物理键盘直接写 input.value，走原生路径。 */
+    this._buf = '';
+    this.bufEl = document.createElement('div');
+    this.bufEl.className = 'aji-input-buf aji-buf-empty';
+    this.inputBarEl.insertBefore(this.bufEl, this.inputEl);
 
     /* ---- 右下角悬浮球（常驻，唯一入口） ---- */
     this.bubble = document.createElement('button');
@@ -254,8 +314,17 @@ class Aji {
     // ⭐ 输入区：用户主动提问 → 直接绕过本地规则，请求大模型
     this.inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._submitInput(); });
     this.sendBtn.addEventListener('click', () => this._submitInput());
-    // ⭐ 输入框聚焦：移动端抽屉被键盘托起后，保证输入区仍在可视范围内
-    this.inputEl.addEventListener('focus', () => { this._adjust?.(); });
+    // ⭐ 移动端：点输入框 → 开聊天键盘（绝不开原生键盘）
+    this.inputEl.addEventListener('pointerdown', (e) => {
+      if (!this._isMobile()) return;
+      e.preventDefault();      // 拦在聚焦之前，双重保险
+      this._openKeypad();
+    });
+    // ⭐ 聚焦兜底：真机上偶有焦点落到 input 的情况，立刻 blur 掉，别让原生键盘冒头
+    this.inputEl.addEventListener('focus', () => {
+      if (this._isMobile()) { try { this.inputEl.blur(); } catch (err) {} this._openKeypad(); return; }
+      this._adjust?.();
+    });
 
     this._onKey = (e) => { if (e.key === 'Escape' && this.visible) this.closeDrawer(); };
     window.addEventListener('keydown', this._onKey);
@@ -273,22 +342,23 @@ class Aji {
     //    · 写入 --kb-height 供移动端底部抽屉托举（CSS 用 bottom，不用 transform）
     //    · 桌面端仍用行内 bottom 微调
     const adjust = () => {
+      // ⭐ 跨越 768px 断点（平板旋转/窗口缩放）时输入形态要跟着翻面
+      this._lockNativeKeyboard();
       try {
         if (!window.visualViewport) return;
         const kb = Math.max(0, Math.round(window.innerHeight - window.visualViewport.height));
         document.documentElement.style.setProperty('--kb-height', kb + 'px');
         this.bubble.style.bottom = kb > 0 ? (kb + 14) + 'px' : '24px';
-        // 移动端 bottom 由 CSS 的 var(--kb-height) 接管，别写行内值覆盖它
+        // 移动端 bottom 由 CSS 的 var(--kb-height)+var(--aji-kp) 接管，别写行内值覆盖它
         if (this._isMobile()) this.hub.style.bottom = '';
         else this.hub.style.bottom = kb > 0 ? (kb + 14) + 'px' : '18px';
-        // ⭐ 抽屉也做空间让渡：键盘弹起后，抽屉按"给算式留够位置"收缩。
-        //    否则 50dvh(390) + 键盘(300) 会把 780 高的屏幕占满，算式必然被压住重叠。
-        this._fitDrawerToViewport(kb);
+        // ⭐ 高度不再单独收缩：_hubTargetH 已经把"算式要多少空间"算进去了，
+        //    这里只是重算一次（同一把尺子，不再有第二个高度控制器）。
+        this._applyHubHeight('snap');
       } catch (e) { /* 环境不支持就保持默认位置 */ }
       // ⭐ 键盘/视口变化后重算算式让位带（抽屉托起/收缩后带上缘跟着变）
       this.reflowStage();
     };
-    this._adjust = adjust;
     this._adjust = adjust;
     window.visualViewport?.addEventListener('resize', adjust);
     window.visualViewport?.addEventListener('scroll', adjust);
@@ -298,7 +368,8 @@ class Aji {
     this._themeObserver = new MutationObserver(() => this._applyTheme());
     this._themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
-    this._bindGrip();
+    this._bindDrag();
+    this._lockNativeKeyboard();   // 初始按端形态定好输入框（移动端锁死原生键盘）
 
     // 悬浮球常驻：轻微上浮入场（位置走 gsap 分量，不碰 CSS transform）
     gsap.set(this.hub, { x: 28, y: 28, opacity: 0 });
@@ -343,33 +414,6 @@ class Aji {
   /** 让位是否仍然生效（含收起态，供模块决定是否交还） */
   hasStage(moduleId) {
     return !!(this._stage && this._stage.moduleId === moduleId);
-  }
-
-  /** ⭐ 移动端：键盘弹起时收缩抽屉，给算式留出可视空间（算式优先，抽屉让渡）。
-      高度由「算式实际需要多少」反推，不用魔法常量——
-      420×780 + 300px 键盘时，50dvh(390) 会把算式挤到重叠，必须按需收缩。
-      仅在移动端生效；桌面端键盘不遮挡抽屉，无需干预。 */
-  _fitDrawerToViewport(kb) {
-    if (!this._isMobile()) return;
-    if (!this.visible) { this.hub.style.height = ''; return; }
-    const st = this._stage;
-    if (!st || !st.el) { this.hub.style.height = ''; return; }
-    const vh = window.innerHeight || 0;
-    const bottomY = vh - (kb || 0);                    // 抽屉底边贴键盘上沿
-    const gap = st.gap || 20;
-    const bandTop = this._stageBandTop();
-    // ⭐ 抽屉高度只按"算式容器"反推（任务书要保护的就是算式本身）。
-    //    反馈行随组上移，必要时整体隐在抽屉之后——但绝不半截裁切。
-    //    ⚠️ 用"算式+反馈行"的整体高度反推是错的：420×780 上会算出 25px 的抽屉，
-    //    而点算式的正是这只手，抽屉必须留够可读高度。
-    const boardH = st.el.offsetHeight || 150;
-    // 算式占据 [bandTop, bandTop+boardH]，抽屉只能从它下方 gap 处开始
-    const room = bottomY - gap - (bandTop + boardH) - gap;
-    // 下限 175：键盘弹起时只求 头(≈44)+最后一两行消息+输入行(≈52) 可见
-    //   （学生此刻在打字，完整历史等收起键盘再看）。
-    //   不能用更小的值：压到 150 会把消息区整个吞掉，让位就失去意义。
-    const h = Math.max(175, Math.min(330, room));
-    this.hub.style.height = Math.round(h) + 'px';
   }
 
   /** 算式可视带的顶部：内容卡片上缘（布局坐标换算到视口，避开页头与标签行） */
@@ -420,10 +464,8 @@ class Aji {
     const stageTop = stageTopDoc - scrollY;
     const boardH = st.el.offsetHeight || 120;
 
-    // 组整体外框 = 算式 + 其下反馈行的最低缘
-    let groupBottomDoc = stageTopDoc + boardH;
-    for (const ex of extras) groupBottomDoc = Math.max(groupBottomDoc, docTopOf(ex) + ex.offsetHeight);
-    const groupH = Math.max(boardH, groupBottomDoc - stageTopDoc);
+    // 组整体外框 = 算式 + 其下反馈行（与 _hubTargetH 共用 _stageGroupH 的同一把尺子）
+    const groupH = this._stageGroupH();
 
     const gap = st.gap || 20;
     // ⚠️ 带顶不能硬编码 64：课页在页头之下还有一排标签（无括号/有括号…），
@@ -460,33 +502,82 @@ class Aji {
     if (this._stage && this.visible) this._setStageShift(true);
   }
 
-  /** ⭐ 移动端抽屉：下滑手势收起（原生 Pointer 事件，未 vendor GSAP Draggable） */
-  _bindGrip() {
-    const grip = this.gripEl;
-    if (!grip) return;
-    let startY = 0, dragging = false;
-    const down = (e) => {
-      dragging = true; startY = e.clientY;
-      try { grip.setPointerCapture(e.pointerId); } catch (err) {}
+  /* ============================================================
+     移动端拖拽吸附（原生 Pointer 事件，未 vendor GSAP Draggable）
+     ────────────────────────────────────────────────────────────
+     两个入手区：顶部手柄（任何方向都起拖）+ 消息列表（只在滚到顶时）。
+     手柄与列表共用一套逻辑，差别只在"列表要先验 scrollTop===0"。
+     ============================================================ */
+  _bindDrag() {
+    if (this._dragBound) return;
+    this._dragBound = true;
+
+    /** downH = 按下瞬间的舱高（拖拽以它 + 位移为绝对高度，不依赖"当前"高度） */
+    const begin = (e, fromList) => {
+      if (!this._isMobile() || !this.visible) return;
+      // ⭐ 列表入手区：只在**滚到顶**且手指**向下**时才允许转拖拽。
+      //    滚到顶还继续下拉 = 学生明确想"再往下拉一点"（iOS/微信惯例）；
+      //    向上滑则无论如何都是滚动——列表没到底部，凭什么抢走它。
+      //    down 只是记账，真正的仲裁在 move 里做（此时还不知道方向）。
+      if (fromList && this.msgsEl.scrollTop > 0) return;
+      const r = this.hub.getBoundingClientRect();
+      this._drag = {
+        id: e.pointerId, startY: e.clientY, downH: r.height || 0,
+        fromList, active: false, moved: 0, capEl: e.currentTarget,
+      };
+      this.hub.classList.remove('aji-settling');
     };
+
     const move = (e) => {
-      if (!dragging) return;
-      const dy = Math.max(0, e.clientY - startY);
-      gsap.set(this.hub, { y: dy });          // 跟手下移（仅 y，不碰 opacity）
-      if (dy > 4) e.preventDefault();
+      const d = this._drag;
+      if (!d || e.pointerId !== d.id) return;
+      const dy = e.clientY - d.startY;
+      if (!d.active) {
+        if (Math.abs(dy) < 6) return;            // 抖动容差，防误判
+        // ⭐ 方向仲裁：列表入手区只有"向下拉"才归拖拽（上滑一律还给滚动）；
+        //    中途滚离顶部（学生先滚再拉）同样还给滚动。
+        if (d.fromList && (dy < 0 || this.msgsEl.scrollTop > 0)) { this._drag = null; return; }
+        d.active = true;
+        // ⭐ capture 必须挂在监听者身上，不能挂 e.target ——
+        //    pointer capture 会把后续事件的目标锁死在捕获元素上，
+        //    挂到列表里的某条消息上会让快速拖出列表的那一段事件丢失。
+        try { d.capEl?.setPointerCapture?.(e.pointerId); } catch (err) {}
+      }
+      if (e.cancelable) e.preventDefault();
+      d.moved = dy;
+      // 上拉＝变高，下拉＝变矮；clamp 到 [40, avail-8]，越界别让舱飞出屏
+      const avail = this._availH();
+      const next = Math.max(40, Math.min(avail - 8, d.downH - dy));
+      this._applyHubHeight('drag', next);
     };
-    const up = (e) => {
-      if (!dragging) return;
-      dragging = false;
-      const dy = Math.max(0, (e.clientY || 0) - startY);
-      if (dy > 80) { this.closeDrawer(); }     // 下滑够远 → 收起
-      else gsap.to(this.hub, { y: 0, duration: 0.2, ease: 'power2.out', overwrite: 'auto' });  // 回弹
+
+    const end = (e) => {
+      const d = this._drag;
+      if (!d || (e && e.pointerId !== d.id)) return;
+      this._drag = null;
+      if (!d.active) return;                     // 没拖动过 = 一次普通点击，什么都别做
+      try { d.capEl?.releasePointerCapture?.(e.pointerId); } catch (err) {}
+      const avail = this._availH();
+      const endH = Math.max(0, Math.min(avail - 8, d.downH - d.moved));
+      const snap = this._autoSnapFromHeight(endH);
+      if (snap === 'close') { this.closeDrawer(); return; }   // < 35% → 关闭
+      this._dragState = snap;                                 // > 75% 全屏，35~75% 半屏
+      this._applyHubHeight('snap');
+      this._setStageShift(true);                 // 吸附后带上缘变了，算式重算让位
     };
-    grip.addEventListener('pointerdown', down);
-    grip.addEventListener('pointermove', move);
-    grip.addEventListener('pointerup', up);
-    grip.addEventListener('pointercancel', up);
-    this._gripHandlers = { down, move, up };
+
+    const onDown = (e) => begin(e, false);
+    this.gripEl.addEventListener('pointerdown', onDown);
+
+    /* 列表入手区：只监听 pointerdown 起手，move/up 挂 window——
+       pointer capture 会把这串事件的目标锁定在原元素上，挂自身会漏掉快速拖出列表的那一段。 */
+    const listDown = (e) => begin(e, true);
+    this.msgsEl.addEventListener('pointerdown', listDown);
+    window.addEventListener('pointermove', move, { passive: false });
+    window.addEventListener('pointerup', end);
+    window.addEventListener('pointercancel', end);
+
+    this._dragHandlers = { onDown, listDown, move, end };
   }
 
   get isDrawerOpen() { return this.visible; }
@@ -570,11 +661,86 @@ class Aji {
       topic: (cfg && cfg.topic) || '',
       currentProblem: this._safe(cfg && cfg.problemText, '无'),
       studentProgress: this._safe(cfg && cfg.progress, '无'),
+      /* ⭐ 是否出错：模块自行判定（m1 过程有错也算错）。未声明则从进度文案里嗅探。 */
+      isError: this._safeBool(cfg && cfg.isError, /错|偏差|不对/.test(this._safe(cfg && cfg.progress, ''))),
       /* 学生是否已真的动过手：场景一（刚进页面未做题）与场景二（做到一半）的分水岭。
          未声明 isStarted 的模块退化为「有题目即有上下文」，与旧行为一致。 */
       started: this._safeBool(cfg && cfg.isStarted, this._safe(cfg && cfg.problemText, '') !== ''),
       cfg,
     };
+  }
+
+  /* ⭐ 记忆检索（RAG）本地路由：命中则毫秒级返回，绝不走大模型。
+     这类问题的答案全在本地数据里，交给 LLM 只会瞎编（任务书 §三 明确要求）。 */
+  _memoryLocal(userQuery) {
+    const q = String(userQuery || '');
+    if (WRONGBOOK_RE.test(q)) return this._wrongbookAnswer();
+    if (HISTORY_RE.test(q)) return this._lastWrongAnswer();
+    return null;
+  }
+
+  /** "我哪里错得最多 / 我的错题本" → 聚合错得最多的 5 类 Tag + 错题本入口 */
+  _wrongbookAnswer() {
+    const top = topWrongTags(5);
+    const all = eventsLoad().length;
+    if (!top.length) {
+      return {
+        type: 'error_review',
+        title: '错题本',
+        content: '你还没有错题记录呢，继续保持就好。真遇到卡住的地方，我随时都在。',
+        actions: [{ text: '我懂了', type: 'close' }],
+      };
+    }
+    const lines = top.map((x, i) => `${i + 1}. <b>${this._escapeHtml(x.tag)}</b> —— ${x.count} 次`).join('<br>');
+    return {
+      type: 'error_review',
+      title: '你最容易卡住的地方',
+      content: `一共记下 ${all} 道错题，错得最多的是这几类：<br>${lines}<br><br>想看看具体是哪几道题吗？`,
+      actions: [
+        { text: '📕 打开错题本', type: 'close', style: 'primary', onClick: () => this._openWrongBook() },
+        { text: '先不看', type: 'close' },
+      ],
+    };
+  }
+
+  /** "我上道题错哪了" → 引用最近一条真实错题（problemText + errorStep） */
+  _lastWrongAnswer() {
+    const events = eventsLoad();
+    if (!events.length) {
+      return {
+        type: 'error_review',
+        title: '错题回顾',
+        content: '我这边还没有记下错题哦。你先按自己的节奏算，真错了我会帮你一起找出来。',
+        actions: [{ text: '我懂了', type: 'close' }],
+      };
+    }
+    const e = events[0];
+    // ⚠️ 错题正文来自学生输入/题库，是**不可信内容**，必须转义后再拼 HTML
+    const eb = (s) => this._escapeHtml(s);
+    const detail = [
+      e.errorStep ? `错在：${eb(e.errorStep)}` : '',
+      e.correctAnswer ? `正确答案：<b>${eb(e.correctAnswer)}</b>` : '',
+      e.studentAnswer ? `你写的是：${eb(e.studentAnswer)}` : '',
+    ].filter(Boolean).join('；');
+    return {
+      type: 'error_review',
+      title: '上一道错题',
+      content: `你刚才算的是「${eb(e.problemText)}」。${detail ? detail + '。' : ''}回头看看这一步，是不是哪里漏了？`,
+      actions: [{ text: '我懂了', type: 'close' }],
+    };
+  }
+
+  /** 打开既有错题本抽屉（全站已有功能，Aji 只做入口，不自建界面） */
+  _openWrongBook() {
+    try {
+      const btn = document.getElementById('wrongBookBtn');
+      if (btn) { btn.click(); return; }
+      const drawer = document.getElementById('wrongBookDrawer');
+      if (drawer) {
+        drawer.classList.add('open');
+        document.getElementById('wrongBookMask')?.classList.add('open');
+      }
+    } catch (e) { /* 环境缺错题本也不阻断对话 */ }
   }
 
   _applyTheme() {
@@ -688,6 +854,11 @@ class Aji {
   /* ⭐ AI 兜底（流式）：占位「让我想想…」→ SSE 逐块追加 → 原位打字机；失败给温柔兜底 */
   async _askAI(userQuery) {
     this._ensureAttached();
+    /* ⭐ 记忆检索优先：命中"错题本/我错哪了"类问法直接用本地聚合回答（毫秒级、零成本、不瞎编） */
+    const mem = this._memoryLocal(userQuery);
+    if (mem) { this.sendMessage(mem); return; }
+    /* ⭐ 好奇心捕获：学生这次提问里若提到恐龙/宇宙…静默记进 LearnerMemory（绝不提示已记录） */
+    try { captureInterests(userQuery); } catch (e) {}
     this._abortStream();          // ⭐ 新提问先掐断上一次未完成的流（防串台/内存泄漏）
     // ⚠️ 身份令牌：被中断的旧流，其 catch/finally 是异步才跑到的，
     //    若不校验身份就会把新流刚设的 controller / busy 标志覆盖成 null/false，
@@ -714,7 +885,11 @@ class Aji {
         currentProblem: (CONCEPT_RE.test(userQuery || '') && !CONTEXT_RE.test(userQuery || ''))
           ? '无（学生在问通识概念）' : c.currentProblem,
         studentProgress: c.studentProgress,
-        knowledgeCards: c.cfg ? c.cfg.knowledgeCards : [],
+        isError: c.isError,
+        /* ⭐ 记忆引擎注入：学情摘要 + 兴趣摘要 + 最近 5 条相关真实错题（RAG） */
+        learnerTags: learnerTagSummary(),
+        interestTags: interestSummary(),
+        wrongHistory: wrongDigest(c.topic || ''),
         userQuery: userQuery || '我卡住了，该怎么想？',
       }, (delta) => {
         // ⭐ 打字机：每个增量以 textContent 追加（免 XSS、免重排抖动）
@@ -768,25 +943,37 @@ class Aji {
   }
 
   /* ⭐ 系统提示词：前置注入当前上下文（题目、步骤、错误） */
-  _buildSystemPrompt({ moduleId, topic, currentProblem, studentProgress, knowledgeCards, userQuery }) {
-    const cards = Array.isArray(knowledgeCards) && knowledgeCards.length
-      ? knowledgeCards.map((c) => `- ${c.title}`).join('\n')
-      : '（本模块未登记通识卡片）';
-    return `你是 Aji，一位克制、耐心且有启发性的三年级数学助教。
+  _buildSystemPrompt({
+    moduleId, topic, currentProblem, studentProgress, isError,
+    learnerTags, interestTags, wrongHistory, userQuery,
+  }) {
+    const ctxLines = [
+      `- 当前模块：${moduleId}${topic ? `（${topic}）` : ''}`,
+      `- 当前题目：${currentProblem}`,
+      `- 学生进度：${studentProgress}`,
+      `- 是否出错：${isError ? '是' : '否'}`,
+      `- 学生近期学情：${learnerTags || '（暂无记录）'}`,
+      `- 学生兴趣：${interestTags || '（暂无记录）'}`,
+    ].join('\n');
 
-【当前上下文】
-当前模块：${moduleId}${topic ? `（${topic}）` : ''}
-当前题目：${currentProblem}
-学生当前的计算过程与错误：${studentProgress}
-本模块通识要点：
-${cards}
-学生提问：${userQuery}
+    /* ⭐ RAG：最近 5 条真实错题（由 core/learner.js 前端聚合好，Prompt 不做数据逻辑） */
+    const rag = (Array.isArray(wrongHistory) && wrongHistory.length)
+      ? `\n\n【历史错题参考】\n${wrongHistory.join('\n')}\n（基于这些真实错题给出针对性的启发式提问或鼓励，不要凭空编造别的错题。）`
+      : '';
 
-要求：
-1. 绝对不要直接给出最终答案。
-2. 用三年级学生听得懂的语言解释；学生问通识概念时（如"什么是余数"）就讲清概念本身，不要牵强联系当前题目。
-3. 引导他发现自己是在哪一步算错的（例如进位、优先级）。
-4. 每次回答控制在 3 句话以内，语气温和、鼓励。`;
+    return `你是 Aji，一位克制、耐心、充满好奇心，且深受三年级学生信任的 AI 数学陪学助教。
+
+【当前场景上下文】
+${ctxLines}${rag}
+
+【对话边界与路由规则】（必须严格遵守）
+1. 核心区（当前数学题）：绝对不要直接给出最终答案。结合学情，用启发式提问引导他自己发现错误。每次回答控制在 3 句话以内。
+2. 泛学科区（超纲知识、其他学科、好奇心）：如果学生问了有趣的知识（如恐龙、宇宙），允许你跳出数学，用三年级听得懂的语言满足他的好奇心。但回答完毕后，必须温和地拉回题目。例如：宇宙的奥秘很神奇吧？等我们算完这道题，你可以多问我！
+3. 干扰区（游戏、闲聊、负面情绪）：如果学生不想做题，温和地理解他的情绪。简短回答后引回题目。绝不进行无意义闲聊。
+
+【语气与克制要求】
+- 语气像邻家学霸哥哥/姐姐，绝不居高临下。
+- 不显摆你记录了他的偏好，而是自然地流露。`;
   }
 
   /** ⭐ SSE 流式请求：逐 chunk 解析 `data: {...}`，把正文增量交给 onDelta */
@@ -891,13 +1078,24 @@ ${cards}
 
   /* ⭐ 输入区提交：学生主动提问 → 绕过本地规则 → 携带上下文请求大模型 */
   _submitInput() {
-    const text = (this.inputEl.value || '').trim();
+    /* 移动端走自绘缓冲（#aji-hub-input 被 readonly 锁死、display:none），
+       桌面端走原生 input.value。
+       ⚠️ 兜底：移动端仍接受 inputEl.value 里**已被程序化写入**的内容——
+         原生的 value 属性在 readonly 下照样可写（只是用户打不进去），
+         所以键盘/脚本两条路都能进;不要因为"输入框被隐藏了"就把这条断了。 */
+    const mobile = this._isMobile();
+    const native = (this.inputEl.value || '').trim();
+    const text = mobile ? ((this._buf || '').trim() || native) : native;
     if (!text || this._aiBusy) return;
+    if (mobile) { this._buf = ''; this._paintBuf(); }
     this.inputEl.value = '';
     this.history.push({ role: 'user', text });
     this._trim();
     this._render();
     this._askAI(text);
+    // ⭐ 发出去就收键盘：学生要立刻看见回答（键盘此刻纯属占地方）。
+    //    键盘不收，聊天舱的"收起＝半屏"根本没机会发生。
+    if (mobile && this._keypad && this._keypad.visible) this._closeKeypad();
   }
 
   _escapeHtml(str) {
@@ -989,11 +1187,13 @@ ${cards}
 
   openDrawer() {
     this._ensureAttached();
-    if (this.visible) { this._adjust?.(); this._setStageShift(true); return; }
+    this._lockNativeKeyboard();   // 移动端输入框天生不可聚焦（防原生键盘）
+    if (this.visible) { this._applyHubHeight('snap'); this._setStageShift(true); return; }
     this.visible = true;
+    this._dragState = null;       // 每次开舱都回到吸附态，不记住上次拖到哪儿
     this.hub.style.display = 'flex';
     gsap.fromTo(this.hub, { x: 28, y: 28, opacity: 0 }, { x: 0, y: 0, opacity: 1, duration: 0.28, ease: 'power2.out', overwrite: 'auto' });
-    this._adjust?.();
+    this._applyHubHeight('snap');
     this._setStageShift(true);   // ⭐ 展开后算式容器让位（带内居中，绝不与舱体重叠）
   }
 
@@ -1006,11 +1206,196 @@ ${cards}
     if (!this.visible) return;
     this.visible = false;
     this._abortStream();     // ⭐ 收舱即刻中断未完成的流式请求（Network 里能看到 canceled）
+    this._closeKeypad();     // 键盘必须先收，否则留在屏上没人管
+    this.hub.classList.remove('aji-input-mode', 'aji-settling');
+    this._dragState = null;
     this._setStageShift(false);   // ⭐ 算式容器平滑归位
     gsap.to(this.hub, {
       x: 28, y: 28, opacity: 0, duration: 0.2, ease: 'power2.in', overwrite: 'auto',
       onComplete: () => { if (!this.visible) this.hub.style.display = 'none'; },
     });
+  }
+
+  /* ============================================================
+     移动端吸附：全屏 / 半屏 / 关闭 三档
+     ============================================================
+     高度权威只有一处：_hubTargetH()。它把"用户拖到的吸附态"与
+     "算式不许被顶出可视带"求交 —— 单一控制器，才不会自己跟自己抖。
+     ⚠️ 全程不动 document.body.style.paddingBottom（背后算式重排的唯一来源）。
+     ⚠️ 布局位置只认 offsetTop 链，绝不用 rect.top（补间中途读数会漂移）。
+     ============================================================ */
+
+  /** 当前吸附态：'full' | 'half'（关闭态不在这个维度里，它是 visible=false） */
+  _snapState() { return this._dragState || 'half'; }
+
+  /** ⭐ 舱体被抬离底部的总高度 = 原生软键盘 + 聊天虚拟键盘。
+      两者都会把舱体往上顶，所以**都得算进可用空间**——
+      只减聊天键盘会漏掉原生键盘那 300px，算出来的"半屏"实际会压在算式上。
+      （原生键盘高度由 visualViewport 的写进 --kb-height；聊天键盘高度由 chat-keypad 上报。） */
+  _bottomLift() {
+    if (!this._isMobile()) return 0;
+    let native = 0;
+    try {
+      native = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--kb-height')) || 0;
+    } catch (e) { native = 0; }
+    return Math.max(0, native) + this._kpHeight();
+  }
+
+  /** ⭐ 舱体可用的纵向空间 = 视口高 - 全部底部抬升。
+      ⭐ 拖拽分数与吸附阈值都以它为分母，不以 innerHeight 为分母——
+         否则键盘升起时（只剩 480/780）永远够不到 0.75，"上拉全屏"直接失效。 */
+  _availH() {
+    return Math.max(1, (window.innerHeight || 0) - this._bottomLift());
+  }
+
+  /** ⭐ 高度唯一权威：算出舱体当前该多高（null = 交回 CSS 默认）。
+      算式保护只对 half 态生效：学生主动上拉全屏是明确意图，
+      让位管线会把算式居中进剩下的带上缘，所以不必再压缩它。
+      ⚠️ 刻意不返回 overflow 开关 —— 消息区永远 overflow-y:auto。
+        给短抽屉配 overflow:hidden 会让历史**既看不见又滚不到**，
+        那是比"算式被让位"严重得多的死路。 */
+  _hubTargetH(state = this._snapState(), kp = this._bottomLift()) {
+    if (!this._isMobile()) return null;
+    const avail = Math.max(0, (window.innerHeight || 0) - kp);
+    if (state === 'full') return Math.max(0, avail - 8);   // 全屏吸附：顶到视口上缘
+    const cap = Math.round(avail * 0.55);                  // 半屏上限（任务书 50~55%）
+    const st = this._stage;
+    if (!st || !st.el) return cap;                         // 无舞台（通识页）→ 纯半屏
+    const gap = st.gap || 20;
+    const bandTop = this._stageBandTop();
+    /* ⚠️ 必须按"算式 + 其下反馈行"的**整组**下缘反推，不能只算算式本体：
+       反馈行（#m1fb）也归让位管线管，它被舱体压住时管线只能把它淡出——
+       那等于为了多给消息几像素，把提示语藏了。50dvh 时整组刚好放得下，
+       抬到 55% 就会踩上去（实测 13962px² 重叠）。 */
+    const groupH = this._stageGroupH();
+    const room = Math.round(avail - (bandTop + groupH + gap * 2));
+    // 整组放得下 → 取半屏上限；放不下 → 让位给算式组，但下限 175
+    //   （只求 头≈44 + 最后一两行消息 + 输入行≈52 可见——学生此刻在打字，
+    //    完整历史等收起键盘再看。压到 150 会把消息区整个吞掉，让位就失去意义；
+    //    此时超出部分由让位管线把算式往上推来补，不是单纯重叠。）
+    return Math.max(175, Math.min(cap, room));
+  }
+
+  /** 让位组的高度：算式 + 其下反馈行（与 _setStageShift 里 groupH 同一算法）。
+      两处必须共用同一把尺子——"反推抽屉高度"与"实际让位"各算各的，
+      正是高度互相追着抖的根源。 */
+  _stageGroupH() {
+    const st = this._stage;
+    if (!st || !st.el) return 150;
+    const docTopOf = (el) => { let t = 0, n = el; while (n && n !== document.body) { t += n.offsetTop; n = n.offsetParent; } return t; };
+    const top = docTopOf(st.el);
+    let bottom = top + (st.el.offsetHeight || 150);
+    for (const ex of st.extra || []) {
+      if (ex && ex.isConnected) bottom = Math.max(bottom, docTopOf(ex) + ex.offsetHeight);
+    }
+    return Math.max(150, Math.round(bottom - top));
+  }
+
+  /**
+   * 应用高度。
+   * @param {'drag'|'snap'} mode  'drag' = 跟手（无过渡、用显式像素）
+   *                              'snap' = 吸附回弹（走过渡）
+   * @param {number} [dragH]      mode='drag' 时的显式高度
+   */
+  _applyHubHeight(mode = 'snap', dragH) {
+    if (!this._isMobile()) return;
+    const dragging = (mode === 'drag' && typeof dragH === 'number');
+    this.hub.classList.toggle('aji-settling', !dragging);
+    if (dragging) {
+      this.hub.style.setProperty('--aji-h', Math.round(dragH) + 'px');
+    } else {
+      const h = this._hubTargetH();
+      if (h == null) this.hub.style.removeProperty('--aji-h');
+      else this.hub.style.setProperty('--aji-h', Math.round(h) + 'px');
+    }
+    // 吸附落定后撤掉过渡类，避免影响下一次拖拽的跟手性
+    if (!dragging) {
+      clearTimeout(this._settleTimer);
+      this._settleTimer = setTimeout(() => this.hub.classList.remove('aji-settling'), 340);
+    }
+  }
+
+  /** 拖拽高度 → 吸附态（松手即按它落定）。
+      'close' = 低于 35%，交给 up 处理器收舱。 */
+  _autoSnapFromHeight(h) {
+    if (!this._isMobile() || typeof h !== 'number') return null;
+    const frac = h / this._availH();
+    if (frac >= 0.75) return 'full';
+    if (frac >= 0.35) return 'half';
+    return 'close';
+  }
+
+  /** 聊天键盘当前高度（移动端托举用；桌面端恒 0） */
+  _kpHeight() {
+    if (!this._isMobile()) return 0;
+    const kp = this._keypad;
+    return (kp && kp.visible) ? (kp.height || 0) : 0;
+  }
+
+  /* ---- 聊天键盘（与做题键盘完全隔离的一把） ---- */
+  _lockNativeKeyboard() {
+    const lock = this._isMobile();
+    // ⭐ 双保险：inputmode=none 只是"建议"，readonly 才是真拦得住
+    //    （Safari 对 inputmode=none 支持不可靠）。桌面端绝不动——物理键盘要正常可用。
+    if (lock) {
+      this.inputEl.setAttribute('readonly', 'readonly');
+      this.inputEl.setAttribute('inputmode', 'none');
+    } else {
+      this.inputEl.removeAttribute('readonly');
+      this.inputEl.removeAttribute('inputmode');
+    }
+    this.inputEl.style.display = lock ? 'none' : '';
+    this.bufEl.style.display = lock ? 'flex' : 'none';
+    if (lock) this._paintBuf();
+  }
+
+  _paintBuf() {
+    if (!this.bufEl) return;
+    const text = this._buf || '';
+    const empty = text.length === 0;
+    this.bufEl.classList.toggle('aji-buf-empty', empty);
+    this.bufEl.replaceChildren();
+    if (empty) { this.bufEl.textContent = '问 Aji 一个问题…'; return; }
+    this.bufEl.appendChild(document.createTextNode(text));
+    const caret = document.createElement('span');
+    caret.className = 'aji-buf-caret';
+    this.bufEl.appendChild(caret);
+  }
+
+  _openKeypad() {
+    if (!this._isMobile() || !this.visible) return;
+    const kp = this._keypad || (this._keypad = getChatKeypad());
+    kp.show({
+      onKey: (ch) => { this._buf += ch; this._paintBuf(); },
+      onBackspace: () => { this._buf = this._buf.slice(0, -1); this._paintBuf(); },
+      onSubmit: () => this._submitInput(),
+      onResize: (h) => this._onKeypadResize(h),
+    });
+    this.hub.classList.add('aji-input-mode');
+    this._onKeypadResize(kp.height || 0);
+    // 滚到最新一条：键盘占掉半屏，学生最该看见的是刚问出去那句
+    this.msgsEl.scrollTop = this.msgsEl.scrollHeight;
+  }
+
+  _closeKeypad() {
+    const kp = this._keypad;
+    if (kp && kp.visible) kp.hide();
+    this.hub.classList.remove('aji-input-mode');
+    if (!this._isMobile()) return;
+    // hide() 已同步回调过 onResize(0)，这里只保证复位（重复设 0 无害）
+    document.documentElement.style.setProperty('--aji-kp', '0px');
+    this._applyHubHeight('snap');
+    this._setStageShift(true);
+  }
+
+  /** 键盘升降：只改 --aji-kp（托举）+ 重算高度。绝不碰 body 布局。 */
+  _onKeypadResize(h) {
+    if (!this._isMobile()) return;
+    document.documentElement.style.setProperty('--aji-kp', Math.round(h || 0) + 'px');
+    this._applyHubHeight('snap');
+    // ⭐ 舱体没动、键盘没动算式，但带下缘变了（键盘是覆盖层，visualViewport 不缩），
+    //    所以让位必须在这里主动重算一次，否则算式会被键盘压住而系统毫无察觉。
+    this._setStageShift(true);
   }
 
   /* ---- 右下角悬浮球（常驻唯一入口）+ 空闲轻推 ---- */
@@ -1076,6 +1461,21 @@ ${cards}
     window.visualViewport?.removeEventListener('scroll', this._adjust);
     window.removeEventListener('resize', this._adjust);
     if (this._idleTimer) clearTimeout(this._idleTimer);
+    clearTimeout(this._settleTimer);
+    // ⭐ 拖拽监听挂在 window 上（pointer capture 会把事件目标锁在原元素，
+    //    挂自身会漏掉快速拖出列表的那一段），所以必须显式摘除
+    if (this._dragHandlers) {
+      const h = this._dragHandlers;
+      this.gripEl?.removeEventListener('pointerdown', h.onDown);
+      this.msgsEl?.removeEventListener('pointerdown', h.listDown);
+      window.removeEventListener('pointermove', h.move);
+      window.removeEventListener('pointerup', h.end);
+      window.removeEventListener('pointercancel', h.end);
+      this._dragHandlers = null;
+    }
+    this._drag = null;
+    this._keypad = null;          // 聊天键盘是全局单例，不随 Aji 卸载销毁
+    document.documentElement.style.removeProperty('--aji-kp');
     this._abortStream();          // ⭐ 卸载时掐断在飞的流
     this._stage = null;
     this.hub.remove();
