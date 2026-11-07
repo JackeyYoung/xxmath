@@ -23,6 +23,7 @@ import { findCachedFeedback } from '../../../core/feedback-resolver.js';
 import { showExplainModal } from '../../../core/ui/wrongbook-ui.js';
 import { consumePendingRedoTask } from '../../../core/events.js';
 import { aji } from '../../../core/ui/aji.js';
+import { flavorScenario } from '../../../core/learner.js';
 
 import { registerActiveModule, unregisterActiveModule } from '../../../app/shell.js';
 
@@ -92,9 +93,9 @@ export default async function mount(container, ctx) {
       { title: '关键词找运算', content: '「一共」用加法，「还剩」用减法，「平均分」用除法，「是……的几倍」用乘法。' },
     ],
     problemText: () => {
-      const t = $('#problem-text');
-      const shown = t && typeof t.innerText === 'string' ? t.innerText.trim() : '';
-      if (shown) return shown;
+      // ⭐ 给 Aji 的题目一律用规范化原文（换装只影响呈现，学情/错题身份保持唯一）
+      const canonical = m13ProblemText();
+      if (canonical) return canonical;
       return (M13_CurrentProblem && M13_CurrentProblem.text) || '';
     },
     progress: () => {
@@ -247,7 +248,7 @@ export default async function mount(container, ctx) {
   }
 
 async function checkTakeawayBeforeChange() {
-    const problemText = $('#problem-text')?.innerText.trim();
+    const problemText = m13ProblemText();
     if (!problemText) return true;
     const takeaway = $('#pTakeaway')?.value.trim();
     if (takeaway) return true;
@@ -299,7 +300,7 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
   }
 
   function updateAllSteps() {
-    const problemText = $('#problem-text')?.innerText.trim() || '';
+    const problemText = m13ProblemText() || '';
 
     // 草稿纸（至少有 2 个格子写了内容才算完成）
     const scratch = $$('.scratch-cell textarea');
@@ -352,7 +353,7 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
   function updateCheckBtnHint() {
     const btn = $('#pCheck');
     if (!btn) return;
-    const problemText = $('#problem-text')?.innerText.trim() || '';
+    const problemText = m13ProblemText() || '';
     const nums = m13ProblemNumbers(problemText);
     const steps = m13CollectSteps();
     const ok = steps.some(s => (s.rel || '').trim() && m13IsValidSubstitution(s.sub, nums));
@@ -499,9 +500,25 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
     if (sel) sel.innerHTML = html;
   }
 
+  /* ⭐ 题干身份 vs 题干呈现（任务书 §一.5 趣味融合）：
+     题干文本是全站多个缓存/去重链路的主键——
+       · findCachedFeedback(题库命中)  · sameProblem(历史/错题本去重)
+       · takeawayLoad / takeawaySave(一题一得按题干存取)
+     所以「静默换装」只能改**呈现**，绝不能改**身份**：
+     规范化原文钉在 dataset.canonical 上，读题一律走 m13ProblemText()，
+     只有 #problem-text 的 textContent 换成带兴趣主题的口味版。 */
+  function m13ProblemText() {
+    const el = $('#problem-text');
+    if (!el) return '';
+    return (el.dataset && el.dataset.canonical) || el.innerText.trim();
+  }
+
   function m13LoadProblem(text, answer, source, bankItem) {
     const el = $('#problem-text');
-    el.textContent = text;
+    const canonical = String(text == null ? '' : text).trim();
+    el.dataset.canonical = canonical;
+    // ⭐ 只对题库的场景应用题换装（自定义题是学生自己输入的原文，绝不篡改）
+    el.textContent = (source === 'bank') ? flavorScenario(canonical) : canonical;
     M13_CurrentAnswer = answer || null;
     M13_ProblemSource = source || 'custom';
     M13_CurrentProblem = bankItem || null;
@@ -513,7 +530,7 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
     resetAllSteps();
     $$('.scratch-cell textarea').forEach(t => t.value = '');
 
-    const savedTakeaway = takeawayLoad(text);
+    const savedTakeaway = takeawayLoad(canonical);
     const takeawayEl = $('#pTakeaway');
     if (takeawayEl) {
       takeawayEl.value = savedTakeaway;
@@ -585,7 +602,7 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
   }
 
   async function m13FetchStandardSolution() {
-    const problemText = $('#problem-text')?.innerText.trim();
+    const problemText = m13ProblemText();
     if (!problemText) return ctx.toast('请先输入题目', 'info');
 
     const box = $('#m13StandardSteps');
@@ -654,7 +671,7 @@ return await showConfirm('💡 一题一得还没写哦！\n\n"这道题教会�
 
     const user = $('#pAnswer').value.trim();
     const badge = $('#pResult');
-    const problemText = $('#problem-text').innerText.trim();
+    const problemText = m13ProblemText();
     
     const setBadge = (type, text) => {
       badge.className = 'm13-result-badge' + (type ? ' ' + type : '');
@@ -1114,7 +1131,7 @@ if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
 
   function updateTakeawayBtnState() {
     const cur = takeawayInput.value.trim();
-    const problem = $('#problem-text')?.innerText.trim() || '';
+    const problem = m13ProblemText() || '';
     if (!problem || !cur) {
       takeawayBtn.disabled = true; takeawayBtn.classList.remove('dirty', 'saved'); takeawayBtn.textContent = '💾 保存';
       takeawayHint.textContent = ''; takeawayHint.classList.remove('dirty', 'saved'); return;
@@ -1131,7 +1148,7 @@ if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
   }
 
   function doSaveTakeaway(silent) {
-    const problem = $('#problem-text')?.innerText.trim();
+    const problem = m13ProblemText();
     if (!problem) return;
     const cur = takeawayInput.value.trim();
     takeawaySave(problem, cur);
@@ -1147,14 +1164,14 @@ if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
     updateTakeawayBtnState();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      const problem = $('#problem-text')?.innerText.trim();
+      const problem = m13ProblemText();
       const cur = takeawayInput.value.trim();
       if (problem && cur) { takeawaySave(problem, cur); savedValue = cur; savedFromProblem = problem; updateTakeawayBtnState(); }
     }, 500);
   });
   takeawayInput?.addEventListener('blur', () => {
     clearTimeout(saveTimer);
-    const problem = $('#problem-text')?.innerText.trim();
+    const problem = m13ProblemText();
     const cur = takeawayInput.value.trim();
     if (problem && cur && (cur !== savedValue || problem !== savedFromProblem)) doSaveTakeaway(true);
   });
@@ -1162,7 +1179,7 @@ if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
 
   // ⭐ 查看标准解法（真正的降级链路：题库自带 -> 本地缓存 -> AI）
   $('#m13UnlockBtn')?.addEventListener('click', async () => {
-    const problemText = $('#problem-text')?.innerText.trim();
+    const problemText = m13ProblemText();
     if (!problemText) return ctx.toast('请先输入题目', 'info');
 
     // 降级 1：如果是题库题，且自带 steps，直接渲染在下方（免密秒出）
@@ -1218,7 +1235,7 @@ if (!(await checkTakeawayBeforeChange())) { e.target.value = ''; return; }
   // AI 生成同类题
   $('#pickerAiBtn')?.addEventListener('click', async (e) => {
     e.preventDefault();
-    const currentText = $('#problem-text')?.innerText.trim();
+    const currentText = m13ProblemText();
     if (!currentText) return ctx.toast('请先载入题目，AI 才能参考出题', 'info');
 
     const bodyEl = $('#problemPickerDrawer').querySelector('.problem-picker-body');

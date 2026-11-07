@@ -21,6 +21,9 @@ import { getGradeConfig } from '../../../app/grade-config.js';
 import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getVirtualKeypad } from '../../../core/ui/virtual-keypad.js';
 import { getAji } from '../../../core/ui/aji.js';
+import {
+  settle as learnerSettle, pickProblem, tagsForArithmetic,
+} from '../../../core/learner.js';
 
 const M1_PRESETS = [
   { name: '括号加法',  expr: '(3 + 6) ÷ (4 - 1)' },
@@ -327,6 +330,8 @@ export default async function mount(container, ctx) {
     answerBuf: '',          // 键盘输入缓冲
     standardAnswer: null,   // ⭐ 原题标准答案（终局回溯的比对基准）
     recheck: null,          // ⭐ 终局回溯：{ firstWrongIdx }——放弃时才结算为错
+    tags: [],               // ⭐ 当前题目的结构化标签（记忆引擎用）
+    usedHint: false,        // ⭐ 本题是否用过 Aji 提示
   };
   // ⭐ 「先算乘除」优先级测验已下线（强制弹窗违背心流）——算理教学下沉进 Aji 对话框，
   //    学生直接开算，绝不阻断；无记录/加分业务可保留
@@ -653,6 +658,10 @@ export default async function mount(container, ctx) {
     M1.busy = false;
     M1.answerBuf = '';
     M1.recheck = null;
+    // ⭐ 本次尝试的状态复位（记忆引擎用）：题目标签在下方按算式实算，
+    //    绝不沿用上一题的 Tags——否则会把"上一题的学情"记到这一题头上
+    M1.usedHint = false;
+    M1.tags = tagsForArithmetic(str);
 
     if (M1.tokens.length === 0) {
       renderPlaceholder();
@@ -937,6 +946,8 @@ export default async function mount(container, ctx) {
       });
     }
     if (ctx.data?.masteryRecord) ctx.data.masteryRecord(M1.original, false);
+    // ⭐ 记忆引擎：错 → 入 Event Store（带错因与是否用过提示）
+    m1RecordLearner({ isCorrect: false, hasErrors: true, wrongStep: s, usedHint: M1.usedHint });
     const ans = fmtNum(M1.standardAnswer ?? 0);
     const fb = $('#m1fb');
     if (fb) { fb.textContent = `正确答案是：${ans}。`; fb.className = 'feedback b1-hint'; }
@@ -999,6 +1010,29 @@ export default async function mount(container, ctx) {
       });
     }
     if (ctx.data?.masteryRecord) ctx.data.masteryRecord(M1.original, false);
+    m1RecordLearner({ isCorrect: false, hasErrors: true, wrongStep: s, usedHint: M1.usedHint });
+  }
+
+  /* ⭐ 记忆引擎结算（m1 的唯一调用点）。
+     铁律：做对且过程无错 → 绝不写 Event Store，只喂聚合器。 */
+  function m1RecordLearner({ isCorrect, hasErrors, wrongStep, usedHint }) {
+    try {
+      const s = wrongStep || {};
+      learnerSettle({
+        moduleId: 'm1',
+        topic: meta.title || '混合运算',
+        problemText: M1.original,
+        tags: M1.tags && M1.tags.length ? M1.tags : tagsForArithmetic(M1.original),
+        isCorrect, hasErrors,
+        correctAnswer: s.expected != null ? fmtNum(s.expected) : fmtNum(M1.standardAnswer ?? 0),
+        studentAnswer: s.actual != null ? fmtNum(s.actual) : '',
+        // 错因用中文说清"哪一步的什么算错了"，供 RAG 直接引述
+        errorStep: s.actual != null
+          ? `第 ${(M1.steps.indexOf(s) + 1) || 1} 步：${String(s.markedHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()} 算成了 ${fmtNum(s.actual)}，应为 ${fmtNum(s.expected)}`
+          : '',
+        usedHint: !!usedHint,
+      });
+    } catch (e) { /* 学情记录失败绝不阻断做题 */ }
   }
 
   // ---------- 合并动画（核心时间轴） ----------
@@ -1183,6 +1217,8 @@ export default async function mount(container, ctx) {
         });
       }
       if (ctx.data && ctx.data.masteryRecord) ctx.data.masteryRecord(M1.original, true);
+      // ⭐ 记忆引擎：做对且过程无错 → 绝不入 Event Store，只让对应 Tag 的连续正确 +1
+      m1RecordLearner({ isCorrect: true, hasErrors: false, usedHint: M1.usedHint });
       return;
     }
 
@@ -1249,48 +1285,84 @@ export default async function mount(container, ctx) {
     e.target.value = '';
   });
 
-  $('#m1Random')?.addEventListener('click', () => {
-    const level = ctx.storage.get('grade3_m1_level') || 'no-paren';
+  /* ---------- 无感定制生成器（记忆引擎干预出口） ----------
+     题目标签强制返回：{ problemText, tags, answer }——任务书 §五.3。
+     mode 干预（任务书 §一.5）：
+       consolidate 降维巩固：参数范围收窄（乘数退到 2~5、加数退到 20 以内）
+       advance     升维挑战：参数范围放宽（乘数升到 6~9、加数升到 10~99）
+       normal      原样 */
+  const M1_LEVEL_TAGS = {
+    'no-paren': ['混合运算', '乘法', '加法', '减法', '乘法进位'],
+    'with-paren': ['含括号', '混合运算', '乘法', '加法'],
+    'mul-div': ['混合运算', '乘法', '除法'],
+    'add-sub': ['加法', '减法'],
+  };
+  /** 各层级按难度干预的取数区间 */
+  const M1_RANGE = {
+    consolidate: { mul: [2, 5], mul2: [2, 5], addHi: 20, subHi: 40, big: [10, 40] },
+    normal:      { mul: [2, 9], mul2: [2, 9], addHi: 99, subHi: 90, big: [10, 99] },
+    advance:     { mul: [6, 9], mul2: [6, 9], addHi: 99, subHi: 99, big: [50, 99] },
+  };
+
+  function m1GenerateExpr(level, mode = 'normal') {
+    const R = M1_RANGE[mode] || M1_RANGE.normal;
     const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+    const mul = () => rnd(R.mul[0], R.mul[1]);
+    const mul2 = () => rnd(R.mul2[0], R.mul2[1]);
 
     const GEN = {
       'no-paren': () => {
         const type = rnd(1, 6);
-        if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
-        if (type === 2) { const b = rnd(5, 15), c = rnd(5, 15); return `${rnd(Math.max(30, b + c), 90)} - ${b} - ${c}`; }
-        if (type === 3) { const b = rnd(2, 9), q = rnd(2, 9); return `${b * q} ÷ ${b} + ${rnd(10, 50)}`; }
-        if (type === 4) { const a = rnd(2, 9), b = rnd(2, 9); return `${a} × ${b} - ${rnd(2, Math.min(9, a * b - 1))}`; }
-        if (type === 5) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(2, 9)} × ${rnd(2, 9)}`;
-        const b = rnd(2, 9), c = rnd(2, 9); return `${rnd(Math.max(10, b * c), 99)} - ${b} × ${c}`;
+        if (type === 1) return `${mul()} × ${mul2()} + ${rnd(10, R.addHi)}`;
+        if (type === 2) { const b = rnd(5, 15), c = rnd(5, 15); return `${rnd(Math.max(30, b + c), R.subHi)} - ${b} - ${c}`; }
+        if (type === 3) { const b = mul(), q = mul2(); return `${b * q} ÷ ${b} + ${rnd(10, R.addHi)}`; }
+        if (type === 4) { const a = mul(), b = mul2(); return `${a} × ${b} - ${rnd(2, Math.min(9, a * b - 1))}`; }
+        if (type === 5) return `${mul()} × ${mul2()} + ${mul()} × ${mul2()}`;
+        const b = mul(), c = mul2(); return `${rnd(Math.max(10, b * c), R.subHi)} - ${b} × ${c}`;
       },
       'with-paren': () => {
         const type = rnd(1, 3);
-        if (type === 1) { const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9); return `(${a} + ${b}) × ${c}`; }
-        if (type === 2) { const b = rnd(2, 9), q = rnd(2, 9), a = rnd(1, 5); return `(${b * q + a} - ${a}) ÷ ${b}`; }
-        const a = rnd(2, 9), b = rnd(2, 9), c = rnd(2, 9);
+        if (type === 1) { const a = mul(), b = mul2(), c = mul(); return `(${a} + ${b}) × ${c}`; }
+        if (type === 2) { const b = mul(), q = mul2(), a = rnd(1, 5); return `(${b * q + a} - ${a}) ÷ ${b}`; }
+        const a = mul(), b = mul2(), c = mul();
         return `(${a} + ${b}) × ${c} - ${rnd(2, Math.min(9, (a + b) * c - 1))}`;
       },
       'mul-div': () => {
         const type = rnd(1, 3);
-        if (type === 1) return `${rnd(2, 9)} × ${rnd(2, 9)} + ${rnd(10, 99)}`;
-        if (type === 2) { const b = rnd(2, 9), q = rnd(2, 9); return `${b * q} ÷ ${b} + ${rnd(10, 50)}`; }
-        const b = rnd(2, 9), c = rnd(2, 9); return `${rnd(Math.max(10, b * c), 99)} - ${b} × ${c}`;
+        if (type === 1) return `${mul()} × ${mul2()} + ${rnd(10, R.addHi)}`;
+        if (type === 2) { const b = mul(), q = mul2(); return `${b * q} ÷ ${b} + ${rnd(10, R.addHi)}`; }
+        const b = mul(), c = mul2(); return `${rnd(Math.max(10, b * c), R.subHi)} - ${b} × ${c}`;
       },
       'add-sub': () => {
         const type = rnd(1, 3);
-        if (type === 1) { const b = rnd(5, 15), c = rnd(5, 15); return `${rnd(Math.max(30, b + c), 90)} - ${b} - ${c}`; }
-        if (type === 2) { const a = rnd(10, 50), b = rnd(10, 50); return `${a} + ${b} - ${rnd(5, Math.min(30, a + b - 1))}`; }
-        return `${rnd(10, 40)} + ${rnd(5, 30)} + ${rnd(5, 30)}`;
+        if (type === 1) { const b = rnd(5, 15), c = rnd(5, 15); return `${rnd(Math.max(30, b + c), R.subHi)} - ${b} - ${c}`; }
+        if (type === 2) { const a = rnd(10, R.addHi), b = rnd(10, R.addHi); return `${a} + ${b} - ${rnd(5, Math.min(30, a + b - 1))}`; }
+        return `${rnd(10, R.big[0])} + ${rnd(5, 30)} + ${rnd(5, 30)}`;
       },
     };
-    const gen = GEN[level] || GEN['no-paren'];
-    // ⭐ 年级防卫：三年级尚未学负数 → 随机题保证标准顺序下全程非负（源头已约束 + 兜底重试）
+    return (GEN[level] || GEN['no-paren'])();
+  }
+
+  /** 生成 + 校验 + 打标签（pickProblem 的 generator 契约：必须返回 { problemText, tags }） */
+  function m1MakeProblem(level, mode) {
     const allowNegative = getGradeConfig().allowNegative !== false;
-    let expr = gen();
+    let expr = m1GenerateExpr(level, mode);
+    // ⭐ 年级防卫：三年级尚未学负数 → 随机题保证标准顺序下全程非负（源头已约束 + 兜底重试）
     if (!allowNegative) {
-      for (let tries = 0; tries < 30 && !evaluatesNonNegative(expr); tries++) expr = gen();
+      for (let tries = 0; tries < 30 && !evaluatesNonNegative(expr); tries++) expr = m1GenerateExpr(level, mode);
     }
-    m1LoadExpression(expr);
+    return { problemText: expr, tags: tagsForArithmetic(expr) };
+  }
+
+  $('#m1Random')?.addEventListener('click', () => {
+    const level = ctx.storage.get('grade3_m1_level') || 'no-paren';
+    // ⭐ 无感定制生成：先问记忆引擎"这题该练什么"，再按 Tag 定向生成/匹配。
+    //    consolidate = 顽固短板 → 降维巩固；advance = 已掌握 → 升维挑战；normal 原样。
+    const picked = pickProblem((g) => m1MakeProblem(level, g.mode), {
+      candidateTags: M1_LEVEL_TAGS[level] || M1_LEVEL_TAGS['no-paren'],
+      moduleId: 'm1',
+    });
+    m1LoadExpression(picked ? picked.problemText : m1GenerateExpr(level, 'normal'));
   });
 
   $('#m1reset')?.addEventListener('click', () => {
@@ -1343,9 +1415,12 @@ export default async function mount(container, ctx) {
       const done = M1.steps.map((st, i) => `第${i + 1}步=${st.resultStr}`).join('，');
       return `已算 ${M1.steps.length} 步：${done}${wrong ? `；其中 ${wrong} 步算错` : '；暂无错误'}`;
     },
+    // ⭐ 是否出错：过程有错也算（任务书 §五.2 的 hasErrors 语义）
+    isError: () => !!M1.recheck || M1.steps.some(s => !s.isCorrect),
     // ⭐ 本地规则优先（快思考）：常规态 = 算理提示；回溯/修复态 = 错误回顾 + 微光
     resolveLocal: (intent) => {
       if (M1.recheck && !M1.busy) m1ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错步
+      M1.usedHint = true;                             // ⭐ 用过 Aji 提示 → 随错题一起入库
       return {
         type: (intent === 'review' || M1.recheck) ? 'error_review' : 'hint',
         title: '这一步怎么想？',
