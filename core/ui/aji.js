@@ -131,8 +131,16 @@ const NEW_PROBLEM_RE = /换(一)?(道)?(题|个题)|下一题|再来一(题|道)
 
 const CSS = `
 /* ── 聊天舱（.aji-chat-hub） ── */
+/* ⭐ 桌面端取黄金比例：宽 340px 定死，高 = 宽 × φ ≈ 550px。
+   为什么是 φ 而不是"随手一个 460"：这块浮窗是**固定尺寸**的，
+   长宽比就是它给人的第一印象。1:1.618 是唯一一个既修长（像一列对话，
+   不像一个方盒子）、又不会瘦到每行只能放几个字的比例。
+   ⚠️ 高度同时受视口约束（calc(100vh - 120px)）——小窗口时优先不溢出，
+     宁可破坏比例也不能让输入行掉出屏幕；此时 max-height 兜底。 */
 .aji-chat-hub { position: fixed; right: 14px; bottom: 18px; z-index: 9996;
-  width: min(340px, calc(100vw - 28px)); height: min(460px, calc(100vh - 120px));
+  --aji-w: 340px;
+  --aji-h-desktop: min(calc(var(--aji-w) * 1.618), calc(100vh - 120px));
+  width: min(var(--aji-w), calc(100vw - 28px)); height: var(--aji-h-desktop);
   display: none; flex-direction: column;
   background: var(--aji-bg, #ffffff); color: var(--aji-text, #1e293b);
   border: 1px solid rgba(100,116,139,.22); border-radius: 18px;
@@ -605,9 +613,7 @@ class Aji {
       try { d.capEl?.releasePointerCapture?.(e.pointerId); } catch (err) {}
       const avail = this._availH();
       const endH = Math.max(0, Math.min(avail - 8, d.downH - d.moved));
-      const snap = this._autoSnapFromHeight(endH);
-      if (snap === 'close') { this.closeDrawer(); return; }   // < 35% → 关闭
-      this._dragState = snap;                                 // > 75% 全屏，35~75% 半屏
+      this._dragState = this._autoSnapFromHeight(endH);   // ⭐ 两态：> 60% 全屏，否则半屏
       this._applyHubHeight('snap');
       this._setStageShift(true);                 // 吸附后带上缘变了，算式重算让位
     };
@@ -1607,13 +1613,17 @@ ${ctxLines}${sc}${rag}
   }
 
   /** 拖拽高度 → 吸附态（松手即按它落定）。
-      'close' = 低于 35%，交给 up 处理器收舱。 */
+      ⭐ 只有两态：够高就全屏、否则半屏。
+      ⚠️ 这里原来有第三态 'close'（下拉到 35% 以下 = 关闭）。已删除，理由：
+         ① 它是一条**看不见的**手势——学生下拉时无法预知"再低一点就没了"；
+         ② 关闭已经有 ✕ 这个明确入口，两条路径做同一件事只会让人犹豫；
+         ③ 半屏只有 ≈360px，35% 的门槛意味着刚过一半就关掉，
+            学生"想看看刚才那条"的本能动作会直接判他退出。
+         所以下拉到底最多变成半屏，永不关闭。 */
   _autoSnapFromHeight(h) {
     if (!this._isMobile() || typeof h !== 'number') return null;
     const frac = h / this._availH();
-    if (frac >= 0.75) return 'full';
-    if (frac >= 0.35) return 'half';
-    return 'close';
+    return frac >= 0.6 ? 'full' : 'half';
   }
 
   /** 聊天键盘当前高度（移动端托举用；桌面端恒 0） */

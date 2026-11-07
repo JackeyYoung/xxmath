@@ -268,11 +268,14 @@ export default async function mount(container, ctx) {
   const keypad = getVirtualKeypad();
   const aji = getAji();     // ⭐ Aji 交互助教（双引擎；主动式浮条 = 唯一求助入口）
 
-  /* ---------- 算式舞台视觉居中 + 键盘避让 ─────────────────────
-     标题下线后，主舞台（b1-board）占据「页头以下 ~ 软键盘以上」可视带的正中。
-     平移对象 = 舞台(b1-board) + 其下反馈行：同进退互不遮挡，卡片内 fixed 抽屉不受影响。
-     键盘弹起 → 可视带收窄，舞台平滑上移保证算式完全可见；收起 → 平滑回正中。 ---------- */
-  let m1StageCy = 0;   // 当前平移量（布局位置 = rect.top - cy）
+  /* ---------- 算式位置：待在卡片给它的位置上，只在键盘会压住时才上移 ──────────
+     ⚠️ 这里曾经是"屏幕上下居中"：把算式平移到「页头 ~ 键盘上缘」这条带的正中。
+        实测（1200×900）它把算式从自然位置推下 184px —— 算式越过卡片下缘
+        （算式底 480 > 卡片底 469），与自己的区域框彻底脱离。这是要修的毛病本身。
+     ⭐ 现在：**自然布局位置就是家**，delta 恒 ≤ 0（只上移、永不下移）。
+        只有软键盘会压住算式时才上移，且只上移刚好够用的距离；
+        键盘收起 → delta 归零 → 算式平滑回到卡片原位。 ---------- */
+  let m1StageCy = 0;   // 当前平移量（0 = 原地，负数 = 为避让键盘上移）
   function m1CenterStage() {
     if (!cardEl || !board) return;
     // ⭐ Aji 聊天舱展开时让位管线归它接管（两套 transform 同写 y 会互相覆盖）
@@ -286,8 +289,9 @@ export default async function mount(container, ctx) {
     while (el && el !== document.body) { docTop += el.offsetTop; el = el.offsetParent; }
     const stageTop = docTop - (window.scrollY || 0);
     const stageH = board.offsetHeight || DIMENSION.rowH * 2;
-    const targetTop = Math.max(bandTop, (bandTop + bandBottom) / 2 - stageH / 2);
-    const delta = Math.round(targetTop - stageTop);
+    /* 家 = 布局位置；被键盘压住才上移，且只上移刚好够的距离。delta ≤ 0。 */
+    const targetTop = Math.max(bandTop, Math.min(stageTop, bandBottom - stageH));
+    const delta = Math.min(0, Math.round(targetTop - stageTop));
     if (delta === m1StageCy) return;
     m1StageCy = delta;
     gsap.to([board, $('#m1fb')].filter(Boolean), { y: delta, duration: 0.3, ease: EASE.entry, overwrite: 'auto' });
