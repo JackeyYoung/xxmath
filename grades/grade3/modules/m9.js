@@ -24,6 +24,9 @@ import { emitUI } from '../../../core/ui/bus-ui.js';
 import { getVirtualKeypad } from '../../../core/ui/virtual-keypad.js';
 import { getAji } from '../../../core/ui/aji.js';
 import { ensureChromeStyle } from '../../../core/ui/brilliant-chrome.js';
+import {
+  settle as learnerSettle, pickProblem, tagsForVertical,
+} from '../../../core/learner.js';
 
 export const meta = {
   title: '竖式运算',
@@ -165,6 +168,8 @@ export default async function mount(container, ctx) {
     broughtDown: new Set(),   // ⭐ 已播过"落位"动画的步骤（防重绘重复动画）
     history: {},              // ⭐ 探究式放行：key → { expected, actual, isCorrect, cellKey, step, type }
     recheck: null,            // ⭐ 终局回溯：{ firstWrongKey }——放弃时才结算为错
+    tags: [],                 // ⭐ 当前题目的结构化标签（记忆引擎用）
+    usedHint: false,          // ⭐ 本题是否用过 Aji 提示
   };
 
   const getAddSubMaxLen = () => M9Score.getAddSubMaxLen(M9.a, M9.b, M9.op);
@@ -743,17 +748,28 @@ export default async function mount(container, ctx) {
     return false;
   }
 
-  function randomProblemByOp(op) {
+  /* ⭐ 无感定制生成：mode 干预参数范围（任务书 §一.5）
+       consolidate 降维巩固：三位数退成两位数、乘数退到 2~5
+       advance     升维挑战：三位数升到 500~999
+       normal      原样 */
+  const M9_RANGE = {
+    consolidate: { add: [100, 399], addB: [100, 299], subA: [150, 499], mulA: [12, 49], mulB: [2, 5], divB: [2, 5] },
+    normal:      { add: [100, 999], addB: [100, 999], subA: [200, 999], mulA: [12, 99], mulB: [2, 9], divB: [2, 9] },
+    advance:     { add: [500, 999], addB: [300, 999], subA: [600, 999], mulA: [50, 99], mulB: [6, 9], divB: [6, 9] },
+  };
+
+  function randomProblemByOp(op, mode = 'normal') {
+    const R = M9_RANGE[mode] || M9_RANGE.normal;
     const rnd = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
     let a, b;
     if (op === '+') {
-      do { a = rnd(100, 999); b = rnd(100, 999); } while (!hasCarry(a, b, '+'));
+      do { a = rnd(R.add[0], R.add[1]); b = rnd(R.addB[0], R.addB[1]); } while (!hasCarry(a, b, '+'));
     } else if (op === '−') {
-      do { a = rnd(200, 999); b = rnd(100, a - 1); } while (!hasCarry(a, b, '−'));
+      do { a = rnd(R.subA[0], R.subA[1]); b = rnd(100, Math.max(101, a - 1)); } while (!hasCarry(a, b, '−'));
     } else if (op === '×') {
-      do { a = rnd(12, 99); b = rnd(2, 9); } while (a * b < 100 && rnd(0, 1) === 0);
+      do { a = rnd(R.mulA[0], R.mulA[1]); b = rnd(R.mulB[0], R.mulB[1]); } while (a * b < 100 && rnd(0, 1) === 0);
     } else {
-      do { b = rnd(2, 9); const q = rnd(2, Math.floor(999 / b)); a = q * b + rnd(0, b - 1); } while (a > 999 || a < b * 2);
+      do { b = rnd(R.divB[0], R.divB[1]); const q = rnd(2, Math.floor(999 / b)); a = q * b + rnd(0, b - 1); } while (a > 999 || a < b * 2);
     }
     return { a, b };
   }
@@ -798,6 +814,8 @@ export default async function mount(container, ctx) {
       studentAnswer: String(final), isCorrect: true, correctAnswer: String(final), aiFeedback: null,
     });
     const mrec = ctx.data.masteryRecord(`${M9.a} ${M9.op} ${M9.b}`, true);
+    // ⭐ 记忆引擎：除法终局正确 → 绝不入 Event Store，只让 Tag 连续正确 +1
+    m9RecordLearner({ isCorrect: true, hasErrors: false, usedHint: M9.usedHint });
     if (mrec && mrec.state === 'mastered') {
       ctx.toast('🏆 这道题你掌握了！', 'success');
       setTimeout(() => ctx.showMasteryCard({ problemText: `${M9.a} ${M9.op} ${M9.b}`, correctAnswer: String(calcFinalResult()), takeaway: takeawayLoad(`${M9.a} ${M9.op} ${M9.b}`) }), 800);
@@ -1009,8 +1027,11 @@ export default async function mount(container, ctx) {
       const done = keys.map(k => `${k}=${M9.history[k].actual}`).join('，');
       return `已填第 ${M9.step} 步：${done}${wrong.length ? `；其中 ${wrong.length} 处填错` : '；暂无错误'}`;
     },
+    // ⭐ 是否出错：过程有填错也算（任务书 §五.2 的 hasErrors 语义）
+    isError: () => !!M9.recheck || m9HasAnyWrong(),
     // ⭐ 本地规则优先（快思考）：常规态 = 先估一估（区间选项）；回溯/修复态 = 错误回顾 + 微光
     resolveLocal: (intent) => {
+      M9.usedHint = true;   // ⭐ 用过 Aji 提示 → 随错题一起入库
       if (intent === 'review' || (M9.recheck && !M9.submitting)) {
         if (M9.recheck && !M9.submitting) m9ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错格
         return {
@@ -1048,6 +1069,28 @@ export default async function mount(container, ctx) {
     return null;
   }
   function m9HasAnyWrong() { return !!m9FirstWrong(); }
+
+  /* ⭐ 记忆引擎结算（m9 的唯一调用点）。
+     铁律：做对且过程无错 → 绝不写 Event Store，只喂聚合器。
+     ⚠️ M9.filled/history 里存的是用户真实输入，错因必须说明"哪一步的哪个格"。 */
+  const M9_STEP_LABEL = { quotient: '商', product: '乘积', remainder: '余数', carry: '进位', result: '结果', sum: '和', diff: '差' };
+  function m9RecordLearner({ isCorrect, hasErrors, wrongKey, usedHint }) {
+    try {
+      const w = wrongKey && M9.history[wrongKey] ? M9.history[wrongKey] : null;
+      const label = w ? (M9_STEP_LABEL[w.type] || w.type || '这一步') : '';
+      learnerSettle({
+        moduleId: 'm9',
+        topic: meta.title || '竖式运算',
+        problemText: `${M9.a} ${M9.op} ${M9.b}`,
+        tags: M9.tags && M9.tags.length ? M9.tags : tagsForVertical({ a: M9.a, b: M9.b, op: M9.op }),
+        isCorrect, hasErrors,
+        correctAnswer: w ? String(w.expected) : String(calcFinalResult() ?? ''),
+        studentAnswer: w ? String(w.actual) : '',
+        errorStep: w ? `${label}填成了 ${w.actual}，应为 ${w.expected}` : '',
+        usedHint: !!usedHint,
+      });
+    } catch (e) { /* 学情记录失败绝不阻断做题 */ }
+  }
 
   function m9EnterRecheck() {
     const fw = m9FirstWrong();
@@ -1164,6 +1207,7 @@ export default async function mount(container, ctx) {
       studentAnswer: fw ? fw.actual : '（未完成）', isCorrect: false, correctAnswer: String(calcFinalResult()), aiFeedback: null,
     });
     ctx.data?.masteryRecord?.(`${M9.a} ${M9.op} ${M9.b}`, false);
+    m9RecordLearner({ isCorrect: false, hasErrors: true, wrongKey: fw && fw.key, usedHint: M9.usedHint });
     const ans = String(calcFinalResult());
     if (fbEl) { fbEl.textContent = `正确答案是：${ans}。`; fbEl.className = 'feedback b1-hint'; }
     // ⭐ 状态 C（放弃看答案）：展示答案 + 「下一题」
@@ -1215,6 +1259,7 @@ export default async function mount(container, ctx) {
       studentAnswer: fw ? fw.actual : '（未完成）', isCorrect: false, correctAnswer: String(calcFinalResult()), aiFeedback: null,
     });
     ctx.data?.masteryRecord?.(`${M9.a} ${M9.op} ${M9.b}`, false);
+    m9RecordLearner({ isCorrect: false, hasErrors: true, wrongKey: fw && fw.key, usedHint: M9.usedHint });
   }
 
   function submitBuffer() {
@@ -1265,6 +1310,8 @@ export default async function mount(container, ctx) {
               studentAnswer: String(final), isCorrect: true, correctAnswer: String(final), aiFeedback: null,
             });
             const mrec = ctx.data.masteryRecord(`${M9.a} ${M9.op} ${M9.b}`, true);
+            // ⭐ 记忆引擎：非除法终局正确（过程已由 m9HasAnyWrong 保证全对）
+            m9RecordLearner({ isCorrect: true, hasErrors: false, usedHint: M9.usedHint });
             if (mrec && mrec.state === 'mastered') {
               ctx.toast('🏆 这道题你掌握了！', 'success');
               setTimeout(() => ctx.showMasteryCard({ problemText: `${M9.a} ${M9.op} ${M9.b}`, correctAnswer: String(calcFinalResult()), takeaway: takeawayLoad(`${M9.a} ${M9.op} ${M9.b}`) }), 800);
@@ -1296,6 +1343,9 @@ export default async function mount(container, ctx) {
     M9.step = -1; M9.waitingFor = null; M9.filled = {};
     M9.history = {};
     M9.recheck = null;
+    // ⭐ 本次尝试复位（记忆引擎用）：标签按当前题实算，绝不沿用上一题
+    M9.tags = tagsForVertical({ a: M9.a, b: M9.b, op: M9.op });
+    M9.usedHint = false;
     M9.broughtDown = new Set();
     M9.submitting = false;
     M9.answerBuf = '';
@@ -1369,6 +1419,17 @@ export default async function mount(container, ctx) {
 
   /* ---- 桌面物理键盘：已上收进键盘组件（onDigit/onConfirm/onBackspace 回调），业务零监听 ---- */
 
+  /** ⭐ 无感定制生成：命中顽固短板 → 该运算类型的降维巩固题（必定抽中）。
+      调用方只解构 { a, b }，所以兜底分支直接给普通题，无需再套一层 IIFE。 */
+  function m9PickProblem(op) {
+    const candidateTags = tagsForVertical({ a: 100, b: 10, op });
+    const picked = pickProblem((g) => {
+      const { a, b } = randomProblemByOp(op, g.mode);
+      return { problemText: `${a} ${op} ${b}`, tags: tagsForVertical({ a, b, op }), a, b };
+    }, { candidateTags, moduleId: 'm9' });
+    return picked || randomProblemByOp(op, 'normal');
+  }
+
   const handleM9Random = () => {
     const level = localStorage.getItem('grade3_m9_level') || null;
     let op;
@@ -1378,7 +1439,7 @@ export default async function mount(container, ctx) {
     else if (level === 'div') op = '÷';
     else op = ['+', '−', '×', '÷'][Math.floor(Math.random() * 4)];
 
-    const { a, b } = randomProblemByOp(op);
+    const { a, b } = m9PickProblem(op);
     aInput.value = a; bInput.value = b; opInput.value = op;
     aInput.dispatchEvent(new Event('input', { bubbles: true }));
     bInput.dispatchEvent(new Event('input', { bubbles: true }));
@@ -1405,7 +1466,7 @@ export default async function mount(container, ctx) {
     else if (levelId === 'mul') op = '×';
     else if (levelId === 'div') op = '÷';
 
-    const { a, b } = randomProblemByOp(op);
+    const { a, b } = m9PickProblem(op);
     aInput.value = a;
     bInput.value = b;
     opInput.value = op;
