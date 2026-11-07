@@ -14,22 +14,9 @@ export function injectTemplates() {
       <!-- ① 混合运算 -->
       <template id="tpl-m1">
         <div class="card b1-card">
-          <div class="b1-topbar">
-            <div class="b1-actions">
-              <button class="b1-iconbtn" id="m1reset" title="重来一次" aria-label="重来一次">↻</button>
-              <button class="b1-iconbtn" id="m1gear" title="换题 / 设置" aria-label="换题或设置">⚙</button>
-            </div>
-          </div>
-
-          <div class="problem-bar b1-sheet" id="m1sheet" style="display:none;">
-            <select id="m1Select"></select>
-            <button class="btn" id="m1Load">📥 载入</button>
-            <input type="text" id="m1Custom" placeholder="或输入算式，如：12 × 3 + 15">
-            <button class="btn-secondary" id="m1UseCustom">使用</button>
-            <label class="file-btn">📎 上传 txt<input type="file" id="m1Upload" accept=".txt" hidden></label>
-            <button class="btn-secondary" id="m1Random">🎲 随机出题</button>
-          </div>
-
+          <!-- ⭐ 视觉重心归零：右上角不再有任何常驻按钮（原 ↻ 重来 / ⚙ 换题设置已移除）。
+               重来 → 交给终局回溯机制；换题 / 载入题目 → 下沉给 Aji 对话（见 m1.js 的 aji 路由）。
+               整个页面常驻可见的元素只剩：算式本体 + 右下角 Aji 气泡。 -->
           <div class="b1-board" id="m1board">
             <svg class="b1-arcs" id="m1arcs" aria-hidden="true"></svg>
             <div class="b1-rows" id="m1rows"></div>
@@ -264,28 +251,9 @@ export function injectTemplates() {
       <!-- ⑨ 竖式运算 -->
       <template id="tpl-m9">
         <div class="card b1-card b9-card">
-          <div class="b1-topbar">
-            <div class="b1-actions">
-              <button class="b1-iconbtn" id="m9reset" title="重来" aria-label="重来">↻</button>
-              <button class="b1-iconbtn" id="m9gear" title="换题 / 设置" aria-label="换题或设置">⚙</button>
-            </div>
-          </div>
-
-          <div class="controls b1-sheet" id="m9sheet" style="display:none;">
-            <input type="text" inputmode="decimal" id="m9a" value="348"
-                    style="width:100px;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;text-align:center;font-family:monospace;outline:none;">
-            <select id="m9op"
-                    style="padding:10px 14px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;background:var(--card);outline:none;">
-              <option>+</option>
-              <option>−</option>
-              <option>×</option>
-              <option>÷</option>
-            </select>
-            <input type="text" inputmode="decimal" id="m9b" value="176"
-                    style="width:100px;padding:10px;border:1.5px solid var(--border);border-radius:10px;font-size:18px;font-weight:700;text-align:center;font-family:monospace;outline:none;">
-            <button class="btn-secondary" id="m9random" title="随机生成一道题">🎲 随机出题</button>
-          </div>
-
+          <!-- ⭐ 视觉重心归零：右上角 ↻/⚙ 与换题抽屉一并移除。
+               竖式的 a/b/运算符状态改由 M9.a/M9.b/M9.op 持有（原先是抽屉 input 当状态载体）。
+               换题 / 改题设 → 下沉给 Aji 对话。 -->
           <div id="m9display" style="display:flex;justify-content:center;margin:24px 0 12px;"></div>
 
           <div class="feedback b1-hint" id="m9fb">点击「▶」开始计算</div>

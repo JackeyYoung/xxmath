@@ -537,7 +537,7 @@ export default async function mount(container, ctx) {
         nextLabel: '下一题',
         onNext: () => {
           if (M1.done) {
-            $('#m1Random')?.click();
+            m1NextProblem();
           } else {
             // 没做完：键盘保持/唤起，继续输入
             showKeypad();
@@ -648,7 +648,6 @@ export default async function mount(container, ctx) {
     disarmOutsideConfirm();
     keypad.hide();
     cardEl?.classList.remove('b1-awaiting');
-    closeSheet();
     M1.original = str;
     M1.tokens = parseExpression(str);
     M1.standardAnswer = evaluateExpression(M1.tokens);   // ⭐ 终局比对基准（非法算式 → null）
@@ -957,7 +956,7 @@ export default async function mount(container, ctx) {
       ok: false,
       hideRetry: true,
       nextLabel: '下一题',
-      onNext: () => $('#m1Random')?.click(),
+      onNext: () => m1NextProblem(),
     });
     M1.done = true;
   }
@@ -1246,44 +1245,43 @@ export default async function mount(container, ctx) {
     m1AutoPromptFinalStep();   // ⭐ 推导走到最后一步（num op num）→ 直通输入，不再点运算符
   }
 
-  // ---------- 控件（与旧版行为一致） ----------
-  function m1InitSelect(items) {
-    const select = $('#m1Select');
-    if (!select) return;
-    select.innerHTML = items.map((p, i) => `<option value="${i}">${p.name}：${p.expr}</option>`).join('');
+  // ---------- 控件（换题抽屉已随右上角 ⚙ 一并移除，改由 Aji 对话接管） ----------
+  /* ⭐ 换一题：原来走 #m1Random 按钮，现在直接调这个函数——
+     Aji 的「换一题」本地路由与终局「下一题」都接在这里。 */
+  function m1NextProblem() {
+    const level = ctx.storage.get('grade3_m1_level') || 'no-paren';
+    // ⭐ 无感定制生成：先问记忆引擎"这题该练什么"，再按 Tag 定向生成/匹配。
+    //    consolidate = 顽固短板 → 降维巩固；advance = 已掌握 → 升维挑战；normal 原样。
+    const picked = pickProblem((g) => m1MakeProblem(level, g.mode), {
+      candidateTags: M1_LEVEL_TAGS[level] || M1_LEVEL_TAGS['no-paren'],
+      moduleId: 'm1',
+    });
+    m1LoadExpression(picked ? picked.problemText : m1GenerateExpr(level, 'normal'));
   }
 
-  $('#m1Load')?.addEventListener('click', () => {
-    const idx = +$('#m1Select').value;
-    const p = presets[idx];
-    if (p) m1LoadExpression(p.expr);
-  });
-
-  $('#m1UseCustom')?.addEventListener('click', () => {
-    const t = $('#m1Custom').value.trim();
-    if (!t) return;
-    m1LoadExpression(t);
-    $('#m1Custom').value = '';
-  });
-
-  $('#m1Custom')?.addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('#m1UseCustom')?.click();
-  });
-
-  $('#m1Upload')?.addEventListener('change', e => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const lines = ev.target.result.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      if (lines.length === 0) { m1SetFeedback('文件是空的，换一个试试吧'); return; }
-      presets = lines.map((line, i) => ({ name: '第' + (i + 1) + '题', expr: line }));
-      m1InitSelect(presets);
-      m1LoadExpression(lines[0]);
-    };
-    reader.readAsText(file, 'UTF-8');
-    e.target.value = '';
-  });
+  /* ⭐ 载入学生/Aji 给出的算式（Aji 路由入口）。
+     只接受能解析成合法算式的文本，否则原样报错、不动当前题——绝不把界面弄成空白。 */
+  function m1LoadFromText(text) {
+    const t = String(text || '').trim();
+    if (!t) return false;
+    try {
+      /* ⚠️ parseExpression 是**宽容**解析器：遇到不认识的字符直接跳过。
+         所以"能解析出 token"不等于"是个合法算式"——必须自己把关：
+         至少要有 两个数 + 一个运算符，且所有数都参与运算（不是把废话里的数字挑出来）。 */
+      const toks = parseExpression(t);
+      const nums = toks.filter(x => x.type === 'num').length;
+      const ops = toks.filter(x => x.type === 'op').length;
+      if (nums < 2 || ops < 1) return false;
+      /* 再要求去空白后"只由算式字符构成"，挡住"我们算 3+4 好吗"这类夹带文字的问句 */
+      const bare = t.replace(/\s+/g, '')
+        .replace(/[×xX*]/g, '×').replace(/[÷/]/g, '÷').replace(/[−–—]/g, '-')
+        .replace(/[（]/g, '(').replace(/[）]/g, ')');
+      if (!/^[\d.+\-×÷()]+$/.test(bare)) return false;
+      if (evaluateExpression(toks) == null) return false;
+      m1LoadExpression(t);
+      return true;
+    } catch (e) { return false; }
+  }
 
   /* ---------- 无感定制生成器（记忆引擎干预出口） ----------
      题目标签强制返回：{ problemText, tags, answer }——任务书 §五.3。
@@ -1354,44 +1352,6 @@ export default async function mount(container, ctx) {
     return { problemText: expr, tags: tagsForArithmetic(expr) };
   }
 
-  $('#m1Random')?.addEventListener('click', () => {
-    const level = ctx.storage.get('grade3_m1_level') || 'no-paren';
-    // ⭐ 无感定制生成：先问记忆引擎"这题该练什么"，再按 Tag 定向生成/匹配。
-    //    consolidate = 顽固短板 → 降维巩固；advance = 已掌握 → 升维挑战；normal 原样。
-    const picked = pickProblem((g) => m1MakeProblem(level, g.mode), {
-      candidateTags: M1_LEVEL_TAGS[level] || M1_LEVEL_TAGS['no-paren'],
-      moduleId: 'm1',
-    });
-    m1LoadExpression(picked ? picked.problemText : m1GenerateExpr(level, 'normal'));
-  });
-
-  $('#m1reset')?.addEventListener('click', () => {
-    if (M1.original) m1LoadExpression(M1.original);
-  });
-
-  // ---------- 换题抽屉（Bottom Sheet） ----------
-  const sheet = $('#m1sheet');
-  let sheetMask = null;
-  function openSheet() {
-    if (!sheetMask) {
-      sheetMask = document.createElement('div');
-      sheetMask.className = 'b1-mask';
-      sheetMask.addEventListener('click', closeSheet);
-      document.body.appendChild(sheetMask);
-    }
-    sheetMask.style.display = 'block';
-    sheet.style.display = 'flex';
-    requestAnimationFrame(() => sheet.classList.add('open'));
-  }
-  function closeSheet() {
-    if (!sheet) return;
-    sheet.classList.remove('open');
-    if (sheetMask) sheetMask.style.display = 'none';
-  }
-  $('#m1gear')?.addEventListener('click', () => {
-    if (sheet?.classList.contains('open')) closeSheet();
-    else openSheet();
-  });
   // ---------- Aji 全站陪学助教（模块只报数据 + 本地规则，UI 全在 aji.js） ----------
   const AJI_TOAST_NORMAL = '有点卡壳？点击看看我怎么想。';   // 常规态（空闲 35s）
   const AJI_TOAST_RECHECK = '卡住了吗？需要我讲讲这一步吗？'; // 回溯期（空闲 20s）
@@ -1417,6 +1377,19 @@ export default async function mount(container, ctx) {
     },
     // ⭐ 是否出错：过程有错也算（任务书 §五.2 的 hasErrors 语义）
     isError: () => !!M1.recheck || M1.steps.some(s => !s.isCorrect),
+    /* ⭐ 当前作答步三件套（问哪答哪的地基）：
+       M1.waiting 里同时握着「这一步应该得多少」(result) 与「学生填了什么」(userVal)，
+       这正是 Aji 判定"这一步对吗"所需的最小充分信息。
+       未进入作答态（waiting 为空）→ 返回 null，Aji 那边整段不注入。 */
+    stepCtx: () => {
+      const w = M1.waiting;
+      if (!w) return null;
+      return {
+        currentStep: `第 ${M1.steps.length + 1} 步（${String(w.markedHtml || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()}）`,
+        studentInput: M1.answerBuf || (w.userVal != null ? fmtNum(w.userVal) : ''),
+        standardAnswer: fmtNum(w.result),
+      };
+    },
     // ⭐ 本地规则优先（快思考）：常规态 = 算理提示；回溯/修复态 = 错误回顾 + 微光
     resolveLocal: (intent) => {
       if (M1.recheck && !M1.busy) m1ShowSoftGlow();   // 回溯期求助 → 微光轻照第一个错步
@@ -1429,35 +1402,25 @@ export default async function mount(container, ctx) {
       };
     },
   });
-  // 抽屉里的换题动作完成后自动收起
-  $('#m1Load')?.addEventListener('click', closeSheet);
-  $('#m1UseCustom')?.addEventListener('click', closeSheet);
-  $('#m1Upload')?.addEventListener('change', closeSheet);
-  $('#m1Random')?.addEventListener('click', closeSheet);
 
   // ---------- 层级切换 ----------
   ctx.registerLevelHandler('m1', (levelId) => {
     const lv = meta.levels.find(x => x.id === levelId) || meta.levels[0];
     const filteredPresets = M1_PRESETS.filter(lv.filter);
     presets = filteredPresets.length > 0 ? filteredPresets : M1_PRESETS;
-    m1InitSelect(presets);
-    const randomIdx = Math.floor(Math.random() * presets.length);
-    m1LoadExpression(presets[randomIdx].expr);
+    m1LoadExpression(presets[Math.floor(Math.random() * presets.length)].expr);
   });
 
   // ---------- 启动 ----------
-  m1InitSelect(presets);
   m1LoadExpression(presets[0].expr);
   requestAnimationFrame(m1CenterStage);   // ⭐ 布局就绪后舞台居中
 
+  /* ⭐ 对外接口（供 Aji 的本地路由调用）：
+     换一题 / 载入指定算式——原先是 #m1Random 与 #m1UseCustom 两个按钮的职责。 */
   registerActiveModule('m1', {
-    loadCustom: (text) => {
-      const custom = $('#m1Custom');
-      if (custom) {
-        custom.value = text;
-        $('#m1UseCustom')?.click();
-      }
-    }
+    nextProblem: () => m1NextProblem(),
+    loadExpression: (text) => m1LoadFromText(text),
+    exampleHint: '12 × 3 + 15',   // ⭐ Aji 拒答时的示例：必须是 m1 真正接受的多步形态
   });
 
   // ---------- 清理 ----------
@@ -1472,7 +1435,6 @@ export default async function mount(container, ctx) {
     window.visualViewport?.removeEventListener('scroll', m1OnStageReflow);
     window.removeEventListener('resize', m1OnStageReflow);
     keypad.hide();
-    if (sheetMask) sheetMask.remove();
     if (activeTl) { activeTl.kill(); activeTl = null; }
     container.querySelectorAll('.b1-cell, .b1-inputrow, .b1-row, .b1-arcs path').forEach(el => gsap.killTweensOf(el));
     document.getElementById(STYLE_ID)?.remove();
