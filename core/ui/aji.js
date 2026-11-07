@@ -131,8 +131,16 @@ const NEW_PROBLEM_RE = /换(一)?(道)?(题|个题)|下一题|再来一(题|道)
 
 const CSS = `
 /* ── 聊天舱（.aji-chat-hub） ── */
+/* ⭐ 桌面端取黄金比例：宽 340px 定死，高 = 宽 × φ ≈ 550px。
+   为什么是 φ 而不是"随手一个 460"：这块浮窗是**固定尺寸**的，
+   长宽比就是它给人的第一印象。1:1.618 是唯一一个既修长（像一列对话，
+   不像一个方盒子）、又不会瘦到每行只能放几个字的比例。
+   ⚠️ 高度同时受视口约束（calc(100vh - 120px)）——小窗口时优先不溢出，
+     宁可破坏比例也不能让输入行掉出屏幕；此时 max-height 兜底。 */
 .aji-chat-hub { position: fixed; right: 14px; bottom: 18px; z-index: 9996;
-  width: min(340px, calc(100vw - 28px)); height: min(460px, calc(100vh - 120px));
+  --aji-w: 340px;
+  --aji-h-desktop: min(calc(var(--aji-w) * 1.618), calc(100vh - 120px));
+  width: min(var(--aji-w), calc(100vw - 28px)); height: var(--aji-h-desktop);
   display: none; flex-direction: column;
   background: var(--aji-bg, #ffffff); color: var(--aji-text, #1e293b);
   border: 1px solid rgba(100,116,139,.22); border-radius: 18px;
@@ -245,9 +253,15 @@ const CSS = `
   /* 自绘光标 + 缓冲：input 被 readonly 锁死后要自己给"正在输入"的反馈 */
   .aji-hub-input { caret-color: transparent; }
   .aji-hub-inputbar { position: relative; }
+  /* ⭐ 移动端的输入气泡就是输入框（原生 input 已 display:none），
+     所以要给它输入框的外形（内边距/圆角/底色）和"可点"的手势反馈，
+     否则学生看不出这里能点。 */
   .aji-input-buf { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap;
     text-overflow: ellipsis; font-size: 16px; line-height: 1.3;
-    display: flex; align-items: center; }
+    display: flex; align-items: center;
+    padding: 9px 12px; border-radius: 12px; cursor: text;
+    background: var(--aji-input-bg, rgba(148,163,184,.12)); }
+  .aji-input-buf:active { background: var(--aji-input-bg-active, rgba(148,163,184,.2)); }
   .aji-input-buf.aji-buf-empty { color: var(--aji-text-soft, #94a3b8); }
   .aji-buf-caret { display: inline-block; width: 1.5px; height: 17px; margin: 0 1px;
     background: var(--aji-caret, #29CC57); vertical-align: -3px;
@@ -288,6 +302,10 @@ class Aji {
     this._buf = '';
     this.bufEl = document.createElement('div');
     this.bufEl.className = 'aji-input-buf aji-buf-empty';
+    /* ⭐ 移动端的输入气泡**本身就是输入框**（role=textbox 让读屏/自动化都认它）。
+       光有输入框不算数，视觉上那个绿色的光标让它是可见的输入控件。 */
+    this.bufEl.setAttribute('role', 'textbox');
+    this.bufEl.setAttribute('aria-label', '向 Aji 提问');
     this.inputBarEl.insertBefore(this.bufEl, this.inputEl);
 
     /* ---- 右下角悬浮球（常驻，唯一入口） ---- */
@@ -340,12 +358,22 @@ class Aji {
     // ⭐ 输入区：用户主动提问 → 直接绕过本地规则，请求大模型
     this.inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._submitInput(); });
     this.sendBtn.addEventListener('click', () => this._submitInput());
-    // ⭐ 移动端：点输入框 → 开聊天键盘（绝不开原生键盘）
-    this.inputEl.addEventListener('pointerdown', (e) => {
+
+    /* ⭐ 移动端"点输入区 → 开聊天键盘"。
+       ⚠️ 必须挂在**移动端真正可见**的那个表面上：
+          移动端 _lockNativeKeyboard() 会把原生 input 设成 display:none，
+          于是它宽高归零、pointerdown / focus 一个都收不到 ——
+          原来只把监听挂在 inputEl 上，学生点输入框毫无反应（键盘永远出不来）。
+          移动端可见的是自绘气泡 bufEl，所以两个表面都要挂；
+          且【只能挂到 bufEl 这一个元素】—— 挂到整条 inputbar 会把「发送」键也吃掉。 */
+    const onInputSurfaceTap = (e) => {
       if (!this._isMobile()) return;
-      e.preventDefault();      // 拦在聚焦之前，双重保险
+      e.preventDefault();      // 拦在聚焦之前，双重保险（别让原生键盘冒头）
       this._openKeypad();
-    });
+    };
+    this.bufEl.addEventListener('pointerdown', onInputSurfaceTap);
+    this.inputEl.addEventListener('pointerdown', onInputSurfaceTap);
+    this._onInputSurfaceTap = onInputSurfaceTap;
     // ⭐ 聚焦兜底：真机上偶有焦点落到 input 的情况，立刻 blur 掉，别让原生键盘冒头
     this.inputEl.addEventListener('focus', () => {
       if (this._isMobile()) { try { this.inputEl.blur(); } catch (err) {} this._openKeypad(); return; }
@@ -585,9 +613,7 @@ class Aji {
       try { d.capEl?.releasePointerCapture?.(e.pointerId); } catch (err) {}
       const avail = this._availH();
       const endH = Math.max(0, Math.min(avail - 8, d.downH - d.moved));
-      const snap = this._autoSnapFromHeight(endH);
-      if (snap === 'close') { this.closeDrawer(); return; }   // < 35% → 关闭
-      this._dragState = snap;                                 // > 75% 全屏，35~75% 半屏
+      this._dragState = this._autoSnapFromHeight(endH);   // ⭐ 两态：> 60% 全屏，否则半屏
       this._applyHubHeight('snap');
       this._setStageShift(true);                 // 吸附后带上缘变了，算式重算让位
     };
@@ -1587,13 +1613,17 @@ ${ctxLines}${sc}${rag}
   }
 
   /** 拖拽高度 → 吸附态（松手即按它落定）。
-      'close' = 低于 35%，交给 up 处理器收舱。 */
+      ⭐ 只有两态：够高就全屏、否则半屏。
+      ⚠️ 这里原来有第三态 'close'（下拉到 35% 以下 = 关闭）。已删除，理由：
+         ① 它是一条**看不见的**手势——学生下拉时无法预知"再低一点就没了"；
+         ② 关闭已经有 ✕ 这个明确入口，两条路径做同一件事只会让人犹豫；
+         ③ 半屏只有 ≈360px，35% 的门槛意味着刚过一半就关掉，
+            学生"想看看刚才那条"的本能动作会直接判他退出。
+         所以下拉到底最多变成半屏，永不关闭。 */
   _autoSnapFromHeight(h) {
     if (!this._isMobile() || typeof h !== 'number') return null;
     const frac = h / this._availH();
-    if (frac >= 0.75) return 'full';
-    if (frac >= 0.35) return 'half';
-    return 'close';
+    return frac >= 0.6 ? 'full' : 'half';
   }
 
   /** 聊天键盘当前高度（移动端托举用；桌面端恒 0） */
@@ -1745,6 +1775,11 @@ ${ctxLines}${sc}${rag}
       this._dragHandlers = null;
     }
     this._drag = null;
+    if (this._onInputSurfaceTap) {
+      this.bufEl?.removeEventListener('pointerdown', this._onInputSurfaceTap);
+      this.inputEl?.removeEventListener('pointerdown', this._onInputSurfaceTap);
+      this._onInputSurfaceTap = null;
+    }
     this._keypad = null;          // 聊天键盘是全局单例，不随 Aji 卸载销毁
     document.documentElement.style.removeProperty('--aji-kp');
     this._abortStream();          // ⭐ 卸载时掐断在飞的流

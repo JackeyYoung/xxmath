@@ -283,6 +283,86 @@ describe('Aji 本地路由 · 清空学习记录', () => {
 });
 
 /* ============================================================
+   移动端输入面：点输入区必须能唤出聊天键盘
+   ─────────────────────────────────────────────────────────────
+   ⚠️ 回归锁的由来：移动端 _lockNativeKeyboard() 会把原生 input 设成 display:none，
+      它随即宽高归零、pointerdown / focus 一个都收不到。
+      而"开键盘"的监听原先只挂在 inputEl 上 → 学生点输入框毫无反应。
+      jsdom 不做布局，"元素不可见"在这里测不出来，所以这两条测的是**绑定点**：
+        ① 开键盘的监听必须挂在移动端可见的表面上（bufEl）
+        ② 绝不能挂到整条 inputbar 上（那会把「发送」键也吃掉）
+   ============================================================ */
+describe('Aji 移动端输入面 · 点输入区唤出聊天键盘', () => {
+  const MOBILE = { matches: true, media: '(max-width: 767px)', addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} };
+
+  function withViewport(mobile, fn) {
+    const orig = window.matchMedia;
+    window.matchMedia = (q) => (mobile ? MOBILE : { ...MOBILE, matches: false });
+    try { return fn(); } finally { window.matchMedia = orig; }
+  }
+
+  it('⭐ 点自绘气泡（移动端唯一可见的输入面）→ 打开聊天键盘', async () => {
+    const inst = await freshAji(makeStepCtx());
+    withViewport(true, () => {
+      inst.openDrawer();
+      inst.bufEl.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+    });
+    expect(inst._keypad).toBeTruthy();
+    expect(inst._keypad.visible).toBe(true);
+  });
+
+  it('原生 input 也被锁死时，点它同样开键盘（桌面端不吃这条路径）', async () => {
+    const inst = await freshAji(makeStepCtx());
+    withViewport(true, () => {
+      inst.openDrawer();
+      inst.inputEl.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+    });
+    expect(inst._keypad?.visible).toBe(true);
+  });
+
+  it('桌面端点输入区不开自绘键盘（物理键盘才是正路）', async () => {
+    const inst = await freshAji(makeStepCtx());
+    withViewport(false, () => {
+      inst.openDrawer();
+      inst.bufEl.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+    });
+    expect(inst._keypad).toBeFalsy();
+  });
+
+  it('⭐ 键盘按下的字符进缓冲并渲染到气泡（端到端：点 → 敲 → 看见）', async () => {
+    const inst = await freshAji(makeStepCtx());
+    withViewport(true, () => {
+      inst.openDrawer();
+      inst.bufEl.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+    });
+    // 键盘回调自己就是出口，不必去戳 DOM 里的键钮
+    inst._keypad._handlers.onKey('换'); inst._keypad._handlers.onKey('题');
+    expect(inst._buf).toBe('换题');
+    expect(inst.bufEl.textContent).toBe('换题');
+    expect(inst.bufEl.classList.contains('aji-buf-empty')).toBe(false);
+  });
+
+  it('⭐ 开键盘的监听绝不在 inputbar 上：否则「发送」会被吞掉', async () => {
+    const inst = await freshAji(makeStepCtx());
+    let opened = false;
+    withViewport(true, () => {
+      inst.openDrawer();
+      // 监听若误挂在 inputbar 上，点发送键会冒泡到它并触发"开键盘"
+      const before = inst._keypad?.visible;
+      inst.sendBtn.dispatchEvent(new window.PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
+      opened = (inst._keypad?.visible === true) && before !== true;
+    });
+    expect(opened).toBe(false);
+  });
+
+  it('清理函数摘除输入面监听（防重复绑定/内存泄漏）', async () => {
+    const inst = await freshAji(makeStepCtx());
+    inst.destroy();
+    expect(inst._onInputSurfaceTap).toBeNull();
+  });
+});
+
+/* ============================================================
    §一 流式请求体：messages 必须是 [system, user] 两轮
    ============================================================ */
 describe('Aji 请求体 · 400 根因回归锁', () => {
