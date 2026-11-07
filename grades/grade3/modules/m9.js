@@ -92,13 +92,12 @@ export default async function mount(container, ctx) {
 
   const $ = sel => container.querySelector(sel);
   const display = $('#m9display');
-  const aInput  = $('#m9a');
-  const bInput  = $('#m9b');
-  const opInput = $('#m9op');
-  const resetBtn = $('#m9reset');
   const fbEl = $('#m9fb');
   const cardEl = container.querySelector('.b9-card');
-  if (!display || !aInput || !bInput || !opInput) return;
+  /* ⭐ 换题抽屉（#m9a/#m9b/#m9op）与右上角 ↻/⚙ 已整体移除。
+     原先抽屉里的三个 input **是状态载体**（m9Reset 直接读 +aInput.value），
+     现在状态收敛到 M9.a / M9.b / M9.op 本身——UI 只是它的投影，不再是唯一真相。 */
+  if (!display) return;
 
   ensureChromeStyle();
   ensureMathTypoStyle();   // ⭐ 全局数学排版（TYPOGRAPHY，幂等）
@@ -790,7 +789,7 @@ export default async function mount(container, ctx) {
         nextLabel: '下一题',
         onNext: () => {
           if (M9.step >= m9GetMaxSteps()) {
-            $('#m9random')?.click();
+            m9NextProblem();
           }
           // 过程中的「继续」：推进由 700ms 定时器接手、键盘已就位，无需额外动作
         }
@@ -1029,6 +1028,34 @@ export default async function mount(container, ctx) {
     },
     // ⭐ 是否出错：过程有填错也算（任务书 §五.2 的 hasErrors 语义）
     isError: () => !!M9.recheck || m9HasAnyWrong(),
+    /* ⭐ 当前作答步三件套（问哪答哪的地基）。
+       m9 是探究式放行：填错也照样写入 filled 并推进，所以不能只看"当前等待格"——
+       ① 还在填（waitingFor 有值）→ 报当前格的期望值 + 缓冲里已敲的数；
+       ② 已填完某格但没在填（回溯/检查态）→ 报最近填过的那一格的标准答案与学生实际输入，
+          这才是"我这一步错哪了"想问的那一步。 */
+    stepCtx: () => {
+      const t = currentTarget();
+      if (t) {
+        const exp = ANSWER[t.key];
+        const label = M9_STEP_LABEL[M9.waitingFor] || '这一步';
+        const shown = String(t.cellKey || '').replace(/-/g, ' ');
+        return {
+          currentStep: `第 ${M9.step + 1} 步（${label}，位置 ${shown}）`,
+          studentInput: M9.answerBuf || '',
+          standardAnswer: exp != null ? String(exp) : '',
+        };
+      }
+      // 非填写态：回溯到最近一次提交的格子（含填错的），把"标准 vs 实际"如实报出
+      const keys = Object.keys(M9.history);
+      if (!keys.length) return null;
+      const last = M9.history[keys[keys.length - 1]];
+      const label = M9_STEP_LABEL[last.type] || '这一步';
+      return {
+        currentStep: `第 ${(last.step != null ? last.step : 0) + 1} 步（${label}）`,
+        studentInput: last.actual != null ? String(last.actual) : '',
+        standardAnswer: last.expected != null ? String(last.expected) : '',
+      };
+    },
     // ⭐ 本地规则优先（快思考）：常规态 = 先估一估（区间选项）；回溯/修复态 = 错误回顾 + 微光
     resolveLocal: (intent) => {
       M9.usedHint = true;   // ⭐ 用过 Aji 提示 → 随错题一起入库
@@ -1216,7 +1243,7 @@ export default async function mount(container, ctx) {
       ok: false,
       hideRetry: true,
       nextLabel: '下一题',
-      onNext: () => $('#m9random')?.click(),
+      onNext: () => m9NextProblem(),
     });
   }
 
@@ -1326,19 +1353,24 @@ export default async function mount(container, ctx) {
     }, 700);
   }
 
+  /* ⭐ 题设入口（原抽屉 input 的职责）：换题/改题一律经此，
+     先夹紧到合法范围再落进 M9，避免脏值渗进判卷。 */
+  function m9SetProblem(a, op, b) {
+    let na = Math.floor(Number(a)); if (!Number.isFinite(na)) na = 0;
+    let nb = Math.floor(Number(b)); if (!Number.isFinite(nb)) nb = 0;
+    const nop = ['+', '−', '×', '÷'].includes(op) ? op : '+';
+    M9.a = Math.max(0, Math.min(999, na));
+    M9.op = nop;
+    // 乘除法的第二个运算数必须是 1 位数（三年级竖式契约）
+    M9.b = (nop === '×' || nop === '÷') ? Math.max(1, Math.min(9, nb)) : Math.max(0, Math.min(999, nb));
+  }
+
   function m9Reset() {
     m9SettleAbandoned();   // ⭐ 主动换题/放弃/改题设：终局答错且未修正的尝试，此刻才结算为错
     ctx.ui?.hideThumbBar?.();   // ⭐ 契约化：保留原 window.__shell?.hideThumbBar 的可选链守卫语义
     document.getElementById('thumbBar')?.classList.remove('show', 'ok', 'err');
 
-    let a = +aInput.value, b = +bInput.value;
-    if (!Number.isFinite(a)) a = 0; if (!Number.isFinite(b)) b = 0;
-    a = Math.floor(a); b = Math.floor(b);
-    M9.a = Math.max(0, Math.min(999, a)); M9.op = opInput.value;
-
-    if (isMulDiv()) { b = Math.max(1, Math.min(9, b)); bInput.max = 9; bInput.min = 1; }
-    else { b = Math.max(0, Math.min(999, b)); bInput.max = 999; bInput.min = 0; }
-    M9.b = b;
+    // ⭐ 状态已在 M9.a/M9.b/M9.op（由 m9SetProblem 夹紧），这里不再从 DOM 读
 
     M9.step = -1; M9.waitingFor = null; M9.filled = {};
     M9.history = {};
@@ -1351,18 +1383,15 @@ export default async function mount(container, ctx) {
     M9.answerBuf = '';
     disarmOutsideConfirm();
     keypad.hide();
-    closeSheet();
     ANSWER = computeAnswerMap();
 
     if (M9.op === '÷' && M9.a < M9.b) {
-      aInput.value = M9.a; bInput.value = M9.b;
       rebuild();
       setFeedback(`💡 ${M9.a} ÷ ${M9.b} = 0 余 ${M9.a}（被除数比除数小）`, 'ok');
       aji.hideToast();
       return;
     }
 
-    aInput.value = M9.a; bInput.value = M9.b;
     setFeedback('点击竖式中的待填格，开始计算 👆');
     rebuild();
     // ⭐ 常规态（初始/等待输入）：空闲 35s 才浮条；任何有效操作自动重置。
@@ -1371,32 +1400,6 @@ export default async function mount(container, ctx) {
     // 点浮条 → 显式 'estimate' 场景：先估一估（本地规则，开算绝不阻断）
     aji.requestIdleToast(35000, AJI_TOAST_NORMAL, () => aji.handleAsk('', 'estimate'));
   }
-
-  /* ---- 换题抽屉 ---- */
-  const sheet = $('#m9sheet');
-  let sheetMask = null;
-  function openSheet() {
-    if (!sheetMask) {
-      sheetMask = document.createElement('div');
-      sheetMask.className = 'b1-mask';
-      sheetMask.addEventListener('click', closeSheet);
-      document.body.appendChild(sheetMask);
-    }
-    sheetMask.style.display = 'block';
-    sheet.style.display = 'flex';
-    requestAnimationFrame(() => sheet.classList.add('open'));
-  }
-  function closeSheet() {
-    if (!sheet) return;
-    sheet.classList.remove('open');
-    if (sheetMask) sheetMask.style.display = 'none';
-  }
-  $('#m9gear')?.addEventListener('click', () => {
-    if (sheet?.classList.contains('open')) closeSheet();
-    else openSheet();
-  });
-  $('#m9random')?.addEventListener('click', closeSheet);
-  $('#m9reset')?.addEventListener('click', closeSheet);
 
   /* ---- 点键盘以外区域 = 自动确认（沿用原失焦提交习惯） ---- */
   let outsideConfirmArmed = false;
@@ -1430,7 +1433,9 @@ export default async function mount(container, ctx) {
     return picked || randomProblemByOp(op, 'normal');
   }
 
-  const handleM9Random = () => {
+  /* ⭐ 换一题（原 #m9random 按钮的职责）：层级有定向则用定向运算，
+     否则四种运算随机。落题后统一走 m9Reset（内含 m9SettleAbandoned 的错题结算）。 */
+  function m9NextProblem() {
     const level = localStorage.getItem('grade3_m9_level') || null;
     let op;
     if (level === 'add') op = '+';
@@ -1440,17 +1445,9 @@ export default async function mount(container, ctx) {
     else op = ['+', '−', '×', '÷'][Math.floor(Math.random() * 4)];
 
     const { a, b } = m9PickProblem(op);
-    aInput.value = a; bInput.value = b; opInput.value = op;
-    aInput.dispatchEvent(new Event('input', { bubbles: true }));
-    bInput.dispatchEvent(new Event('input', { bubbles: true }));
-    opInput.dispatchEvent(new Event('change', { bubbles: true }));
-  };
-
-  $('#m9random')?.addEventListener('click', handleM9Random);
-  resetBtn.addEventListener('click', m9Reset);
-  aInput.addEventListener('input', m9Reset);
-  bInput.addEventListener('input', m9Reset);
-  opInput.addEventListener('change', m9Reset);
+    m9SetProblem(a, op, b);
+    m9Reset();
+  }
 
   // ⭐ 统一点击心智：点竖式任意待填格 → 直接进入输入态（替代原「下一步」按钮）
   display.addEventListener('click', onGridClick);
@@ -1459,28 +1456,37 @@ export default async function mount(container, ctx) {
   requestAnimationFrame(m9CenterStage);   // ⭐ 布局就绪后舞台居中
 
   ctx.registerLevelHandler('m9', (levelId) => {
-    if (!aInput || !bInput || !opInput) return;
-
     let op = '+';
     if (levelId === 'sub') op = '−';
     else if (levelId === 'mul') op = '×';
     else if (levelId === 'div') op = '÷';
 
     const { a, b } = m9PickProblem(op);
-    aInput.value = a;
-    bInput.value = b;
-    opInput.value = op;
+    m9SetProblem(a, op, b);
     m9Reset();
   });
 
+  /* ⭐ 对外接口（供 Aji 的本地路由调用）：
+     nextProblem 换一题 / loadExpression 载入指定算式 / redo 错题本"去修改"入口。
+     exampleHint 是给 Aji 拒答时用的示例 —— 必须是**本模块真正接受的形态**：
+     m9 是竖式练习，只吃「两数一运算符」，写多步算式会误导学生。 */
   registerActiveModule('m9', {
+    nextProblem: () => m9NextProblem(),
+    exampleHint: '456 ÷ 8',
     redo: (text) => {
-      const m = text.match(/^(\d+)\s*([+\-−×÷])\s*(\d+)$/);
-      if (m) {
-        aInput.value = m[1]; opInput.value = m[2]; bInput.value = m[3];
-        m9Reset();
-      }
-    }
+      const m = String(text || '').match(/^(\d+)\s*([+\-−×÷])\s*(\d+)$/);
+      if (!m) return false;
+      m9SetProblem(m[1], m[2], m[3]);
+      m9Reset();
+      return true;
+    },
+    loadExpression: (text) => {
+      const m = String(text || '').match(/^(\d+)\s*([+\-−×÷])\s*(\d+)$/);
+      if (!m) return false;
+      m9SetProblem(m[1], m[2], m[3]);
+      m9Reset();
+      return true;
+    },
   });
 
   return () => {
@@ -1494,7 +1500,6 @@ export default async function mount(container, ctx) {
     window.visualViewport?.removeEventListener('scroll', m9OnStageReflow);
     window.removeEventListener('resize', m9OnStageReflow);
     keypad.hide();
-    if (sheetMask) sheetMask.remove();
     unmountSlot();
     if (grid) grid.cells.forEach(el => gsap.killTweensOf(el));
     document.getElementById(STYLE_ID)?.remove();

@@ -2,28 +2,27 @@
 // m9 竖式冒烟：338 ÷ 7 全流程（估算→商→乘积→余数→落位→…→完成）
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-vi.mock('../../../app/shell.js', () => ({
-  registerActiveModule: vi.fn(),
-  unregisterActiveModule: vi.fn(),
+/* ⭐ 抽屉移除后，题设的通道是模块对外接口：用真表接住 registerActiveModule，
+   测试就能像 Aji 那样调 loadExpression / nextProblem。
+   ⚠️ 路径是 4 层：__tests__ → modules → grade3 → grades → 仓库根（app/ 在根下）。 */
+const activeModules = {};
+vi.mock('../../../../app/shell.js', () => ({
+  registerActiveModule: (id, api) => { activeModules[id] = api; },
+  unregisterActiveModule: (id) => { delete activeModules[id]; },
 }));
 
 const { getAji } = await import('../../../../core/ui/aji.js');
 
+/* ⭐ 设题：原先是"往抽屉 input 写值 + 派发 input/change 事件"三步，
+   现在是模块对外接口一步（内部 m9SetProblem + m9Reset）。 */
+const setProblem = (a, op, b) => activeModules.m9.loadExpression(`${a} ${op} ${b}`);
+
+/* ⭐ 与 app/templates.js 的 tpl-m9 保持一致：
+   右上角 ↻/⚙ 与换题抽屉（#m9a/#m9b/#m9op）已作为「视觉重心归零」整体移除。
+   题设状态改由 M9.a/M9.b/M9.op 持有，经 activeModules.m9.loadExpression() 载入。 */
 const TPL = `
 <template id="tpl-m9">
   <div class="card b1-card b9-card">
-    <div class="b1-topbar">
-      <div class="b1-actions">
-        <button id="m9reset">↻</button>
-        <button id="m9gear">⚙</button>
-      </div>
-    </div>
-    <div class="controls b1-sheet" id="m9sheet" style="display:none;">
-      <input id="m9a" type="text" value="348">
-      <select id="m9op"><option>+</option><option>−</option><option>×</option><option>÷</option></select>
-      <input id="m9b" type="text" value="176">
-      <button id="m9random">随机</button>
-    </div>
     <div id="m9display"></div>
     <div class="feedback b1-hint" id="m9fb"></div>
   </div>
@@ -98,14 +97,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     ctx = makeCtx();
     getAji().hideToast();   // ⭐ 清掉上一个用例遗留的 Aji 空闲计时/浮条
     cleanup = await mount(container, ctx);
-    // 设题为 338 ÷ 7
-    const a = container.querySelector('#m9a');
-    const b = container.querySelector('#m9b');
-    const op = container.querySelector('#m9op');
-    a.value = '338'; b.value = '7'; op.value = '÷';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(338, '÷', 7);   // 设题为 338 ÷ 7
   });
 
   it('建格一次：商/除数/被除数/乘积/余数/落位格全部就位', () => {
@@ -120,19 +112,20 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     // 被除数是初始常量 → init 档（绝不能是黄色 focus）
     expect(tier(container, 'd-0')).toBe('init');
     expect(container.querySelector('#m9display input')).toBeNull();   // ⭐ 无原生输入框
-    expect(container.querySelector('#m9gear')).toBeTruthy();
-    expect(container.querySelector('#m9sheet')).toBeTruthy();
     // ⭐ 统一点击心智：「下一步」按钮已移除，点待填格直接进入输入态
     expect(container.querySelector('#m9step')).toBeNull();
+    // ⭐ 视觉重心归零：右上角 ↻/⚙ 与换题抽屉整体移除，页面上不得有任何常驻操作按钮
+    //    （Aji 气泡由 aji.js 独立挂载在 body 上，不在模块容器内）
+    expect(container.querySelector('#m9reset')).toBeNull();
+    expect(container.querySelector('#m9gear')).toBeNull();
+    expect(container.querySelector('#m9sheet')).toBeNull();
+    expect(container.querySelector('#m9random')).toBeNull();
+    expect(container.querySelectorAll('button').length).toBe(0);
   });
 
   it('级联精准命中：修改第二个进位，第一个进位与已完成步骤原样保留', { timeout: 30000 }, async () => {
     // 348 + 176 = 524：carry-2(step0)→result-2→carry-1(step1)→result-1→result-0(step2)
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '348'; b.value = '176'; op.value = '+';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(348, '+', 176);
     await wait(200);
     startFlow(container);
     await wait(50);
@@ -254,11 +247,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
 
   it('终局回溯+级联重置：末位答错→柔声提示→点高亮格重填→记对', { timeout: 20000 }, async () => {
     // 12 + 34 = 46：十位 4 对，个位（终局）故意答 5
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '12'; b.value = '34'; op.value = '+';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(12, '+', 34);
     await wait(200);
     startFlow(container);
     await wait(50);
@@ -292,11 +281,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
   });
 
   it('回溯静默期：去修改后无弹窗，20s 无动作 Aji 浮条才出现；点击浮条弹对话框', { timeout: 20000 }, async () => {
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '12'; b.value = '34'; op.value = '+';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(12, '+', 34);
     await wait(200);
     startFlow(container);
     await wait(50);
@@ -333,11 +318,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
   });
 
   it('估算下沉 Aji：直通开算无拦截；静置浮条点击 → 估算对话卡片选区间揭晓', { timeout: 20000 }, async () => {
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '12'; b.value = '34'; op.value = '+';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(12, '+', 34);
     await wait(200);
     // ⭐ 估算弹窗已移除：点待填格直接进入输入态，没有任何拦截断层
     expect(container.querySelector('#m9EstimateBox')).toBeNull();
@@ -350,7 +331,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     aji.hideToast();   // 清掉真实时钟上的挂起计时
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
-      container.querySelector('#m9reset').click();   // 重新载入 → 估算邀请落在虚拟时钟
+      setProblem(12, '+', 34);   // 重新载入 → 估算邀请落在虚拟时钟
       vi.advanceTimersByTime(35000);
       expect(ajiToastVisible()).toBe(true);
       expect(document.querySelector('.aji-float-bubble').textContent).toContain('估一估');
@@ -375,11 +356,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
   });
 
   it('终局回溯：静置 45 秒无动作 → 微光轻照出错格（无倒计时、无红）', { timeout: 20000 }, async () => {
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '12'; b.value = '34'; op.value = '+';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(12, '+', 34);
     await wait(200);
     startFlow(container);
     await wait(50);
@@ -404,11 +381,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
 
   it('加减法算完：最终结果旁不得残留绿色输入框', { timeout: 20000 }, async () => {
     // 12 + 34 = 46（无进位，两步）
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '12'; b.value = '34'; op.value = '+';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(12, '+', 34);
     await wait(200);
 
     startFlow(container);
@@ -429,11 +402,7 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
 
   it('减法借位：输入槽挂在左侧数字上方（列映射差一回归）', { timeout: 20000 }, async () => {
     // 50 - 3 = 47：个位 0-3 需借位，借位写在十位（左侧）数字上方
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '50'; b.value = '3'; op.value = '−';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+    setProblem(50, '−', 3);
     await wait(200);
     startFlow(container);
     await wait(50);
@@ -444,29 +413,26 @@ describe('m9 · 竖式交互（338 ÷ 7 全流程）', () => {
     cleanup();
   });
 
-  it('点随机出题：键盘随之收起，不再弹回（不残留）', { timeout: 20000 }, async () => {
-    // 12 + 34，进入等待态（键盘弹出），输入一位数字后点「随机」
-    const a = container.querySelector('#m9a'), b = container.querySelector('#m9b'), op = container.querySelector('#m9op');
-    a.value = '12'; b.value = '34'; op.value = '+';
-    a.dispatchEvent(new Event('input', { bubbles: true }));
-    b.dispatchEvent(new Event('input', { bubbles: true }));
-    op.dispatchEvent(new Event('change', { bubbles: true }));
+  it('Aji 换题接口：键盘随之收起，不再弹回（不残留）', { timeout: 20000 }, async () => {
+    // 12 + 34，进入等待态（键盘弹出），输入一位数字后换题
+    setProblem(12, '+', 34);
     await wait(200);
 
     startFlow(container);
     await wait(50);
 
     expect(keypadVisible()).toBe(true);
-    pressDigits('6');            // 缓冲里留一位数字
+    pressDigits('6');            // 缓冲里留一位数字（未确认 → 换题时静默丢弃，不计错）
     await wait(50);
 
-    // 真实点按：先 pointerdown（触发"点外确认"），再 click（触发随机出题）
-    const rand = container.querySelector('#m9random');
-    rand.dispatchEvent(new window.MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
-    rand.click();
+    // ⭐ 换题入口已从 UI 移除（视觉重心归零）：不再有「随机」按钮，
+    //   也就没有"按钮吃掉了点外确认"这条旧路径——直接走模块接口。
+    //   ⚠️ 这里刻意不派发 body 的 pointerdown：那会触发点外确认提交，
+    //      其 700ms 后的延时 prompt 会把键盘重新弹回来（本就是被测的回归点）。
+    activeModules.m9.nextProblem();
     await wait(1100);            // 越过 submitBuffer 的 700ms 延时与 hide 动画
 
-    expect(keypadVisible()).toBe(false);   // ⭐ 随机后键盘收起且不再弹回
+    expect(keypadVisible()).toBe(false);   // ⭐ 换题后键盘收起且不再弹回
     expect(slot(container)).toBeNull();
     cleanup();
   });

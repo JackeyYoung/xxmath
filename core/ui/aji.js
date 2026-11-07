@@ -76,16 +76,23 @@
      严禁给聊天舱/球写 CSS translate(-50%,-50%)。
    - 样式类全部带 aji 命名空间（.aji-chat-hub / .aji-float-bubble / .aji-msg-chip…），
      防全局污染（历史上 .koji-btn 曾与旧页面类名撞车）。
-   - 主题跟随 <html data-theme>；hub z-index 9996（键盘 9990、聊天键盘 9997、换题表 9995 之上）。
+   - 主题跟随 <html data-theme>；hub z-index 9996（做题键盘 9990、聊天键盘 9997 之上）。
+   - ⭐ 换题抽屉（.b1-sheet / .b1-mask，z-index 9995）已随"视觉重心归零"整体移除，
+     m1/m9 的换题与载入算式改由 Aji 对话本地路由接管（零 LLM）。
    - ⭐ 绝不写 document.body.style.paddingBottom —— 那是"背后算式重排跳动"的唯一来源
      （做题键盘 virtual-keypad.show() 就是这么干的，聊天键盘刻意不跟）。
 */
 import { gsap } from '../../js/vendor/gsap/index.js';
 import { resolveApiUrl, LLM_CONFIG } from '../llm.js';
 import { getChatKeypad } from './chat-keypad.js';
+import { activeModules } from '../../app/active-modules.js';
+import { historyClear, historyLoad } from '../history.js';
+import { wbClear, wbLoad } from '../wrongbook.js';
+import { takeawayListAll } from '../takeaway.js';
+import { lsRemove, lsKeysByPrefix } from '../storage.js';
 import {
   captureInterests, learnerTagSummary, interestSummary,
-  wrongDigest, topWrongTags, eventsLoad,
+  wrongDigest, topWrongTags, eventsLoad, eventsClear, memoryClear, memoryLoad,
 } from '../learner.js';
 
 let instance = null;
@@ -102,6 +109,25 @@ const CONTEXT_RE = /这题|这道|这个题|这一步|这步|这里|这儿|上�
    刻意不走大模型：这类问题的答案是本地数据，LLM 只会瞎编。 */
 const WRONGBOOK_RE = /错题本|错题(清单|列表|记录)|所有.{0,3}错题|我的错题|错得最多|错的最多|哪里错|哪些错|最薄弱|学得不好|哪里学得不好|薄弱/;
 const HISTORY_RE = /上(一道|道)题|刚才(那道|这题)|上一题|我(错|算错)哪/;
+
+/* ⭐ 「这一步对吗」类问法（本地比对，毫秒级，零 LLM 成本）：
+   学生问的是一道可以直接用等号判定的问题，标准答案就在手上——
+   交给大模型既慢又可能瞎编。命中即前端对比标准答案，直接给结论。
+   ⚠️ 只管"对不对"，不管"为什么错"：后者仍走大模型（要讲算理、要引导思考）。 */
+const CHECK_STEP_RE = /(这|那)?\s*(一)?步\s*(对|错|对吗|对不对|正确|做得对)|我(填|算|写)得(对|错)|我(这|那)个(对|错)|对不对|对吗|错了吗|算对了吗|对吗\?/;
+/* ⭐ 设置类诉求（本地接管，绝不交给大模型"假装已完成"）：
+   清空记录/重置进度这类是不可逆动作，必须本地执行 + 二次确认。
+   ⚠️ 必须容忍中间的定语：学生最自然的说法恰恰是「清空**我的**进度」，
+      只写 `清空(进度|记录)` 会把这句话整个漏掉 → 落到大模型手里"假装已完成"。
+      所以只认动词、不卡宾语 —— 有意放宽。
+      误判的代价是弹一张确认卡（学生点「先不清」即可），
+      漏判的代价是把不可逆动作交给一个只会"假装完成"的模型。两者不对称，宁宽勿漏。 */
+const SETTINGS_RESET_RE = /清空|清除|重置|重新开始|从头开始|删除?(所有|全部)/;
+
+/* ⭐ 换题诉求（原右上角 ⚙ 抽屉的职责）：
+   "换一题/下一题/再来一题/换个数" → 本地换题，零 LLM。
+   ⚠️ 刻意不匹配单独的"下一题"以外的模糊说法，避免把"我们接下来学什么"误伤成换题。 */
+const NEW_PROBLEM_RE = /换(一)?(道)?(题|个题)|下一题|再来一(题|道)|换个数|换个题|出新题|随机(出)?(一)?(道)?题|再出一题/;
 
 const CSS = `
 /* ── 聊天舱（.aji-chat-hub） ── */
@@ -602,6 +628,10 @@ class Aji {
       progress: typeof cfg.progress === 'function' ? cfg.progress : null,
       resolveLocal: typeof cfg.resolveLocal === 'function' ? cfg.resolveLocal : null,
       isStarted: typeof cfg.isStarted === 'function' ? cfg.isStarted : null,
+      /* ⭐ 当前正在作答的那一步：{ currentStep, studentInput, standardAnswer }
+         模块在作答态返回，未作答返回 null —— 这是"问哪答哪"的唯一来源。
+         既有 isError/progress 只说"哪一步错"，说不出"标准答案是多少"。 */
+      stepCtx: typeof cfg.stepCtx === 'function' ? cfg.stepCtx : null,
     };
   }
 
@@ -666,17 +696,239 @@ class Aji {
       /* 学生是否已真的动过手：场景一（刚进页面未做题）与场景二（做到一半）的分水岭。
          未声明 isStarted 的模块退化为「有题目即有上下文」，与旧行为一致。 */
       started: this._safeBool(cfg && cfg.isStarted, this._safe(cfg && cfg.problemText, '') !== ''),
+      /* ⭐ 当前作答步三件套（可能为 null：没在作答 / 模块未接入） */
+      stepCtx: this._stepCtx(cfg),
       cfg,
     };
+  }
+
+  /** ⭐ 取模块报出的"当前作答步"。模块抛错或返回畸形 → 一律当作没有，
+      宁可少注入一段，也绝不把脏数据塞进 Prompt 让模型照着编。 */
+  _stepCtx(cfg) {
+    if (!cfg || typeof cfg.stepCtx !== 'function') return null;
+    let v = null;
+    try { v = cfg.stepCtx(); } catch (e) { return null; }
+    if (!v || typeof v !== 'object') return null;
+    const str = (x) => (x == null ? '' : String(x).trim());
+    const out = {
+      currentStep: str(v.currentStep),
+      studentInput: str(v.studentInput),
+      standardAnswer: str(v.standardAnswer),
+    };
+    /* 三项全空 = 模块处于非作答态，按"没有"处理（否则会注入一段全空占位） */
+    return (out.currentStep || out.studentInput || out.standardAnswer) ? out : null;
   }
 
   /* ⭐ 记忆检索（RAG）本地路由：命中则毫秒级返回，绝不走大模型。
      这类问题的答案全在本地数据里，交给 LLM 只会瞎编（任务书 §三 明确要求）。 */
   _memoryLocal(userQuery) {
     const q = String(userQuery || '');
+    /* ⭐ 设置类诉求最先拦：清空/重置是不可逆动作，绝不能落到大模型手里"假装完成" */
+    if (SETTINGS_RESET_RE.test(q)) return this._settingsResetAnswer();
+    /* ⭐ 换题 / 载入题目：原右上角 ⚙ 抽屉的职责，现已下沉到对话 */
+    const swap = this._problemSwapAnswer(q);
+    if (swap) return swap;
     if (WRONGBOOK_RE.test(q)) return this._wrongbookAnswer();
     if (HISTORY_RE.test(q)) return this._lastWrongAnswer();
+    /* ⚠️ 「这一步对吗」必须排在 WRONGBOOK_RE 之后、且只在真的在作答时才拦：
+       否则"我哪里错了"这类会被 CHECK_STEP_RE 的"错"字抢先吃掉。 */
+    if (CHECK_STEP_RE.test(q)) return this._checkStepAnswer();
     return null;
+  }
+
+  /* ---------- ⭐ 题目载入（原抽屉职责，零 LLM） ---------- */
+
+  /** 当前模块是否提供 nextProblem / loadExpression（m1/m9 都提供了） */
+  _activeApi() {
+    const id = this._activeModuleId();
+    return id ? (activeModules[id] || null) : null;
+  }
+
+  /** 从学生的话里抽出算式：必须"整句就是一个算式"才算，夹带文字一律不认。
+      返回规范化后的算式串或 ''。 */
+  _exprFromQuery(q) {
+    const t = String(q || '')
+      .replace(/[×xX*]/g, '×').replace(/[÷/]/g, '÷').replace(/[−–—]/g, '-')
+      .replace(/[（]/g, '(').replace(/[）]/g, ')');
+    const m = t.match(/(\d[\d.]*\s*[+\-×÷]\s*\d[\d.]*(?:\s*[+\-×÷]\s*\d[\d.]*)*)/);
+    if (!m) return '';
+    const expr = m[1].replace(/\s+/g, '');
+    // 句子里除了这个算式之外还有别的实质内容（汉字）→ 不当作"载入题目"指令
+    const rest = t.replace(m[1], '').replace(/[\s，。！？、,.!?]/g, '');
+    if (/[一-龥]/.test(rest)) return '';
+    return expr;
+  }
+
+  /** ⭐ 换题 / 载入题目：命中才有值，未命中返回 null（交给后面的规则或大模型） */
+  _problemSwapAnswer(q) {
+    const api = this._activeApi();
+    if (!api) return null;
+    const e = (s) => this._escapeHtml(s);
+
+    // ① 学生给了具体算式（无论有没有说"算这道"）→ 载入
+    if (typeof api.loadExpression === 'function') {
+      const expr = this._exprFromQuery(q);
+      if (expr) {
+        const ok = api.loadExpression(expr);
+        return ok
+          ? {
+            type: 'hint',
+            title: '题目换好了',
+            content: `我们来算 <b>${e(expr)}</b> 吧。点算式里的运算符，把它先算出来。`,
+            actions: [{ text: '开始', type: 'close' }],
+          }
+          : {
+            /* ⚠️ 示例**必须与该模块真正接受的形态一致**：
+               m9 是竖式练习，只吃「两数一个运算符」；拿 m1 的多步算式当例子
+               等于教学生写一个这里照样会被拒的东西（本想帮忙，结果更绕）。 */
+            type: 'hint',
+            title: '这个算式这儿算不了',
+            content: api.exampleHint
+              ? `换一个写法试试？比如：<b>${e(api.exampleHint)}</b>。`
+              : '换个写法试试？把要算的两个数和一个运算符写清楚就行。',
+            actions: [{ text: '我懂了', type: 'close' }],
+          };
+      }
+    }
+
+    // ② 只是要换题 → 换一题
+    if (NEW_PROBLEM_RE.test(q) && typeof api.nextProblem === 'function') {
+      api.nextProblem();
+      return {
+        type: 'hint',
+        title: '换了一道新题',
+        content: '已经给你换好啦，看看算式里的数变了没。想好先算哪一步就点它。',
+        actions: [{ text: '开始', type: 'close' }],
+      };
+    }
+    return null;
+  }
+
+  /** ⭐ 清空进度 / 重置记录：本地执行 + 二次确认（不可逆动作绝不一键完成） */
+  _settingsResetAnswer() {
+    return {
+      type: 'error_review',
+      title: '要清空学习记录吗？',
+      content: '这会删掉<b>做题记录、错题本、一题一得和我记住的学情</b>。清掉之后就找不回来了，确认要清吗？',
+      actions: [
+        { text: '清空', type: 'close', style: 'primary', onClick: () => this._doResetProgress() },
+        { text: '先不清', type: 'close' },
+      ],
+    };
+  }
+
+  /** ⭐ 真正的清空动作：这是**不可逆**操作，所以做两件事——
+      ① 逐项 try 包裹：任何一项失败都不阻断其余项；
+      ② **清完回读核验**：存储层是"内存立即 + 磁盘排队"的异步落盘模型，
+         clear() 从不抛异常（失败走 onStorageError 旁路上报），
+         所以"没抛错"根本不能证明"清干净了"——必须回读，按回读结果说话。
+      宁可告诉学生"这项没清掉"，也绝不谎报"已清空"。 */
+  _doResetProgress() {
+    const done = [];
+    const failed = [];
+    /* 每项 = [标签, 执行, 回读核验（true＝确实空了）] */
+    const jobs = [
+      ['做题记录', () => historyClear(), () => { try { return historyLoad().length === 0; } catch (e) { return false; } }],
+      ['错题本', () => wbClear(), () => { try { return wbLoad().length === 0; } catch (e) { return false; } }],
+      /* ⚠️ memoryLoad() 永远返回 { interests: [], tags: {} } 形状，
+         空对象是**真值** —— 必须数长度，不能直接判真假。 */
+      ['学情记忆', () => { eventsClear(); memoryClear(); },
+        () => {
+          try {
+            const m = memoryLoad() || {};
+            return eventsLoad().length === 0
+              && Object.keys(m.tags || {}).length === 0
+              && (m.interests || []).length === 0;
+          } catch (e) { return false; }
+        }],
+      ['一题一得', () => this._takeawayClearAll(), () => { try { return takeawayListAll().length === 0; } catch (e) { return false; } }],
+    ];
+    for (const [label, run, verify] of jobs) {
+      let ok = false;
+      try { run(); } catch (e) { ok = false; }
+      try { ok = verify(); } catch (e) { ok = false; }
+      (ok ? done : failed).push(label);
+    }
+
+    const okAll = failed.length === 0;
+    this.sendMessage({
+      type: okAll ? 'hint' : 'error_review',
+      title: okAll ? '✅ 记录清空好了' : '有几项没清掉',
+      content: okAll
+        ? `已经清掉了：${done.join('、')}。<br><br>我们重新开始吧，先算哪一步都行，卡住了就叫我。`
+        : `这些清掉了：${done.join('、') || '（无）'}；<b>这几项还没清掉</b>：${failed.join('、')}。稍后再让我试一次就行。`,
+      actions: [{ text: '好', type: 'close' }],
+    });
+  }
+
+  /** ⭐ 一题一得清空（没有专门的 clear API）：
+      必须走 storage 层，不能直接摸 localStorage ——
+      本地数据的主存是 localForage，直接删 localStorage 会"删了个空"却报告成功。 */
+  _takeawayClearAll() {
+    const keys = new Set();
+    try { lsKeysByPrefix('grade').forEach(k => { if (k.includes('takeaway')) keys.add(k); }); } catch (e) {}
+    /* 兜底：无 localForage 时是 localStorage 模式；也覆盖"内存尚未水合"的场景 */
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.includes('takeaway')) keys.add(k);
+      }
+    } catch (e) {}
+    keys.forEach(k => { try { lsRemove(k); } catch (e) {} });
+  }
+
+  /** ⭐ 「这一步对吗」→ 前端直接比对标准答案（毫秒级、零成本、绝不瞎编）
+      只有三种结局，全部如实说：对了 / 错了（并指出该填什么） / 还没轮到你填。
+      刻意不解释"为什么错"——那要讲算理，仍需大模型，留给场景三。 */
+  _checkStepAnswer() {
+    const c = this._collectContext();
+    const sc = c.stepCtx;
+    if (!sc) {
+      return {
+        type: 'hint',
+        title: '现在还没有可判定的步骤',
+        content: '先点算式里的运算符、或者点竖式里那个待填的格子，等你填了数，我马上帮你看对不对。',
+        actions: [{ text: '我懂了', type: 'close' }],
+      };
+    }
+    const hasInput = !!sc.studentInput;
+    const same = this._normNum(sc.studentInput) === this._normNum(sc.standardAnswer);
+    const where = sc.currentStep ? `${sc.currentStep}` : '这一步';
+    const e = (s) => this._escapeHtml(s);
+
+    if (!hasInput) {
+      return {
+        type: 'hint',
+        title: `${where}还没填呢`,
+        content: `你还没写这一格的数。想好了就填上，填完再问我「这一步对吗」，我立刻帮你看。`,
+        actions: [{ text: '我懂了', type: 'close' }],
+      };
+    }
+    if (same) {
+      return {
+        type: 'hint',
+        title: '✅ 这一步是对的',
+        content: `${where}你填的是 <b>${e(sc.studentInput)}</b>，和标准答案一致，继续往下算就行。`,
+        actions: [{ text: '我懂了', type: 'close' }],
+      };
+    }
+    return {
+      type: 'error_review',
+      title: '这一步和标准答案不一样',
+      content: `${where}你填的是 <b>${e(sc.studentInput)}</b>，标准答案应该是 <b>${e(sc.standardAnswer)}</b>。<br><br>先别急着改，回头看看这一格的数是怎么得来的——想不通再问我，我们一起找找是哪一位出了问题。`,
+      actions: [
+        { text: '我再想想', type: 'close' },
+        { text: '讲讲这一步', type: 'close', style: 'primary', onClick: () => this._askAI(`${where}我填了 ${sc.studentInput}，标准答案是 ${sc.standardAnswer}，我错在哪了？`) },
+      ],
+    };
+  }
+
+  /** 数值归一：去掉空格、全角、前导零与末尾小数点，防止 "007" vs "7" 误判 */
+  _normNum(s) {
+    let t = String(s == null ? '' : s).trim();
+    try { t = t.replace(/[０-９]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)); } catch (e) {}
+    t = t.replace(/\s+/g, '').replace(/^0+(?=\d)/, '').replace(/\.$/, '');
+    return t;
   }
 
   /** "我哪里错得最多 / 我的错题本" → 聚合错得最多的 5 类 Tag + 错题本入口 */
@@ -890,6 +1142,8 @@ class Aji {
         learnerTags: learnerTagSummary(),
         interestTags: interestSummary(),
         wrongHistory: wrongDigest(c.topic || ''),
+        /* ⭐ 当前这一步的三件套：模块在作答态时报出（未作答则返回 null 整段不注入） */
+        stepCtx: c.stepCtx,
         userQuery: userQuery || '我卡住了，该怎么想？',
       }, (delta) => {
         // ⭐ 打字机：每个增量以 textContent 追加（免 XSS、免重排抖动）
@@ -942,10 +1196,10 @@ class Aji {
     try { this.msgsEl.scrollTop = this.msgsEl.scrollHeight; } catch (e) {}
   }
 
-  /* ⭐ 系统提示词：前置注入当前上下文（题目、步骤、错误） */
+  /* ⭐ 系统提示词：前置注入当前上下文（题目、步骤、错误、标准答案） */
   _buildSystemPrompt({
     moduleId, topic, currentProblem, studentProgress, isError,
-    learnerTags, interestTags, wrongHistory, userQuery,
+    learnerTags, interestTags, wrongHistory, stepCtx,
   }) {
     const ctxLines = [
       `- 当前模块：${moduleId}${topic ? `（${topic}）` : ''}`,
@@ -956,6 +1210,15 @@ class Aji {
       `- 学生兴趣：${interestTags || '（暂无记录）'}`,
     ].join('\n');
 
+    /* ⭐ 「当前这一步」三件套（题目 / 学生输入 / 标准答案）——问哪答哪的地基。
+       没有它，模型只能对着 studentProgress 里的历史值猜，必然答非所问。
+       学生未进入作答态时整段不注入：拿上一次的残值做对比，比不注入更坏。 */
+    const sc = stepCtx && (stepCtx.standardAnswer || stepCtx.studentInput)
+      ? `\n- 当前步骤：${stepCtx.currentStep || '（进行中）'}
+- 学生当前输入：${stepCtx.studentInput || '（还没输入）'}
+- 标准答案参考：${stepCtx.standardAnswer || '（无）'}  ← 重点：请对比"学生当前输入"与"标准答案参考"，指出差在哪一步、错在哪一位数，不要给出最终得数`
+      : '';
+
     /* ⭐ RAG：最近 5 条真实错题（由 core/learner.js 前端聚合好，Prompt 不做数据逻辑） */
     const rag = (Array.isArray(wrongHistory) && wrongHistory.length)
       ? `\n\n【历史错题参考】\n${wrongHistory.join('\n')}\n（基于这些真实错题给出针对性的启发式提问或鼓励，不要凭空编造别的错题。）`
@@ -964,12 +1227,13 @@ class Aji {
     return `你是 Aji，一位克制、耐心、充满好奇心，且深受三年级学生信任的 AI 数学陪学助教。
 
 【当前场景上下文】
-${ctxLines}${rag}
+${ctxLines}${sc}${rag}
 
 【对话边界与路由规则】（必须严格遵守）
 1. 核心区（当前数学题）：绝对不要直接给出最终答案。结合学情，用启发式提问引导他自己发现错误。每次回答控制在 3 句话以内。
 2. 泛学科区（超纲知识、其他学科、好奇心）：如果学生问了有趣的知识（如恐龙、宇宙），允许你跳出数学，用三年级听得懂的语言满足他的好奇心。但回答完毕后，必须温和地拉回题目。例如：宇宙的奥秘很神奇吧？等我们算完这道题，你可以多问我！
 3. 干扰区（游戏、闲聊、负面情绪）：如果学生不想做题，温和地理解他的情绪。简短回答后引回题目。绝不进行无意义闲聊。
+4. 设置区（学生要求"清空记录/重置进度/换个名字"这类）：不要自己执行，也不要假装已经做完。用一句话告诉学生"点我就能帮你处理"，系统会把按钮递给他；等他确认后由本地逻辑完成。
 
 【语气与克制要求】
 - 语气像邻家学霸哥哥/姐姐，绝不居高临下。
@@ -982,9 +1246,16 @@ ${ctxLines}${rag}
     if (!apiUrl) throw new Error('AI 服务地址未配置');
     const headers = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
     if (LLM_CONFIG.apiKey) headers.Authorization = `Bearer ${LLM_CONFIG.apiKey}`;
+    /* ⚠️ messages 必须是 [system, user] 两轮，缺了 user 这一轮：
+       ① 模型收到的只有设定、没有问题 → 只会自说自话（"答非所问"的真根因）；
+       ② 部分 OpenAI 兼容网关（含 GLM）会直接判 400 —— 线上那个 400 就出在这。
+       学生提问一律进 user 轮，system 只放设定与上下文。 */
     const body = {
       model: LLM_CONFIG.model,
-      messages: [{ role: 'system', content: this._buildSystemPrompt(ctx) }],
+      messages: [
+        { role: 'system', content: this._buildSystemPrompt(ctx) },
+        { role: 'user', content: ctx.userQuery || '我卡住了，该怎么想？' },
+      ],
       temperature: 0.6,
       max_tokens: 300,
       stream: true,   // ⭐ 后端据此走 SSE 透传

@@ -2,10 +2,15 @@
 // m1 模块冒烟测试：挂载 → 点运算符 → 虚拟键盘输入 → 判卷 → 合并动画 → 键盘持久性 → 清理
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// ⭐ 绕开 shell.js 的重依赖链，只桩掉模块注册接口
-vi.mock('../../../app/shell.js', () => ({
-  registerActiveModule: vi.fn(),
-  unregisterActiveModule: vi.fn(),
+/* ⭐ 抽屉移除后，载入题目的真实通道是模块对外接口（activeModules）。
+   m1.js 是从 app/shell.js 取 registerActiveModule 的，所以壳层桩要把它
+   转接到一张真表上 —— 测试才能像 Aji 那样调 loadExpression / nextProblem。
+   ⚠️ 路径是 4 层：__tests__ → modules → grade3 → grades → 仓库根（app/ 在根下）。
+      原来写的 3 层指向 grades/app/shell.js（不存在），这个桩其实一直没生效。 */
+const activeModules = {};
+vi.mock('../../../../app/shell.js', () => ({
+  registerActiveModule: (id, api) => { activeModules[id] = api; },
+  unregisterActiveModule: (id) => { delete activeModules[id]; },
 }));
 
 // jsdom 不实现 SVG 路径长度 API 与 scrollIntoView，桩掉
@@ -17,23 +22,12 @@ if (typeof window !== 'undefined' && window.Element && !window.Element.prototype
   window.Element.prototype.scrollIntoView = function () {};
 }
 
+/* ⭐ 与 app/templates.js 的 tpl-m1 保持一致：
+   右上角 ↻/⚙ 与换题抽屉已作为「视觉重心归零」的一部分整体移除。
+   载入题目改由模块对外接口 activeModules.m1.loadExpression() 承担。 */
 const TPL = `
 <template id="tpl-m1">
   <div class="card b1-card">
-    <div class="b1-topbar">
-      <div class="b1-actions">
-        <button id="m1reset">↻</button>
-        <button id="m1gear">⚙</button>
-      </div>
-    </div>
-    <div class="problem-bar b1-sheet" id="m1sheet" style="display:none;">
-      <select id="m1Select"></select>
-      <button id="m1Load"></button>
-      <input id="m1Custom">
-      <button id="m1UseCustom"></button>
-      <input type="file" id="m1Upload">
-      <button id="m1Random"></button>
-    </div>
     <div class="b1-board" id="m1board">
       <svg class="b1-arcs" id="m1arcs"></svg>
       <div class="b1-rows" id="m1rows"></div>
@@ -69,6 +63,8 @@ const pressDigit = (d) => pressKeyEl(keypadEl().querySelector(`.vkp-key[data-dig
 const pressConfirm = () => pressKeyEl(keypadEl().querySelector('.vkp-key[data-confirm]'));
 // ⭐ Aji 浮条（唯一求助入口）：右下角气泡
 const ajiToastVisible = () => getAji().isToastVisible;
+/* ⭐ 载入题目：原 #m1Custom + #m1UseCustom 两步，现在是模块对外接口一步 */
+const loadExpr = (text) => activeModules.m1.loadExpression(text);
 
 describe('m1 · Brilliant 重构冒烟', () => {
   let container, ctx;
@@ -222,25 +218,53 @@ describe('m1 · Brilliant 重构冒烟', () => {
     cleanup();
   });
 
-  it('换题抽屉：齿轮开、遮罩关、载入后自动收', async () => {
+  it('视觉重心归零：右上角无任何常驻按钮，换题抽屉整体移除', async () => {
     const cleanup = await mount(container, ctx);
-    const sheet = container.querySelector('#m1sheet');
-    container.querySelector('#m1gear').click();
+    // ⭐ 页面上除算式本体外，不得有任何常驻操作按钮（Aji 气泡由 aji.js 独立挂载）
+    expect(container.querySelector('#m1reset')).toBeNull();
+    expect(container.querySelector('#m1gear')).toBeNull();
+    expect(container.querySelector('#m1sheet')).toBeNull();
+    expect(container.querySelector('#m1Random')).toBeNull();
+    expect(container.querySelectorAll('button').length).toBe(0);
+    cleanup();
+  });
+
+  it('换题接口：Aji 走 loadExpression 载入指定算式；非法文本被拒且不动当前题', async () => {
+    const cleanup = await mount(container, ctx);
+    const before = container.querySelector('.b1-rows').textContent;
+
+    expect(loadExpr('5 + 3')).toBe(true);
     await wait(50);
-    expect(sheet.classList.contains('open')).toBe(true);
-    expect(document.querySelector('.b1-mask')).toBeTruthy();
-    // 载入第一题 → 自动收起
-    container.querySelector('#m1Load').click();
+    expect(container.querySelector('.b1-rows').textContent).toContain('5');
+    expect(container.querySelector('.b1-rows').textContent).toContain('3');
+    const afterLoad = container.querySelector('.b1-rows').textContent;
+    expect(afterLoad).not.toBe(before);
+
+    // ⭐ 夹带文字的问句不能被当成算式（parseExpression 很宽容，必须自己把关）
+    expect(loadExpr('我们算 3+4 好吗')).toBe(false);
+    expect(loadExpr('帮我讲讲这道题')).toBe(false);
+    expect(loadExpr('')).toBe(false);
+    // 被拒 → 当前题一字未动
+    expect(container.querySelector('.b1-rows').textContent).toBe(afterLoad);
+    cleanup();
+  });
+
+  it('换题接口：nextProblem 换一道新题', async () => {
+    const cleanup = await mount(container, ctx);
+    expect(typeof activeModules.m1.nextProblem).toBe('function');
+    const before = container.querySelector('.b1-rows').textContent;
+    activeModules.m1.nextProblem();
     await wait(50);
-    expect(sheet.classList.contains('open')).toBe(false);
+    // 换题后仍是一道可算的题（可能随机到同题，故只断言结构仍在、没崩）
+    expect(container.querySelectorAll('.b1-row').length).toBeGreaterThan(0);
+    expect(container.querySelector('#m1fb')).toBeTruthy();
+    void before;
     cleanup();
   });
 
   it('终局回溯：柔声提示 + Thumb Bar 主导（Aji 静默）；去修改回滚改正记对', { timeout: 20000 }, async () => {
     const cleanup = await mount(container, ctx);
-    const custom = container.querySelector('#m1Custom');
-    custom.value = '5 - 3';                                   // 单步题：唯一一步即终局
-    container.querySelector('#m1UseCustom').click();
+    loadExpr('5 - 3');                                        // 单步题：唯一一步即终局
     // ⭐ 直通输入：载入即自动弹出输入框（无需点运算符）
     pressDigit('9');
     pressConfirm();                                           // 终局答错
@@ -269,18 +293,18 @@ describe('m1 · Brilliant 重构冒烟', () => {
     cleanup();
   });
 
-  it('终局答错后一直不改：不催不判；主动重来（↻）此刻才结算为错', { timeout: 20000 }, async () => {
+  it('终局答错后一直不改：不催不判；主动换题此刻才结算为错', { timeout: 20000 }, async () => {
     const cleanup = await mount(container, ctx);
-    const custom = container.querySelector('#m1Custom');
-    custom.value = '5 - 3';
-    container.querySelector('#m1UseCustom').click();
+    loadExpr('5 - 3');
     // ⭐ 直通输入：载入即自动弹出输入框
     pressDigit('9');
     pressConfirm();
     await wait(2300);
     expect(ctx.data.historyAdd).not.toHaveBeenCalled();   // 静默等待，绝不判 0
 
-    container.querySelector('#m1reset').click();          // 主动放弃 → 重来
+    // ⭐ 右上角 ↻ 已移除：放弃的出口是「换一题」（Aji 对话 / 终局缩略条），
+    //    两条路都汇到 nextProblem → m1LoadExpression → m1SettleAbandoned
+    activeModules.m1.nextProblem();
     expect(ctx.data.historyAdd).toHaveBeenCalledTimes(1);
     const rec = ctx.data.historyAdd.mock.calls[0][0];
     expect(rec.isCorrect).toBe(false);
@@ -293,9 +317,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
 
   it('级联重置：早期答错→带错继续→终局回溯→点首个错步回滚→清后续重推→对', { timeout: 30000 }, async () => {
     const cleanup = await mount(container, ctx);
-    const custom = container.querySelector('#m1Custom');
-    custom.value = '3 + 4 + 5';                              // 3+4=7，7+5=12
-    container.querySelector('#m1UseCustom').click();
+    loadExpr('3 + 4 + 5');                                   // 3+4=7，7+5=12
     // 第 0 步：3+4，故意答 8（错）——多步题首步仍需点运算符
     container.querySelector('.b1-row .b1-op.b1-clickable').click();
     pressDigit('8'); pressConfirm();
@@ -329,8 +351,7 @@ describe('m1 · Brilliant 重构冒烟', () => {
 
   it('最后一步直通输入：载入即 num op num（5 − 3）→ 自动弹输入框，无需点运算符', async () => {
     const cleanup = await mount(container, ctx);
-    container.querySelector('#m1Custom').value = '5 - 3';
-    container.querySelector('#m1UseCustom').click();
+    loadExpr('5 - 3');
     await wait(50);
     // ⭐ 消灭冗余点击：没有点任何运算符，输入框已就位、键盘已弹起
     expect(inputRow_state(container)).toBe('flex');

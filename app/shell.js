@@ -114,7 +114,13 @@ export function initShell() {
     showThumbBar,
     hideThumbBar,
     refreshHomeTasks,
-    renderHome
+    renderHome,
+    /* ⭐ 活动模块注册表（只读引用，不复制）：
+       换题抽屉移除后，模块的「换一题 / 载入算式」只能经模块对外接口走。
+       真机驱动与排障脚本需要一个稳定的抓手 —— 这里直接暴露同一张表，
+       免得驱动各自去 hook ES module 内部状态（那种做法随重构就碎）。
+       ⚠️ 这是模块↔壳层既有契约的透出，不是新增旁路：写入仍只走 registerActiveModule。 */
+    activeModules
   };
   console.log('✅ 拇指条已初始化并挂载到全局');
 }
