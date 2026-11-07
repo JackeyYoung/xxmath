@@ -245,9 +245,15 @@ const CSS = `
   /* 自绘光标 + 缓冲：input 被 readonly 锁死后要自己给"正在输入"的反馈 */
   .aji-hub-input { caret-color: transparent; }
   .aji-hub-inputbar { position: relative; }
+  /* ⭐ 移动端的输入气泡就是输入框（原生 input 已 display:none），
+     所以要给它输入框的外形（内边距/圆角/底色）和"可点"的手势反馈，
+     否则学生看不出这里能点。 */
   .aji-input-buf { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap;
     text-overflow: ellipsis; font-size: 16px; line-height: 1.3;
-    display: flex; align-items: center; }
+    display: flex; align-items: center;
+    padding: 9px 12px; border-radius: 12px; cursor: text;
+    background: var(--aji-input-bg, rgba(148,163,184,.12)); }
+  .aji-input-buf:active { background: var(--aji-input-bg-active, rgba(148,163,184,.2)); }
   .aji-input-buf.aji-buf-empty { color: var(--aji-text-soft, #94a3b8); }
   .aji-buf-caret { display: inline-block; width: 1.5px; height: 17px; margin: 0 1px;
     background: var(--aji-caret, #29CC57); vertical-align: -3px;
@@ -288,6 +294,10 @@ class Aji {
     this._buf = '';
     this.bufEl = document.createElement('div');
     this.bufEl.className = 'aji-input-buf aji-buf-empty';
+    /* ⭐ 移动端的输入气泡**本身就是输入框**（role=textbox 让读屏/自动化都认它）。
+       光有输入框不算数，视觉上那个绿色的光标让它是可见的输入控件。 */
+    this.bufEl.setAttribute('role', 'textbox');
+    this.bufEl.setAttribute('aria-label', '向 Aji 提问');
     this.inputBarEl.insertBefore(this.bufEl, this.inputEl);
 
     /* ---- 右下角悬浮球（常驻，唯一入口） ---- */
@@ -340,12 +350,22 @@ class Aji {
     // ⭐ 输入区：用户主动提问 → 直接绕过本地规则，请求大模型
     this.inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') this._submitInput(); });
     this.sendBtn.addEventListener('click', () => this._submitInput());
-    // ⭐ 移动端：点输入框 → 开聊天键盘（绝不开原生键盘）
-    this.inputEl.addEventListener('pointerdown', (e) => {
+
+    /* ⭐ 移动端"点输入区 → 开聊天键盘"。
+       ⚠️ 必须挂在**移动端真正可见**的那个表面上：
+          移动端 _lockNativeKeyboard() 会把原生 input 设成 display:none，
+          于是它宽高归零、pointerdown / focus 一个都收不到 ——
+          原来只把监听挂在 inputEl 上，学生点输入框毫无反应（键盘永远出不来）。
+          移动端可见的是自绘气泡 bufEl，所以两个表面都要挂；
+          且【只能挂到 bufEl 这一个元素】—— 挂到整条 inputbar 会把「发送」键也吃掉。 */
+    const onInputSurfaceTap = (e) => {
       if (!this._isMobile()) return;
-      e.preventDefault();      // 拦在聚焦之前，双重保险
+      e.preventDefault();      // 拦在聚焦之前，双重保险（别让原生键盘冒头）
       this._openKeypad();
-    });
+    };
+    this.bufEl.addEventListener('pointerdown', onInputSurfaceTap);
+    this.inputEl.addEventListener('pointerdown', onInputSurfaceTap);
+    this._onInputSurfaceTap = onInputSurfaceTap;
     // ⭐ 聚焦兜底：真机上偶有焦点落到 input 的情况，立刻 blur 掉，别让原生键盘冒头
     this.inputEl.addEventListener('focus', () => {
       if (this._isMobile()) { try { this.inputEl.blur(); } catch (err) {} this._openKeypad(); return; }
@@ -1745,6 +1765,11 @@ ${ctxLines}${sc}${rag}
       this._dragHandlers = null;
     }
     this._drag = null;
+    if (this._onInputSurfaceTap) {
+      this.bufEl?.removeEventListener('pointerdown', this._onInputSurfaceTap);
+      this.inputEl?.removeEventListener('pointerdown', this._onInputSurfaceTap);
+      this._onInputSurfaceTap = null;
+    }
     this._keypad = null;          // 聊天键盘是全局单例，不随 Aji 卸载销毁
     document.documentElement.style.removeProperty('--aji-kp');
     this._abortStream();          // ⭐ 卸载时掐断在飞的流
